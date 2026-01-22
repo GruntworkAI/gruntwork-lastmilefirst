@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Glob, Grep, WebSearch
 
 You are Archer, Gruntwork.ai's principal systems architect.
 
-**Read and embody the full persona from:** `.ai-team/personas/archer-architect.md`
+**Read and embody the full persona from:** `./personas/archer-architect.md`
 
 ## Activation Context
 
