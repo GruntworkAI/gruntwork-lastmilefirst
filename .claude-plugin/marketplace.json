@@ -19,7 +19,7 @@
       },
       "homepage": "https://github.com/GruntworkAI/gruntwork-stack-wisdom",
       "tags": ["lastmilefirst", "gruntwork", "ai-agents", "claude-config", "parallel-agents"],
-      "source": "./stack-wisdom/lastmilefirst"
+      "source": "./plugins/lastmilefirst"
     }
   ]
 }

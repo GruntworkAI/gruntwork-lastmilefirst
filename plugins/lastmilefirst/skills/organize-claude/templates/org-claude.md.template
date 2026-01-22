@@ -1,0 +1,238 @@
+---
+# Required sections for org-level CLAUDE.md
+# Used by organize-claude --review to check for gaps
+required_sections:
+  - header: "## Security & Compliance"
+    description: "Data classification, access controls, policies"
+  - header: "## Naming Conventions"
+    description: "Environment names, code style"
+  - header: "## Approved Tools & Resources"
+    description: "IDEs, AI tools, infrastructure"
+  - header: "## Tech Stack"
+    description: "Backend, frontend, infrastructure"
+  - header: "## Brand & Design"
+    description: "Colors, typography, logo usage, design tokens"
+  - header: "## Projects"
+    description: "Project listing table"
+---
+
+# {{ORG_NAME}} Development Context
+
+## Overview
+
+{{ORG_DESCRIPTION}}
+
+---
+
+## Security & Compliance
+
+### Data Classification
+
+| Classification | Description | Handling |
+|----------------|-------------|----------|
+| Public | Open source, documentation | No restrictions |
+| Internal | Code, configs without secrets | Standard git practices |
+| Confidential | Client data, credentials, PII | {{CONFIDENTIAL_HANDLING}} |
+| Restricted | PHI, PCI data, secrets | {{RESTRICTED_HANDLING}} |
+
+### Access Controls
+
+**Claude CAN:**
+- {{ACCESS_ALLOWED}}
+
+**Claude CANNOT:**
+- {{ACCESS_FORBIDDEN}}
+
+### Agreements & Policies
+
+| Policy | Status | Notes |
+|--------|--------|-------|
+| Data Handling Agreement | {{DHA_STATUS}} | {{DHA_NOTES}} |
+| NDA in Place | {{NDA_STATUS}} | {{NDA_NOTES}} |
+| Data Aggregation Allowed | {{AGGREGATION_STATUS}} | {{AGGREGATION_NOTES}} |
+| AI Usage Approved | {{AI_APPROVED_STATUS}} | {{AI_APPROVED_NOTES}} |
+
+### Compliance Requirements
+
+{{COMPLIANCE_REQUIREMENTS}}
+
+---
+
+## Naming Conventions
+
+### Environments
+
+| Environment | Full Name | Short Code | URL Pattern |
+|-------------|-----------|------------|-------------|
+| Development | {{DEV_NAME}} | {{DEV_CODE}} | {{DEV_URL_PATTERN}} |
+| Staging | {{STG_NAME}} | {{STG_CODE}} | {{STG_URL_PATTERN}} |
+| Production | {{PROD_NAME}} | {{PROD_CODE}} | {{PROD_URL_PATTERN}} |
+
+### Code Style
+
+| Context | Convention | Example |
+|---------|------------|---------|
+| Database columns | {{DB_CONVENTION}} | {{DB_EXAMPLE}} |
+| API fields | {{API_CONVENTION}} | {{API_EXAMPLE}} |
+| Python variables | {{PYTHON_CONVENTION}} | {{PYTHON_EXAMPLE}} |
+| TypeScript | {{TS_CONVENTION}} | {{TS_EXAMPLE}} |
+| CSS classes | {{CSS_CONVENTION}} | {{CSS_EXAMPLE}} |
+| File names | {{FILE_CONVENTION}} | {{FILE_EXAMPLE}} |
+
+### Git Conventions
+
+- Branch naming: {{BRANCH_NAMING}}
+- Commit style: {{COMMIT_STYLE}}
+- PR format: {{PR_FORMAT}}
+
+---
+
+## Approved Tools & Resources
+
+### Development
+
+| Category | Approved Tools |
+|----------|---------------|
+| IDE | {{APPROVED_IDES}} |
+| Version Control | {{APPROVED_VCS}} |
+| Package Managers | {{APPROVED_PACKAGE_MANAGERS}} |
+
+### AI & Automation
+
+| Resource | Status | Usage Notes |
+|----------|--------|-------------|
+| Claude | {{CLAUDE_STATUS}} | {{CLAUDE_NOTES}} |
+| OpenAI | {{OPENAI_STATUS}} | {{OPENAI_NOTES}} |
+| GitHub Copilot | {{COPILOT_STATUS}} | {{COPILOT_NOTES}} |
+| Other AI | {{OTHER_AI_STATUS}} | {{OTHER_AI_NOTES}} |
+
+### Infrastructure
+
+| Service | Approved | Account/Region |
+|---------|----------|----------------|
+| AWS | {{AWS_STATUS}} | {{AWS_DETAILS}} |
+| GCP | {{GCP_STATUS}} | {{GCP_DETAILS}} |
+| Vercel | {{VERCEL_STATUS}} | {{VERCEL_DETAILS}} |
+
+---
+
+## Tech Stack
+
+### Backend
+{{BACKEND_STACK}}
+
+### Frontend
+{{FRONTEND_STACK}}
+
+### Infrastructure
+{{INFRA_STACK}}
+
+### Testing
+{{TESTING_STACK}}
+
+---
+
+## Brand & Design
+
+### Brand Assets
+
+| Asset | Location | Notes |
+|-------|----------|-------|
+| Logo (full color) | {{LOGO_PATH}} | Default for light backgrounds |
+| Logo (reversed) | {{LOGO_REVERSED_PATH}} | For dark backgrounds |
+| Brand Guide | {{BRAND_GUIDE_PATH}} | Official reference |
+
+**Logo Spacing:** {{LOGO_SPACING_RULE}}
+
+### Color Palette
+
+#### Primary Colors
+| Name | Hex | Usage |
+|------|-----|-------|
+| Primary | `{{PRIMARY_COLOR}}` | Headers, brand elements, CTAs |
+| Accent | `{{ACCENT_COLOR}}` | Interactive elements, highlights |
+| Dark | `{{DARK_COLOR}}` | Dark backgrounds, footers |
+
+#### Neutral Colors
+| Name | Hex | Usage |
+|------|-----|-------|
+| Background | `{{BG_COLOR}}` | Page backgrounds |
+| Text | `{{TEXT_COLOR}}` | Primary text |
+| Text Secondary | `{{TEXT_SECONDARY_COLOR}}` | Secondary text, borders |
+
+#### Semantic Colors
+| Name | Hex | Usage |
+|------|-----|-------|
+| Success | `{{SUCCESS_COLOR}}` | Positive states |
+| Warning | `{{WARNING_COLOR}}` | Alerts, caution |
+| Error | `{{ERROR_COLOR}}` | Errors, destructive actions |
+
+### Typography
+
+**Primary Font:**
+```css
+font-family: '{{PRIMARY_FONT}}', {{FALLBACK_FONTS}};
+```
+
+| Style | Weight | Size | Usage |
+|-------|--------|------|-------|
+| H1 | {{H1_WEIGHT}} | {{H1_SIZE}} | Page titles |
+| H2 | {{H2_WEIGHT}} | {{H2_SIZE}} | Section headers |
+| H3 | {{H3_WEIGHT}} | {{H3_SIZE}} | Subsections |
+| Body | {{BODY_WEIGHT}} | {{BODY_SIZE}} | Paragraphs |
+| Small | {{SMALL_WEIGHT}} | {{SMALL_SIZE}} | Captions, labels |
+
+### Spacing & Layout
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| Base unit | {{SPACING_BASE}} | Grid foundation |
+| xs | {{SPACE_XS}} | Tight gaps |
+| sm | {{SPACE_SM}} | Related elements |
+| md | {{SPACE_MD}} | Default spacing |
+| lg | {{SPACE_LG}} | Card padding |
+| xl | {{SPACE_XL}} | Section gaps |
+
+### Iconography
+
+| Property | Value |
+|----------|-------|
+| Library | {{ICON_LIBRARY}} |
+| Default Size | {{ICON_SIZE_DEFAULT}} |
+| Small Size | {{ICON_SIZE_SM}} |
+| Large Size | {{ICON_SIZE_LG}} |
+
+### Accessibility
+
+- WCAG {{WCAG_LEVEL}} contrast ratios required
+- Semantic HTML structure
+- Keyboard navigation support
+- ARIA labels for screen readers
+
+### Brand Personality
+
+{{BRAND_PERSONALITY}}
+
+---
+
+## Deployment Patterns
+
+{{DEPLOYMENT_PATTERNS}}
+
+### Code Quality Commands
+
+```bash
+{{QUALITY_COMMANDS}}
+```
+
+---
+
+## Projects
+
+| Project | Description | Status | Data Classification |
+|---------|-------------|--------|---------------------|
+{{PROJECT_TABLE}}
+
+---
+
+*Inherits from ~/Code/CLAUDE.md*

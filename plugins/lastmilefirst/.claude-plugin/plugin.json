@@ -1,0 +1,23 @@
+{
+  "name": "lastmilefirst",
+  "version": "0.3.0",
+  "description": "Last Mile First methodology plugin: AI expert agents for parallel consultation, Claude configuration management, documentation review, and workspace organization skills.",
+  "author": {
+    "name": "Michael Fisher",
+    "url": "https://github.com/GruntworkAI"
+  },
+  "repository": "https://github.com/GruntworkAI/gruntwork-stack-wisdom",
+  "license": "MIT",
+  "keywords": [
+    "lastmilefirst",
+    "gruntwork",
+    "ai-agents",
+    "parallel-agents",
+    "claude-config",
+    "project-organization",
+    "documentation-review",
+    "ai-personas",
+    "workspace-management",
+    "CLAUDE.md"
+  ]
+}

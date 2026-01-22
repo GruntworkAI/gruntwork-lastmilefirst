@@ -1,0 +1,112 @@
+---
+# Required sections for user-level (workspace) CLAUDE.md
+# Used by organize-claude --review to check for gaps
+required_sections:
+  - header: "## Workspace Organization"
+    description: "Directory structure, org separation"
+  - header: "## Core Philosophy"
+    description: "Development principles, compound engineering"
+  - header: "## Project Directory Mapping"
+    description: "Project name to path table"
+  - header: "## Development Workflow"
+    description: "Before/during/after task patterns"
+  - header: "## Quick Debugging Checklist"
+    description: "Common troubleshooting steps"
+---
+
+# {{USER_NAME}}'s Development Context
+
+## Workspace Organization
+
+**Workspace structure with clear separation:**
+
+```
+{{WORKSPACE_PATH}}/
+{{ORG_TREE}}
+```
+
+{{ORG_DESCRIPTIONS}}
+
+**When referencing projects, always confirm which workspace they belong to.**
+
+---
+
+## Core Philosophy
+
+{{PHILOSOPHY_DESCRIPTION}}
+
+**Key Principles:**
+1. {{PRINCIPLE_1}}
+2. {{PRINCIPLE_2}}
+3. {{PRINCIPLE_3}}
+
+---
+
+## Project Directory Mapping
+
+**When referring to a project by name, use these exact directories:**
+
+| Project Name | Directory Path |
+|-------------|---------------|
+{{PROJECT_MAPPING}}
+
+### When a New Project is Mentioned:
+1. **Check for matching pattern**: Look for existing naming conventions
+2. **If found**: Add to the table above for future reference
+3. **If not found**: Ask for the correct path, then update this table
+
+---
+
+## Development Workflow
+
+### Before Starting Any Task
+1. {{BEFORE_TASK_1}}
+2. {{BEFORE_TASK_2}}
+3. {{BEFORE_TASK_3}}
+
+### During Development
+1. {{DURING_DEV_1}}
+2. {{DURING_DEV_2}}
+3. {{DURING_DEV_3}}
+
+### After Completion
+1. {{AFTER_TASK_1}}
+2. {{AFTER_TASK_2}}
+3. {{AFTER_TASK_3}}
+
+---
+
+## Quick Debugging Checklist
+
+When something doesn't work:
+1. [ ] {{DEBUG_CHECK_1}}
+2. [ ] {{DEBUG_CHECK_2}}
+3. [ ] {{DEBUG_CHECK_3}}
+4. [ ] {{DEBUG_CHECK_4}}
+
+---
+
+## Code Quality Commands
+
+### Python Projects
+```bash
+{{PYTHON_QUALITY_COMMANDS}}
+```
+
+### JavaScript/TypeScript Projects
+```bash
+{{JS_QUALITY_COMMANDS}}
+```
+
+---
+
+## Communication Preferences
+
+### What I Expect
+- {{PREFERENCE_1}}
+- {{PREFERENCE_2}}
+- {{PREFERENCE_3}}
+
+---
+
+*This is the workspace-level CLAUDE.md - all org and project files inherit from this.*
