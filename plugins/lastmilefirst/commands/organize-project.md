@@ -39,7 +39,17 @@ project/
 3. **Scaffold CLAUDE.md** - If missing, create with project context
 4. **Report what was created** - List all new files/directories
 
+## After Completing Organization
+
+Update overwatch state to record this organization:
+```bash
+${PLUGIN_ROOT}/hooks/scripts/update-state.sh organize
+```
+
+This resets the "days since last organize" counter.
+
 ## Related Commands
 
 - `/organize-claude` - Focus on CLAUDE.md hierarchy specifically
 - `/review-project` - Check project health after organizing
+- `/overwatch` - Check monitoring status

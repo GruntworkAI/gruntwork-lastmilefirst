@@ -73,10 +73,21 @@ This plugin embodies the "Last Mile First" methodology:
 3. **Organized workspace** - Structure enables velocity
 4. **Regular reviews** - Catch drift before it compounds
 
+## Overwatch - Proactive Monitoring
+
+The plugin includes an overwatch system that automatically:
+- Alerts you to uncommitted changes at session start
+- Reminds you when it's been a while since `/review-project`
+- Suggests committing when you've made changes
+- Checks for plugin updates weekly
+
+Check status anytime: `/overwatch`
+
 ## Need Help?
 
 - `/consult-expert shannon "How do I..."` - Claude Code questions
 - `/consult-expert charles "Should I..."` - Strategic decisions
+- `/overwatch` - Check what needs attention
 - Check the README: `~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/README.md`
 
 **Now try:** `/consult-expert "What should I work on first?"`

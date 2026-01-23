@@ -47,9 +47,19 @@ Comprehensive project health assessment.
 - Prioritized recommendations
 - Suggested next actions
 
+## After Completing Review
+
+Update overwatch state to record this review:
+```bash
+${PLUGIN_ROOT}/hooks/scripts/update-state.sh review
+```
+
+This resets the "days since last review" counter.
+
 ## Related Commands
 
 - `/organize-project` - Fix structure issues
 - `/review-work` - Deep dive on work items
 - `/review-docs` - Deep dive on documentation
 - `/review-claude` - Deep dive on Claude config
+- `/overwatch` - Check monitoring status
