@@ -64,6 +64,28 @@ Consult specialists with deep domain knowledge:
 /review-claude            # Validate Claude configuration
 ```
 
+## Operatives - Your Private Elite Team
+
+Create private specialists for competitive advantage:
+
+```
+/create-operative              # Create a new operative
+/consult-operative razor       # Consult your operative
+```
+
+**Operatives vs Experts:**
+| Aspect | Experts | Operatives |
+|--------|---------|------------|
+| Source | Public (marketplace) | Private (yours) |
+| Scope | Generic domain expertise | Your specialized needs |
+| Location | Plugin | `~/.claude/operatives/` or `.claude/operatives/` |
+
+Create operatives for:
+- Competitive advantages you don't want public
+- Project-specific specialists
+- Domain experts for your industry
+- Experimental persona designs
+
 ## Philosophy: Last Mile First
 
 This plugin embodies the "Last Mile First" methodology:
@@ -72,6 +94,7 @@ This plugin embodies the "Last Mile First" methodology:
 2. **Expert consultation** - Get specialized guidance early
 3. **Organized workspace** - Structure enables velocity
 4. **Regular reviews** - Catch drift before it compounds
+5. **Elite operatives** - Build your private advantage
 
 ## Overwatch - Proactive Monitoring
 

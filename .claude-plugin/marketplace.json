@@ -12,7 +12,7 @@
     {
       "name": "lastmilefirst",
       "description": "Last Mile First methodology plugin: AI expert agents for parallel consultation, Claude configuration management, documentation review, and workspace organization skills.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "Michael Fisher",
         "url": "https://github.com/GruntworkAI"

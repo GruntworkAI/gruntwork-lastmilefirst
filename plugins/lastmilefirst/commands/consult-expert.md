@@ -57,3 +57,14 @@ Get specialized guidance from AI experts with deep domain knowledge.
 - shannon → shannon-claude-code-expert.md
 
 Always read the full persona file before responding to ensure accurate expertise.
+
+## Need a Private Specialist?
+
+For specialized needs not covered by public experts, create an **operative**:
+
+```
+/create-operative      # Create your own elite specialist
+/consult-operative     # Consult your private operatives
+```
+
+Operatives live in `~/.claude/operatives/` (user) or `.claude/operatives/` (project).
