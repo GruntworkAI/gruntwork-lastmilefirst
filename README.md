@@ -4,27 +4,40 @@ Claude Code plugins for Gruntwork development workflows.
 
 ## Installation
 
-```bash
-# Add marketplace (one time)
-claude plugin marketplace add https://github.com/GruntworkAI/gruntwork-marketplace
+Run these commands inside a Claude Code session:
 
-# Install plugins
-claude plugin install lastmilefirst@gruntwork-marketplace
+```bash
+# 1. Add marketplace (one time, interactive)
+/plugin marketplace add
+# When prompted, enter: GruntworkAI/gruntwork-marketplace
+
+# 2. Install plugins
+/plugin install lastmilefirst@gruntwork-marketplace
 ```
 
 ## Updating Plugins
 
-To get the latest plugin versions, you need to update the marketplace first, then update the plugin:
+To get the latest plugin versions:
 
 ```bash
 # Step 1: Refresh marketplace from GitHub
 /plugin marketplace update gruntwork-marketplace
 
 # Step 2: Update the plugin
-/plugin update lastmilefirst
+/plugin update lastmilefirst@gruntwork-marketplace
 ```
 
-Running only step 2 won't fetch new versions—Claude Code caches the marketplace index locally.
+**Note:** Running only step 2 won't fetch new versions—Claude Code caches the marketplace index locally.
+
+## Verify Installation
+
+```bash
+# Check marketplace is registered
+/plugin marketplace list
+
+# Check plugin is installed
+/plugin list
+```
 
 ## Available Plugins
 

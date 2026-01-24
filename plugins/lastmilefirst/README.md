@@ -15,19 +15,34 @@ Most developers build features first and figure out deployment, configuration, a
 
 ## Installation
 
+Run these commands inside a Claude Code session:
+
 ```bash
-# 1. Add the Gruntwork marketplace (one time)
-claude plugin marketplace add https://github.com/GruntworkAI/gruntwork-marketplace
+# 1. Add the Gruntwork marketplace (one time, interactive)
+/plugin marketplace add
+# When prompted, enter: GruntworkAI/gruntwork-marketplace
 
 # 2. Install the plugin
-claude plugin install lastmilefirst@gruntwork-marketplace
+/plugin install lastmilefirst@gruntwork-marketplace
 
-# 3. Restart Claude Code
+# 3. Verify installation
+/plugin list
 ```
 
-For local development:
+### Updating
+
 ```bash
-claude --plugin-dir /path/to/gruntwork-stack-wisdom/lastmilefirst
+# Refresh marketplace first (fetches latest versions)
+/plugin marketplace update gruntwork-marketplace
+
+# Then update the plugin
+/plugin update lastmilefirst@gruntwork-marketplace
+```
+
+### Local Development
+
+```bash
+claude --plugin-dir /path/to/gruntwork-marketplace/plugins/lastmilefirst
 ```
 
 ## Skills
