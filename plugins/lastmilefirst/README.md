@@ -45,19 +45,60 @@ Run these commands inside a Claude Code session:
 claude --plugin-dir /path/to/gruntwork-marketplace/plugins/lastmilefirst
 ```
 
-## Skills
+## Commands
 
-| Skill | Purpose |
-|-------|---------|
-| `organize-claude` | Audit and scaffold CLAUDE.md hierarchy (user/org/project) |
-| `organize-project` | Enforce consistent project structure (docs/, .claude/) |
-| `review-claude` | Review CLAUDE.md for gaps, suggest additions |
-| `review-project` | Combined docs + work artifact review |
-| `review-docs` | Review docs/ for staleness, gaps, duplication |
-| `review-work` | Review .claude/work/ for stale items, archive candidates |
-| `consult-expert` | Consult AI expert personas for specialized guidance |
+| Command | Purpose |
+|---------|---------|
+| `/get-started` | Quick orientation and available commands |
+| `/organize-claude` | Audit and scaffold CLAUDE.md hierarchy (user/org/project) |
+| `/organize-project` | Enforce consistent project structure (docs/, .claude/) |
+| `/review-claude` | Review CLAUDE.md for gaps, suggest additions |
+| `/review-project` | Combined docs + work artifact review |
+| `/review-docs` | Review docs/ for staleness, gaps, duplication |
+| `/review-work` | Review .claude/work/ for stale items, archive candidates |
+| `/consult-expert` | Consult public AI expert personas |
+| `/consult-operative` | Consult your private operatives |
+| `/create-operative` | Create a new private operative |
+| `/overwatch` | Check status and manage proactive monitoring |
 
-## Agents
+## Operatives
+
+Operatives are **private AI personas** you create for specialized needs - competitive advantages, domain-specific expertise, or project-specific knowledge that you don't want public.
+
+### Creating Operatives
+
+```bash
+/create-operative           # Interactive creation wizard
+/create-operative razor     # Create operative named "razor"
+```
+
+### Using Operatives
+
+```bash
+/consult-operative                    # List your operatives
+/consult-operative razor "question"   # Consult a specific operative
+```
+
+### Operative Storage
+
+```
+~/.claude/operatives/       # User-level (available in all projects)
+.claude/operatives/         # Project-level (specific to one project)
+```
+
+### Inheritance
+
+Operatives can inherit from public experts:
+
+```markdown
+---
+name: razor
+title: Security Penetration Specialist
+base: paloma    # Inherits Python expertise from Paloma
+---
+```
+
+## Public Expert Agents
 
 Parallel AI expert agents for complex multi-domain problems.
 
@@ -87,25 +128,41 @@ Parallel AI expert agents for complex multi-domain problems.
 ```
 lastmilefirst/
 ├── .claude-plugin/
-│   └── plugin.json      # Plugin manifest
-├── skills/              # Repeatable processes (on-demand)
+│   └── plugin.json         # Plugin manifest
+├── commands/               # Slash command definitions
+│   ├── get-started.md
+│   ├── organize-*.md
+│   ├── review-*.md
+│   ├── consult-expert.md
+│   ├── consult-operative.md
+│   ├── create-operative.md
+│   └── overwatch.md
+├── skills/                 # Detailed skill implementations
 │   ├── organize-claude/
 │   ├── organize-project/
 │   ├── review-*/
-│   └── consult-expert/
-├── agents/              # Parallel expert agents (via Task tool)
+│   ├── consult-expert/
+│   ├── create-operative/
+│   └── get-started/
+├── agents/                 # Parallel expert agents (via Task tool)
 │   ├── scout-coordinator.md
 │   └── consult-*.md
+├── personas/               # Expert persona definitions
+│   └── *.md
+├── templates/              # Templates for creating new items
+│   └── operative.md
 └── README.md
 ```
 
-## Usage
+## Usage Examples
 
-### Skills (inline)
-```
-/organize-claude     # Audit CLAUDE.md hierarchy
-/review-project      # Review project documentation
-/consult-expert      # Interactive expert consultation
+### Commands (inline)
+```bash
+/get-started             # See what's available
+/organize-claude         # Audit CLAUDE.md hierarchy
+/review-project          # Review project documentation
+/consult-expert          # Interactive expert consultation
+/consult-operative razor # Use your private operative
 ```
 
 ### Agents (parallel via Task tool)
