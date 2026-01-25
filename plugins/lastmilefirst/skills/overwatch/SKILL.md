@@ -26,6 +26,7 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Plugin updates | Weekly | 7+ days since last check |
 | Stale todos | Every session | Any todos older than 14 days |
 | Missing CLAUDE.md | Every session | No CLAUDE.md in project |
+| Expert roster sync | Every session | User CLAUDE.md missing experts or operatives |
 
 ## How It Works
 
@@ -72,3 +73,47 @@ When `/run-overwatch check` is called:
 
 1. Force run all checks regardless of state
 2. Display full report
+
+## Expert Roster Sync Check
+
+This check ensures the user's CLAUDE.md has an up-to-date expert consultation section.
+
+### What It Checks
+
+1. **Section exists**: Look for "AI Expert Consultation" or "Expert Consultation" in user CLAUDE.md
+2. **All experts listed**: Compare against current personas in plugin:
+   ```bash
+   ls ~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/personas/*.md | xargs -I{} basename {} .md
+   ```
+3. **All operatives listed**: Check for any operatives not mentioned:
+   ```bash
+   ls ~/.claude/operatives/*.md .claude/operatives/*.md 2>/dev/null
+   ```
+
+### Expected Experts (Current Roster)
+
+**Founding Team:** charles, adam, paloma, andor, dino, max, shannon
+**Key Hires:** scout, maya, archer, quinn, reese, otto
+
+### Alert Conditions
+
+- ⚠️ "Expert consultation section missing from user CLAUDE.md"
+- ⚠️ "Expert [name] exists but not in CLAUDE.md roster"
+- ⚠️ "Operative [name] exists but not mentioned in CLAUDE.md"
+- ⚠️ "Expert [name] listed in CLAUDE.md but persona file not found" (stale reference)
+
+### How to Fix
+
+Run this to see current vs documented:
+```bash
+# Current experts
+ls ~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/personas/*.md 2>/dev/null | xargs -I{} basename {} .md | sort
+
+# Current operatives
+ls ~/.claude/operatives/*.md .claude/operatives/*.md 2>/dev/null | xargs -I{} basename {} .md | sort
+
+# Check CLAUDE.md for expert section
+grep -A 50 "Expert Consultation" ~/Code/CLAUDE.md | head -60
+```
+
+Then update user CLAUDE.md to match, or run `/run-consult-expert shannon` for help restructuring.
