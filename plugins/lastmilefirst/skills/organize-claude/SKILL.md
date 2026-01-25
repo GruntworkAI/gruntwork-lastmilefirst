@@ -94,7 +94,7 @@ patterns, and gotchas. Want me to:
 ## Audit Report
 
 ```
-$ /organize-claude
+$ /run-organize-claude
 
 CLAUDE CONFIGURATION AUDIT
 ==============================================================
@@ -280,7 +280,7 @@ python ${SKILL_ROOT}/scripts/organize_claude.py --setup
 On first run, the skill prompts for configuration:
 
 ```
-$ /organize-claude
+$ /run-organize-claude
 
 ============================================================
 ORGANIZE-CLAUDE SETUP
@@ -350,12 +350,12 @@ python ${SKILL_ROOT}/scripts/organize_claude.py --workspace ~/OtherCode
 The `organize-project` skill checks CLAUDE.md status:
 
 ```
-$ /organize-project
+$ /run-organize-project
 
 Pre-flight: Checking CLAUDE.md...
   ✗ This project has no CLAUDE.md file
 
-[C] Create CLAUDE.md first (runs organize-claude --scaffold-project)
+[C] Create CLAUDE.md first (runs run-organize-claude --scaffold-project)
 [S] Skip and continue with project organization
 [Q] Quit
 ```

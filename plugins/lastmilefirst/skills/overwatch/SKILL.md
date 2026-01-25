@@ -1,7 +1,6 @@
 ---
 name: overwatch
 description: Check overwatch status, manage alerts, and configure proactive monitoring
-argument-hint: "[status|reset|disable|enable]"
 ---
 
 # Overwatch
@@ -11,10 +10,10 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 ## Usage
 
 ```
-/overwatch              # Show current status and alerts
-/overwatch status       # Same as above
-/overwatch reset        # Reset all timers (start fresh)
-/overwatch check        # Force run all checks now
+/run-overwatch              # Show current status and alerts
+/run-overwatch status       # Same as above
+/run-overwatch reset        # Reset all timers (start fresh)
+/run-overwatch check        # Force run all checks now
 ```
 
 ## What Overwatch Monitors
@@ -22,8 +21,8 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Check | Frequency | Alert Threshold |
 |-------|-----------|-----------------|
 | Uncommitted changes | Every session | Any uncommitted files |
-| Project review | Every session | 7+ days since `/review-project` |
-| Project organize | Every session | 14+ days since `/organize-project` |
+| Project review | Every session | 7+ days since `/run-review-project` |
+| Project organize | Every session | 14+ days since `/run-organize-project` |
 | Plugin updates | Weekly | 7+ days since last check |
 | Stale todos | Every session | Any todos older than 14 days |
 | Missing CLAUDE.md | Every session | No CLAUDE.md in project |
@@ -38,8 +37,8 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 ## Commands That Update State
 
 When you run these commands, overwatch records the timestamp:
-- `/review-project` → updates `last_review`
-- `/organize-project` → updates `last_organize`
+- `/run-review-project` → updates `last_review`
+- `/run-organize-project` → updates `last_organize`
 - `claude /plugin update` → updates `last_plugin_check`
 
 ## Manual State Update
@@ -57,19 +56,19 @@ When you run these commands, overwatch records the timestamp:
 
 ## Behavior
 
-When `/overwatch` or `/overwatch status` is called:
+When `/run-overwatch` or `/run-overwatch status` is called:
 
 1. Run the session-start checks manually
 2. Display current state timestamps
 3. Show any active alerts
 4. Suggest next actions if needed
 
-When `/overwatch reset` is called:
+When `/run-overwatch reset` is called:
 
 1. Reset all timestamps to 0
 2. Confirm reset complete
 
-When `/overwatch check` is called:
+When `/run-overwatch check` is called:
 
 1. Force run all checks regardless of state
 2. Display full report

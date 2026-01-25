@@ -10,8 +10,8 @@ Get specialized guidance from the Gruntwork AI team - expert personas with deep 
 ## Usage
 
 ```
-/consult-expert "Your question here"
-/consult-expert <expert-name> "Your question here"
+/run-consult-expert "Your question here"
+/run-consult-expert <expert-name> "Your question here"
 ```
 
 ## The Experts
@@ -60,31 +60,31 @@ When responding:
 
 ### Auto-routing
 ```
-User: /consult-expert "My ECS task keeps failing with exit code 1"
+User: /run-consult-expert "My ECS task keeps failing with exit code 1"
 → Routes to Adam (AWS/ECS domain)
 → Adam provides infrastructure-focused diagnosis
 ```
 
 ```
-User: /consult-expert "How should I structure my prompt for better results?"
+User: /run-consult-expert "How should I structure my prompt for better results?"
 → Routes to Andor (AI/prompt engineering domain)
 → Andor provides prompt engineering guidance
 ```
 
 ```
-User: /consult-expert "Should we build this feature or buy a solution?"
+User: /run-consult-expert "Should we build this feature or buy a solution?"
 → Routes to Charles (strategic decision domain)
 → Charles provides systems thinking analysis
 ```
 
 ### Explicit routing
 ```
-User: /consult-expert shannon "How do I write a good Claude Code skill?"
+User: /run-consult-expert shannon "How do I write a good Claude Code skill?"
 → Shannon provides Claude Code skill authoring guidance
 ```
 
 ```
-User: /consult-expert paloma "Review this Python function for code quality"
+User: /run-consult-expert paloma "Review this Python function for code quality"
 → Paloma reviews with Python best practices focus
 ```
 
@@ -103,7 +103,7 @@ User: /consult-expert paloma "Review this Python function for code quality"
 For complex problems spanning multiple domains, you can consult multiple experts:
 
 ```
-User: /consult-expert "We need to deploy an AI-powered feature with good UX"
+User: /run-consult-expert "We need to deploy an AI-powered feature with good UX"
 → Could involve: Adam (deployment), Andor (AI), Dino (UX)
 → Either pick the primary domain or synthesize perspectives
 ```

@@ -148,15 +148,15 @@ gh issue create --title "[type]: [description]" \
 [Details]
 
 ---
-*Created via /review-docs*" \
+*Created via /run-review-docs*" \
   --label [appropriate-label]
 ```
 
 ## Integration with Other Skills
 
-- **`/organize`**: Run first to ensure proper structure before review
-- **`/review-work`**: Companion skill for reviewing .claude/work/
-- **`/review-all`**: Runs both review-docs and review-work
+- **`/run-organize-project`**: Run first to ensure proper structure before review
+- **`/run-review-work`**: Companion skill for reviewing .claude/work/
+- **`/run-review-project`**: Runs both review-docs and review-work
 
 ## Notes
 

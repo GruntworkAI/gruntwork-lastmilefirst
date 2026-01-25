@@ -12,12 +12,12 @@ Establishes and maintains a consistent project structure separating static docum
 Before organizing project structure, this skill checks for CLAUDE.md configuration:
 
 ```
-$ /organize-project
+$ /run-organize-project
 
 Pre-flight: Checking CLAUDE.md configuration...
   ✗ This project has no CLAUDE.md file
 
-[C] Create CLAUDE.md first (runs organize-claude --scaffold-project)
+[C] Create CLAUDE.md first (runs run-organize-claude --scaffold-project)
 [S] Skip and continue with project organization
 [Q] Quit
 ```
@@ -132,7 +132,7 @@ If these directories exist at project root (not symlinks):
 ## Interactive Flow
 
 ```
-$ /organize-project
+$ /run-organize-project
 
 Pre-flight: Checking CLAUDE.md configuration...
   ✓ CLAUDE.md exists

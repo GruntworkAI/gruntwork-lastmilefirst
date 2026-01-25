@@ -47,19 +47,21 @@ claude --plugin-dir /path/to/gruntwork-marketplace/plugins/lastmilefirst
 
 ## Commands
 
+All commands use the `run-` prefix for discoverability via autocomplete.
+
 | Command | Purpose |
 |---------|---------|
-| `/get-started` | Quick orientation and available commands |
-| `/organize-claude` | Audit and scaffold CLAUDE.md hierarchy (user/org/project) |
-| `/organize-project` | Enforce consistent project structure (docs/, .claude/) |
-| `/review-claude` | Review CLAUDE.md for gaps, suggest additions |
-| `/review-project` | Combined docs + work artifact review |
-| `/review-docs` | Review docs/ for staleness, gaps, duplication |
-| `/review-work` | Review .claude/work/ for stale items, archive candidates |
-| `/consult-expert` | Consult public AI expert personas |
-| `/consult-operative` | Consult your private operatives |
-| `/create-operative` | Create a new private operative |
-| `/overwatch` | Check status and manage proactive monitoring |
+| `/run-get-started` | Quick orientation and available commands |
+| `/run-organize-claude` | Audit and scaffold CLAUDE.md hierarchy (user/org/project) |
+| `/run-organize-project` | Enforce consistent project structure (docs/, .claude/) |
+| `/run-review-claude` | Review CLAUDE.md for gaps, suggest additions |
+| `/run-review-project` | Combined docs + work artifact review |
+| `/run-review-docs` | Review docs/ for staleness, gaps, duplication |
+| `/run-review-work` | Review .claude/work/ for stale items, archive candidates |
+| `/run-consult-expert` | Consult public AI expert personas |
+| `/run-consult-operative` | Consult your private operatives |
+| `/run-create-operative` | Create a new private operative |
+| `/run-overwatch` | Check status and manage proactive monitoring |
 
 ## Operatives
 
@@ -68,15 +70,15 @@ Operatives are **private AI personas** you create for specialized needs - compet
 ### Creating Operatives
 
 ```bash
-/create-operative           # Interactive creation wizard
-/create-operative razor     # Create operative named "razor"
+/run-create-operative           # Interactive creation wizard
+/run-create-operative razor     # Create operative named "razor"
 ```
 
 ### Using Operatives
 
 ```bash
-/consult-operative                    # List your operatives
-/consult-operative razor "question"   # Consult a specific operative
+/run-consult-operative                    # List your operatives
+/run-consult-operative razor "question"   # Consult a specific operative
 ```
 
 ### Operative Storage
@@ -129,20 +131,16 @@ Parallel AI expert agents for complex multi-domain problems.
 lastmilefirst/
 ├── .claude-plugin/
 │   └── plugin.json         # Plugin manifest
-├── commands/               # Slash command definitions
-│   ├── get-started.md
-│   ├── organize-*.md
-│   ├── review-*.md
-│   ├── consult-expert.md
-│   ├── consult-operative.md
-│   ├── create-operative.md
-│   └── overwatch.md
-├── skills/                 # Detailed skill implementations
+├── commands/               # Minimal slash commands (for autocomplete)
+│   └── run-*.md            # All prefixed with run-
+├── skills/                 # Full skill implementations
 │   ├── organize-claude/
 │   ├── organize-project/
 │   ├── review-*/
 │   ├── consult-expert/
+│   ├── consult-operative/
 │   ├── create-operative/
+│   ├── overwatch/
 │   └── get-started/
 ├── agents/                 # Parallel expert agents (via Task tool)
 │   ├── scout-coordinator.md
@@ -158,11 +156,11 @@ lastmilefirst/
 
 ### Commands (inline)
 ```bash
-/get-started             # See what's available
-/organize-claude         # Audit CLAUDE.md hierarchy
-/review-project          # Review project documentation
-/consult-expert          # Interactive expert consultation
-/consult-operative razor # Use your private operative
+/run-get-started             # See what's available
+/run-organize-claude         # Audit CLAUDE.md hierarchy
+/run-review-project          # Review project documentation
+/run-consult-expert          # Interactive expert consultation
+/run-consult-operative razor # Use your private operative
 ```
 
 ### Agents (parallel via Task tool)

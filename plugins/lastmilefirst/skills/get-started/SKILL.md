@@ -9,7 +9,7 @@ Interactive onboarding that assesses your current setup and provides personalize
 
 ## How This Skill Works
 
-Unlike the `/get-started` command (quick reference), this skill:
+Unlike the `/run-get-started` command (quick reference), this skill:
 1. **Assesses** your current project state
 2. **Identifies** what's already set up vs missing
 3. **Recommends** specific next steps in priority order
@@ -53,64 +53,64 @@ Present findings in a clear format:
 Based on assessment, recommend in priority order:
 
 **If no CLAUDE.md exists:**
-> "Let's start with `/organize-claude scaffold` to create your Claude configuration."
+> "Let's start with `/run-organize-claude scaffold` to create your Claude configuration."
 
 **If no project structure:**
-> "Run `/organize-project` to set up standard directories."
+> "Run `/run-organize-project` to set up standard directories."
 
 **If setup is complete:**
-> "Your workspace looks good! Try `/consult-expert` to ask an AI expert about your current project."
+> "Your workspace looks good! Try `/run-consult-expert` to ask an AI expert about your current project."
 
 ### Step 4: Quick Wins
 
 Suggest immediate value based on their situation:
 
 **For new projects:**
-1. `/organize-project` - Set up structure
-2. `/organize-claude` - Configure Claude
-3. `/consult-expert architect "Review my project plan"`
+1. `/run-organize-project` - Set up structure
+2. `/run-organize-claude` - Configure Claude
+3. `/run-consult-expert architect "Review my project plan"`
 
 **For existing projects:**
-1. `/review-project quick` - Get health snapshot
-2. `/review-work` - Check todo hygiene
-3. `/consult-expert` - Get expert guidance on current work
+1. `/run-review-project quick` - Get health snapshot
+2. `/run-review-work` - Check todo hygiene
+3. `/run-consult-expert` - Get expert guidance on current work
 
 **For Claude Code optimization:**
-1. `/review-claude` - Audit configuration
-2. `/consult-expert shannon "Optimize my setup"`
+1. `/run-review-claude` - Audit configuration
+2. `/run-consult-expert shannon "Optimize my setup"`
 
 ## Available Commands Reference
 
 ### Organization
 | Command | Use When |
 |---------|----------|
-| `/organize-project` | Starting a new project or cleaning up structure |
-| `/organize-claude` | Setting up or auditing CLAUDE.md hierarchy |
+| `/run-organize-project` | Starting a new project or cleaning up structure |
+| `/run-organize-claude` | Setting up or auditing CLAUDE.md hierarchy |
 
 ### Review
 | Command | Use When |
 |---------|----------|
-| `/review-project` | Want overall health check |
-| `/review-work` | Todos/plans feeling messy |
-| `/review-docs` | Documentation might be stale |
-| `/review-claude` | Claude config might need improvement |
+| `/run-review-project` | Want overall health check |
+| `/run-review-work` | Todos/plans feeling messy |
+| `/run-review-docs` | Documentation might be stale |
+| `/run-review-claude` | Claude config might need improvement |
 
 ### Expert Consultation
 | Expert | Best For |
 |--------|----------|
-| `/consult-expert adam` | AWS, infrastructure, deployment |
-| `/consult-expert andor` | AI/ML, prompts, model selection |
-| `/consult-expert archer` | Architecture, system design, ADRs |
-| `/consult-expert charles` | Strategy, big decisions |
-| `/consult-expert dino` | Product, UX, design |
-| `/consult-expert maya` | Agile, project management |
-| `/consult-expert max` | MCP, IDE integration |
-| `/consult-expert otto` | DevOps, CI/CD |
-| `/consult-expert paloma` | Python, FastAPI, testing |
-| `/consult-expert quinn` | QA, TDD, test strategy |
-| `/consult-expert reese` | Tech research, evaluation |
-| `/consult-expert scout` | Work breakdown, coordination |
-| `/consult-expert shannon` | Claude Code optimization |
+| `/run-consult-expert adam` | AWS, infrastructure, deployment |
+| `/run-consult-expert andor` | AI/ML, prompts, model selection |
+| `/run-consult-expert archer` | Architecture, system design, ADRs |
+| `/run-consult-expert charles` | Strategy, big decisions |
+| `/run-consult-expert dino` | Product, UX, design |
+| `/run-consult-expert maya` | Agile, project management |
+| `/run-consult-expert max` | MCP, IDE integration |
+| `/run-consult-expert otto` | DevOps, CI/CD |
+| `/run-consult-expert paloma` | Python, FastAPI, testing |
+| `/run-consult-expert quinn` | QA, TDD, test strategy |
+| `/run-consult-expert reese` | Tech research, evaluation |
+| `/run-consult-expert scout` | Work breakdown, coordination |
+| `/run-consult-expert shannon` | Claude Code optimization |
 
 ## The Last Mile First Philosophy
 
@@ -124,8 +124,8 @@ This plugin embodies a methodology:
 
 ## Getting Help
 
-- `/consult-expert shannon` - Claude Code questions
-- `/consult-expert charles` - Strategic decisions
+- `/run-consult-expert shannon` - Claude Code questions
+- `/run-consult-expert charles` - Strategic decisions
 - Check plugin README for detailed documentation
 
 ## Response Format
@@ -148,9 +148,9 @@ Welcome to Last Mile First! Let me check your setup...
 | Project structure | ❌ Missing |
 
 ## Recommended Next Steps
-1. `/organize-project` - Create standard structure
-2. `/organize-claude scaffold` - Create project CLAUDE.md
-3. `/review-project quick` - Get baseline health check
+1. `/run-organize-project` - Create standard structure
+2. `/run-organize-claude scaffold` - Create project CLAUDE.md
+3. `/run-review-project quick` - Get baseline health check
 
-Want me to run `/organize-project` now?
+Want me to run `/run-organize-project` now?
 ```

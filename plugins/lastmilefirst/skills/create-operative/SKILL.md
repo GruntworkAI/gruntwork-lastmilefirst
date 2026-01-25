@@ -15,7 +15,7 @@ Use when:
 - Building project-specific specialists
 - Crafting operatives that inherit from base personas
 
-For quick creation, the `/create-operative` command may suffice.
+For quick creation, the `/run-create-operative` command may suffice.
 
 ## Operative Design Philosophy
 
@@ -271,7 +271,7 @@ Familiar with this project's stack:
 
 ### Listing Operatives
 
-When user runs `/consult-operative` without arguments, scan both directories:
+When user runs `/run-consult-operative` without arguments, scan both directories:
 
 ```bash
 # Check user-level
@@ -298,6 +298,6 @@ To retire an operative:
 
 ## Related Commands
 
-- `/consult-operative` - Use your operatives
-- `/consult-expert` - Consult public personas
-- `/get-started` - Overview of all commands
+- `/run-consult-operative` - Use your operatives
+- `/run-consult-expert` - Consult public personas
+- `/run-get-started` - Overview of all commands

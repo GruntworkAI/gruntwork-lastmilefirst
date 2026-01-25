@@ -171,9 +171,9 @@ After presenting report, offer to:
 
 ## Integration
 
-- **`/organize`**: Handles the actual archiving
-- **`/review-docs`**: Companion for docs/ review
-- **`/review-all`**: Runs both review skills
+- **`/run-organize-project`**: Handles the actual archiving
+- **`/run-review-docs`**: Companion for docs/ review
+- **`/run-review-project`**: Runs both review skills
 - **`/compound-engineering:file-todos`**: For advanced todo management
 
 ## Notes

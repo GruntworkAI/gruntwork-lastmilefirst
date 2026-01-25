@@ -5,23 +5,23 @@ description: Complete project review - docs, work artifacts, and cross-cutting c
 
 # Review Project
 
-Comprehensive project review combining `/review-docs` and `/review-work` with cross-cutting analysis.
+Comprehensive project review combining `/run-review-docs` and `/run-review-work` with cross-cutting analysis.
 
-**Note:** This reviews project artifacts (docs, work items). For reviewing CLAUDE.md files, use `/review-claude`.
+**Note:** This reviews project artifacts (docs, work items). For reviewing CLAUDE.md files, use `/run-review-claude`.
 
 ## Prerequisites
 
 Requires organized project structure (`docs/`, `.claude/work/`, etc.).
 
 If structure is missing, respond:
-> "Run `/organize-project` first to create the standard structure."
+> "Run `/run-organize-project` first to create the standard structure."
 
 See [organize-project/SKILL.md](../organize-project/SKILL.md) for required structure.
 
 ## What This Skill Does
 
-1. **Run `/review-docs`** - Analyze docs/ directory
-2. **Run `/review-work`** - Analyze .claude/work/ directory
+1. **Run `/run-review-docs`** - Analyze docs/ directory
+2. **Run `/run-review-work`** - Analyze .claude/work/ directory
 3. **Cross-cutting analysis** - Find issues spanning both areas
 
 ## Cross-Cutting Checks
@@ -83,10 +83,10 @@ Check for disconnects:
 - Z items need GitHub issues
 
 ## Documentation Review
-[Output from /review-docs]
+[Output from /run-review-docs]
 
 ## Work Artifacts Review
-[Output from /review-work]
+[Output from /run-review-work]
 
 ## Cross-Cutting Issues
 
@@ -113,7 +113,7 @@ Check for disconnects:
 6. Consolidate duplicate content
 
 ## Quick Commands
-- Archive completed: `/organize-project --yes`
+- Archive completed: `/run-organize-project --yes`
 - Create issues: `gh issue create ...`
 - Sync with GitHub: Review and create missing issues
 ```
@@ -127,10 +127,10 @@ Present prioritized action list and offer to execute:
 
 ## Integration
 
-- **`/organize-project`**: Run first to ensure structure, or after to archive
-- **`/review-docs`**: Standalone docs review
-- **`/review-work`**: Standalone work review
-- **`/review-claude`**: Review CLAUDE.md files for gaps
+- **`/run-organize-project`**: Run first to ensure structure, or after to archive
+- **`/run-review-docs`**: Standalone docs review
+- **`/run-review-work`**: Standalone work review
+- **`/run-review-claude`**: Review CLAUDE.md files for gaps
 - **compound-engineering**: For advanced workflows
 
 ## When to Use

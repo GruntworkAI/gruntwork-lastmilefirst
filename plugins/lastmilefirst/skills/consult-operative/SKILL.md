@@ -1,7 +1,6 @@
 ---
 name: consult-operative
 description: Consult a private operative - your elite specialists with specialized skills
-argument-hint: "<operative-name> <question>"
 ---
 
 # Consult Operative
@@ -11,8 +10,9 @@ Get guidance from your private operatives - elite specialists you've created for
 ## Usage
 
 ```
-/consult-operative razor "Review this authentication flow for vulnerabilities"
-/consult-operative nexus "Analyze this data pipeline architecture"
+/run-consult-operative razor "Review this authentication flow for vulnerabilities"
+/run-consult-operative nexus "Analyze this data pipeline architecture"
+/run-consult-operative                # List available operatives
 ```
 
 ## How Operatives Work
@@ -37,7 +37,7 @@ When invoked:
 1. Parse the operative name from arguments (first word)
 2. Look for `<name>.md` in project operatives: `.claude/operatives/<name>.md`
 3. If not found, look in user operatives: `~/.claude/operatives/<name>.md`
-4. If not found, respond: "Operative '<name>' not found. Create one with `/create-operative`"
+4. If not found, respond: "Operative '<name>' not found. Create one with `/run-create-operative`"
 
 ## Loading the Operative
 
@@ -75,7 +75,7 @@ You are Razor, a security-focused operative specialized in...
 If called without arguments, list available operatives:
 
 ```
-/consult-operative
+/run-consult-operative
 ```
 
 Response:
@@ -90,14 +90,14 @@ Response:
 - ghost - Stealth refactoring expert
 - cipher - Cryptography consultant
 
-Use: /consult-operative <name> "your question"
-Create new: /create-operative
+Use: /run-consult-operative <name> "your question"
+Create new: /run-create-operative
 ```
 
 ## Differences from Public Experts
 
-| Aspect | `/consult-expert` | `/consult-operative` |
-|--------|-------------------|----------------------|
+| Aspect | `/run-consult-expert` | `/run-consult-operative` |
+|--------|----------------------|--------------------------|
 | Source | Public marketplace | Private (user/project) |
 | Personas | Generic experts | Your specialists |
 | Sharing | Anyone can use | Only you |
@@ -105,6 +105,6 @@ Create new: /create-operative
 
 ## Related Commands
 
-- `/create-operative` - Create a new operative
-- `/consult-expert` - Consult public personas
-- `/get-started` - Overview of all commands
+- `/run-create-operative` - Create a new operative
+- `/run-consult-expert` - Consult public personas
+- `/run-get-started` - Overview of all commands
