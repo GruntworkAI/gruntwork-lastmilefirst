@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'edit' >> /tmp/claude-session-changes.log"
+            "command": "mkdir -p ~/.claude/tmp && echo 'edit' >> ~/.claude/tmp/session-changes.log"
           }
         ]
       },
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'write' >> /tmp/claude-session-changes.log"
+            "command": "mkdir -p ~/.claude/tmp && echo 'write' >> ~/.claude/tmp/session-changes.log"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Quick check before finishing: Look at /tmp/claude-session-changes.log to see if files were modified this session. If the file exists and has content, AND there are uncommitted git changes in the current directory, consider suggesting: 'You have uncommitted changes - want me to commit them?' Only mention this once per session, and only if relevant. If no changes or already committed, say nothing about this."
+            "prompt": "Quick check before finishing: Look at ~/.claude/tmp/session-changes.log to see if files were modified this session. If the file exists and has content, AND there are uncommitted git changes in the current directory, consider suggesting: 'You have uncommitted changes - want me to commit them?' Only mention this once per session, and only if relevant. If no changes or already committed, say nothing about this."
           }
         ]
       }
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rm -f /tmp/claude-session-changes.log"
+            "command": "rm -f ~/.claude/tmp/session-changes.log"
           }
         ]
       }

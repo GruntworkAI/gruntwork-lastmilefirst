@@ -35,9 +35,15 @@ The command searches in order:
 When invoked:
 
 1. Parse the operative name from arguments (first word)
-2. Look for `<name>.md` in project operatives: `.claude/operatives/<name>.md`
-3. If not found, look in user operatives: `~/.claude/operatives/<name>.md`
-4. If not found, respond: "Operative '<name>' not found. Create one with `/run-create-operative`"
+2. **SECURITY: Validate the operative name**
+   - REJECT if name contains `..` (path traversal)
+   - REJECT if name starts with `/` or `~` (absolute paths)
+   - REJECT if name contains `\` (Windows path separator)
+   - Subdirectories are allowed (e.g., `security/razor`)
+   - If invalid, respond: "Invalid operative name. Names cannot contain '..' or start with '/' or '~'."
+3. Look for `<name>.md` in project operatives: `.claude/operatives/<name>.md`
+4. If not found, look in user operatives: `~/.claude/operatives/<name>.md`
+5. If not found, respond: "Operative '<name>' not found. Create one with `/run-create-operative`"
 
 ## Loading the Operative
 
