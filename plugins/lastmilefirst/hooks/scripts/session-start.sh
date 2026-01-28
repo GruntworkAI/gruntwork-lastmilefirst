@@ -7,6 +7,13 @@ set -e
 
 OVERWATCH_STATE_DIR="${HOME}/.claude/lastmilefirst"
 OVERWATCH_STATE_FILE="${OVERWATCH_STATE_DIR}/overwatch-state.json"
+OVERWATCH_LOCK_FILE="${OVERWATCH_STATE_DIR}/overwatch.lock"
+
+# Check if flock is available (not on Windows/Git Bash)
+USE_FLOCK=false
+if command -v flock &>/dev/null; then
+  USE_FLOCK=true
+fi
 
 # Ensure state directory exists
 mkdir -p "$OVERWATCH_STATE_DIR"
@@ -58,9 +65,17 @@ fi
 # --- Check 4: Plugin Updates (check weekly) ---
 if [ "$DAYS_SINCE_PLUGIN_CHECK" -ge 7 ]; then
   ALERTS="${ALERTS}🔄 Consider checking for plugin updates: claude /plugin update lastmilefirst\n"
-  # Update last check time
-  cat "$OVERWATCH_STATE_FILE" | sed "s/\"last_plugin_check\":[0-9]*/\"last_plugin_check\":$NOW/" > "${OVERWATCH_STATE_FILE}.tmp"
-  mv "${OVERWATCH_STATE_FILE}.tmp" "$OVERWATCH_STATE_FILE"
+  # Update last check time (with file locking if available)
+  if [ "$USE_FLOCK" = true ]; then
+    (
+      flock -x 200
+      cat "$OVERWATCH_STATE_FILE" | sed "s/\"last_plugin_check\":[0-9]*/\"last_plugin_check\":$NOW/" > "${OVERWATCH_STATE_FILE}.tmp"
+      mv "${OVERWATCH_STATE_FILE}.tmp" "$OVERWATCH_STATE_FILE"
+    ) 200>"$OVERWATCH_LOCK_FILE"
+  else
+    cat "$OVERWATCH_STATE_FILE" | sed "s/\"last_plugin_check\":[0-9]*/\"last_plugin_check\":$NOW/" > "${OVERWATCH_STATE_FILE}.tmp"
+    mv "${OVERWATCH_STATE_FILE}.tmp" "$OVERWATCH_STATE_FILE"
+  fi
 fi
 
 # --- Check 5: Stale Todos (if .claude/work/todos exists) ---
@@ -86,4 +101,4 @@ if [ -n "$ALERTS" ]; then
 fi
 
 # Clear session change log for fresh tracking
-rm -f /tmp/claude-session-changes.log
+rm -f ~/.claude/tmp/session-changes.log
