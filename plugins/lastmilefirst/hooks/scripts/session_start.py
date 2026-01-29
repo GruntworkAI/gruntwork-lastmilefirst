@@ -313,14 +313,24 @@ def main() -> None:
     if blocker_alerts:
         alerts.extend(blocker_alerts)
 
-    # Output
+    # Output to both stdout (for Claude context) and stderr (for user terminal)
     if alerts:
-        print()
-        print("-" * 59)
-        print("|  OVERWATCH" + " " * 46 + "|")
-        print("-" * 59)
+        header = [
+            "",
+            "-" * 59,
+            "|  OVERWATCH" + " " * 46 + "|",
+            "-" * 59,
+        ]
+        # Print to stdout for Claude
+        for line in header:
+            print(line)
         for alert in alerts:
             print(alert)
+        # Echo to stderr for user visibility
+        for line in header:
+            print(line, file=sys.stderr)
+        for alert in alerts:
+            print(alert, file=sys.stderr)
 
     # Clear session change log
     session_log = get_tmp_dir() / "session-changes.log"
