@@ -26,15 +26,15 @@ fi
 # Get current timestamp
 NOW=$(date +%s)
 
-# Read state
-LAST_REVIEW=$(cat "$OVERWATCH_STATE_FILE" | grep -o '"last_review":[0-9]*' | grep -o '[0-9]*' || echo "0")
-LAST_ORGANIZE=$(cat "$OVERWATCH_STATE_FILE" | grep -o '"last_organize":[0-9]*' | grep -o '[0-9]*' || echo "0")
-LAST_PLUGIN_CHECK=$(cat "$OVERWATCH_STATE_FILE" | grep -o '"last_plugin_check":[0-9]*' | grep -o '[0-9]*' || echo "0")
+# Read state (with fallback to 0 for missing/empty values)
+LAST_REVIEW=$(cat "$OVERWATCH_STATE_FILE" | grep -o '"last_review":[0-9]*' | grep -o '[0-9]*' || true)
+LAST_REVIEW=${LAST_REVIEW:-0}
+LAST_ORGANIZE=$(cat "$OVERWATCH_STATE_FILE" | grep -o '"last_organize":[0-9]*' | grep -o '[0-9]*' || true)
+LAST_ORGANIZE=${LAST_ORGANIZE:-0}
 
 # Calculate days since last actions
 DAYS_SINCE_REVIEW=$(( (NOW - LAST_REVIEW) / 86400 ))
 DAYS_SINCE_ORGANIZE=$(( (NOW - LAST_ORGANIZE) / 86400 ))
-DAYS_SINCE_PLUGIN_CHECK=$(( (NOW - LAST_PLUGIN_CHECK) / 86400 ))
 
 # Collect alerts
 ALERTS=""
@@ -62,20 +62,11 @@ elif [ "$DAYS_SINCE_ORGANIZE" -ge 14 ]; then
   ALERTS="${ALERTS}🗂️  ${DAYS_SINCE_ORGANIZE} days since last /organize-project\n"
 fi
 
-# --- Check 4: Plugin Updates (check weekly) ---
-if [ "$DAYS_SINCE_PLUGIN_CHECK" -ge 7 ]; then
-  ALERTS="${ALERTS}🔄 Consider checking for plugin updates: claude /plugin update lastmilefirst\n"
-  # Update last check time (with file locking if available)
-  if [ "$USE_FLOCK" = true ]; then
-    (
-      flock -x 200
-      cat "$OVERWATCH_STATE_FILE" | sed "s/\"last_plugin_check\":[0-9]*/\"last_plugin_check\":$NOW/" > "${OVERWATCH_STATE_FILE}.tmp"
-      mv "${OVERWATCH_STATE_FILE}.tmp" "$OVERWATCH_STATE_FILE"
-    ) 200>"$OVERWATCH_LOCK_FILE"
-  else
-    cat "$OVERWATCH_STATE_FILE" | sed "s/\"last_plugin_check\":[0-9]*/\"last_plugin_check\":$NOW/" > "${OVERWATCH_STATE_FILE}.tmp"
-    mv "${OVERWATCH_STATE_FILE}.tmp" "$OVERWATCH_STATE_FILE"
-  fi
+# --- Check 4: Plugin Updates (check all installed plugins) ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_UPDATES=$("$SCRIPT_DIR/check-plugin-updates.sh" 2>/dev/null || true)
+if [ -n "$PLUGIN_UPDATES" ]; then
+  ALERTS="${ALERTS}${PLUGIN_UPDATES}\n"
 fi
 
 # --- Check 5: Stale Todos (if .claude/work/todos exists) ---
