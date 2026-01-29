@@ -5,6 +5,20 @@ All notable changes to the lastmilefirst plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-01-29
+
+### Added
+- **Cross-project todo aggregation** (`/run-todos-summary`)
+  - Scans `.claude/work/todos/` across all projects in an org
+  - Multiple output formats: terminal, json, compact, project
+  - `--by-project` flag for project-centric view
+  - State classification: urgent, blocked, active, stale
+  - Overwatch integration shows urgent/blocked at session start
+- Workspace configuration at `~/.claude/workspace-config.json`
+  - Defines workspace root and org directories
+  - Consistent terminology with organize-claude skill
+- 5-minute cache for fast repeated queries
+
 ## [0.8.0] - 2026-01-29
 
 ### Changed
