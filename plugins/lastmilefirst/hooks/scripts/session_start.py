@@ -28,6 +28,9 @@ from overwatch import (
     version_compare,
 )
 
+# Path to todos-summary scripts (sibling skill)
+TODOS_SUMMARY_SCRIPTS = Path(__file__).parent.parent.parent / "skills" / "todos-summary" / "scripts"
+
 
 def check_git_status() -> Optional[str]:
     """Check for uncommitted git changes in current directory."""
@@ -220,6 +223,48 @@ def check_claude_md() -> Optional[str]:
     return None
 
 
+def check_cross_project_blockers() -> List[str]:
+    """
+    Check for urgent/blocked todos across all projects.
+
+    Uses the todos-summary aggregator to scan workspaces and report
+    items that need attention.
+    """
+    results: List[str] = []
+
+    # Only run if the todos-summary skill is available
+    if not TODOS_SUMMARY_SCRIPTS.exists():
+        return results
+
+    try:
+        # Import the aggregator dynamically
+        sys.path.insert(0, str(TODOS_SUMMARY_SCRIPTS))
+        from aggregator import TodoAggregator
+        from formatters import OverwatchFormatter
+
+        aggregator = TodoAggregator()
+        data = aggregator.aggregate_todos(use_cache=True)
+
+        # Use the Overwatch formatter for compact output
+        formatter = OverwatchFormatter()
+        output = formatter.format(data)
+
+        if output:
+            for line in output.split("\n"):
+                results.append(line)
+
+    except ImportError:
+        pass  # Skill not properly installed - skip silently
+    except Exception:
+        pass  # Any error - skip silently to not break session start
+    finally:
+        # Clean up sys.path
+        if str(TODOS_SUMMARY_SCRIPTS) in sys.path:
+            sys.path.remove(str(TODOS_SUMMARY_SCRIPTS))
+
+    return results
+
+
 def main() -> None:
     alerts: List[str] = []
 
@@ -262,6 +307,11 @@ def main() -> None:
     claude_md_alert = check_claude_md()
     if claude_md_alert:
         alerts.append(claude_md_alert)
+
+    # Check 8: Cross-project blockers
+    blocker_alerts = check_cross_project_blockers()
+    if blocker_alerts:
+        alerts.extend(blocker_alerts)
 
     # Output
     if alerts:
