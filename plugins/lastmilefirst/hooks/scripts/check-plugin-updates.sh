@@ -150,5 +150,5 @@ if [ -n "$UPDATES" ]; then
     available=$(echo "$line" | cut -d' ' -f3)
     echo "   ${plugin}: ${installed} → ${available}"
   done
-  echo "   Run: claude /plugin update <name>"
+  echo "   Run: claude plugin update <plugin>@<marketplace>"
 fi
