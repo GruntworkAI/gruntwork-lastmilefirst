@@ -69,7 +69,13 @@ if [ -n "$PLUGIN_UPDATES" ]; then
   ALERTS="${ALERTS}${PLUGIN_UPDATES}\n"
 fi
 
-# --- Check 5: Stale Todos (if .claude/work/todos exists) ---
+# --- Check 5: Usage Stats ---
+USAGE_REPORT=$("$SCRIPT_DIR/usage-report.sh" 2>/dev/null || true)
+if [ -n "$USAGE_REPORT" ]; then
+  ALERTS="${ALERTS}${USAGE_REPORT}\n"
+fi
+
+# --- Check 6: Stale Todos (if .claude/work/todos exists) ---
 if [ -d ".claude/work/todos" ]; then
   STALE_TODOS=$(find .claude/work/todos -name "*.md" -mtime +14 2>/dev/null | wc -l | tr -d ' ')
   if [ "$STALE_TODOS" -gt 0 ]; then
@@ -77,7 +83,7 @@ if [ -d ".claude/work/todos" ]; then
   fi
 fi
 
-# --- Check 6: Missing CLAUDE.md ---
+# --- Check 7: Missing CLAUDE.md ---
 if [ ! -f "CLAUDE.md" ]; then
   ALERTS="${ALERTS}📄 No CLAUDE.md in this project - consider /organize-claude scaffold\n"
 fi
