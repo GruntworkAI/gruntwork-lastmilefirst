@@ -1,12 +1,12 @@
 {
-  "description": "Lastmilefirst Overwatch - proactive checks and reminders",
+  "description": "Lastmilefirst Overwatch - proactive checks and reminders (cross-platform)",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session_start.py",
             "timeout": 10000
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mkdir -p ~/.claude/tmp && echo 'edit' >> ~/.claude/tmp/session-changes.log"
+            "command": "python3 -c \"from pathlib import Path; d = Path.home() / '.claude' / 'tmp'; d.mkdir(parents=True, exist_ok=True); (d / 'session-changes.log').open('a').write('edit\\n')\""
           }
         ]
       },
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mkdir -p ~/.claude/tmp && echo 'write' >> ~/.claude/tmp/session-changes.log"
+            "command": "python3 -c \"from pathlib import Path; d = Path.home() / '.claude' / 'tmp'; d.mkdir(parents=True, exist_ok=True); (d / 'session-changes.log').open('a').write('write\\n')\""
           }
         ]
       },
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/log-invocation.sh skill"
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/log_invocation.py skill"
           }
         ]
       },
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/log-invocation.sh agent"
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/log_invocation.py agent"
           }
         ]
       }
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rm -f ~/.claude/tmp/session-changes.log"
+            "command": "python3 -c \"from pathlib import Path; (Path.home() / '.claude' / 'tmp' / 'session-changes.log').unlink(missing_ok=True)\""
           }
         ]
       }

@@ -51,36 +51,28 @@ claude --plugin-dir /path/to/gruntwork-marketplace/plugins/lastmilefirst
 |----------|---------|-------|
 | **macOS** | Full | Primary development platform |
 | **Linux** | Full | All features supported |
-| **WSL/WSL2** | Full | Recommended for Windows users |
-| **Windows (native)** | Limited | Core features work, Overwatch hooks degraded |
-| **Windows (Git Bash)** | Limited | Same as native Windows |
+| **WSL/WSL2** | Full | All features supported |
+| **Windows (native)** | Full | Python 3.9+ required |
 
-### Platform-Specific Features
+### Prerequisites
 
-**Overwatch hooks** (session tracking, usage stats, plugin update checks) rely on Unix utilities:
+- **Python 3.9+** - Required for Overwatch hooks
+- **Git** - For repository status checks
 
-| Feature | Mac/Linux | Windows |
-|---------|-----------|---------|
-| Session tracking | Full | Degraded (no file locking) |
-| Usage statistics | Full | Degraded |
-| Plugin update checks | Full | Works (uses Python fallback) |
-| State file locking (`flock`) | Yes | No (graceful skip) |
+### Cross-Platform Implementation
 
-**Unix utilities used by hooks:**
-- `flock` - File locking (skipped on Windows)
-- `tail`, `head`, `wc`, `cut` - Log processing
-- `sort`, `uniq` - Usage aggregation
-- `ps`, `grep` - Process detection
+Overwatch hooks are implemented in Python for full cross-platform support:
 
-### Windows Users
+| Feature | Mac/Linux/Windows |
+|---------|-------------------|
+| Session tracking | Full |
+| Usage statistics | Full |
+| Plugin update checks | Full |
+| State file locking | Full (`fcntl`/`msvcrt`) |
 
-For full functionality on Windows, we recommend:
-
-1. **WSL2** (preferred) - Full Linux environment, all features work
-2. **Git Bash** - Core plugin features work, Overwatch hooks degraded
-3. **Native Windows** - Same as Git Bash
-
-The plugin detects missing utilities and degrades gracefully rather than failing.
+The Python implementation automatically uses the appropriate file locking mechanism:
+- Unix (macOS/Linux): `fcntl.flock()`
+- Windows: `msvcrt.locking()`
 
 ## Commands
 
