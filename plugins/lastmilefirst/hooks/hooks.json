@@ -54,8 +54,9 @@
       {
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "Quick check before finishing: Look at ~/.claude/tmp/session-changes.log to see if files were modified this session. If the file exists and has content, AND there are uncommitted git changes in the current directory, consider suggesting: 'You have uncommitted changes - want me to commit them?' Only mention this once per session, and only if relevant. If no changes or already committed, say nothing about this."
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop_hook.py",
+            "timeout": 5000
           }
         ]
       }
