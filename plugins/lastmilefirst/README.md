@@ -45,6 +45,43 @@ Run these commands inside a Claude Code session:
 claude --plugin-dir /path/to/gruntwork-marketplace/plugins/lastmilefirst
 ```
 
+## Platform Requirements
+
+| Platform | Support | Notes |
+|----------|---------|-------|
+| **macOS** | Full | Primary development platform |
+| **Linux** | Full | All features supported |
+| **WSL/WSL2** | Full | Recommended for Windows users |
+| **Windows (native)** | Limited | Core features work, Overwatch hooks degraded |
+| **Windows (Git Bash)** | Limited | Same as native Windows |
+
+### Platform-Specific Features
+
+**Overwatch hooks** (session tracking, usage stats, plugin update checks) rely on Unix utilities:
+
+| Feature | Mac/Linux | Windows |
+|---------|-----------|---------|
+| Session tracking | Full | Degraded (no file locking) |
+| Usage statistics | Full | Degraded |
+| Plugin update checks | Full | Works (uses Python fallback) |
+| State file locking (`flock`) | Yes | No (graceful skip) |
+
+**Unix utilities used by hooks:**
+- `flock` - File locking (skipped on Windows)
+- `tail`, `head`, `wc`, `cut` - Log processing
+- `sort`, `uniq` - Usage aggregation
+- `ps`, `grep` - Process detection
+
+### Windows Users
+
+For full functionality on Windows, we recommend:
+
+1. **WSL2** (preferred) - Full Linux environment, all features work
+2. **Git Bash** - Core plugin features work, Overwatch hooks degraded
+3. **Native Windows** - Same as Git Bash
+
+The plugin detects missing utilities and degrades gracefully rather than failing.
+
 ## Commands
 
 All commands use the `run-` prefix for discoverability via autocomplete.
