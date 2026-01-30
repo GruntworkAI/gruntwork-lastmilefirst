@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""
+Plugin Inventory Tool
+
+Displays installed Claude Code plugins with versions, stats, and usage data.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+
+def get_claude_dir() -> Path:
+    """Get the Claude configuration directory."""
+    return Path.home() / ".claude"
+
+
+def load_installed_plugins() -> dict:
+    """Load installed plugins from installed_plugins.json."""
+    plugins_file = get_claude_dir() / "plugins" / "installed_plugins.json"
+    if not plugins_file.exists():
+        return {}
+
+    try:
+        with open(plugins_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("plugins", {})
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def load_plugin_json(install_path: Path) -> dict:
+    """Load plugin.json from a plugin's install path."""
+    plugin_json = install_path / ".claude-plugin" / "plugin.json"
+    if not plugin_json.exists():
+        return {}
+
+    try:
+        with open(plugin_json, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def count_skills(install_path: Path) -> int:
+    """Count skills in a plugin."""
+    skills_dir = install_path / "skills"
+    if not skills_dir.exists():
+        return 0
+
+    count = 0
+    for item in skills_dir.iterdir():
+        if item.is_dir():
+            skill_md = item / "SKILL.md"
+            if skill_md.exists():
+                count += 1
+    return count
+
+
+def count_commands(install_path: Path) -> int:
+    """Count commands in a plugin."""
+    commands_dir = install_path / "commands"
+    if not commands_dir.exists():
+        return 0
+
+    return len(list(commands_dir.glob("*.md")))
+
+
+def count_agents(install_path: Path) -> int:
+    """Count agents in a plugin."""
+    agents_dir = install_path / "agents"
+    if not agents_dir.exists():
+        return 0
+
+    return len(list(agents_dir.glob("*.md")))
+
+
+def load_invocations(days: int = 7) -> list[tuple[int, str]]:
+    """Load invocations from the log file within the specified days."""
+    invocations_file = get_claude_dir() / "lastmilefirst" / "invocations.log"
+    if not invocations_file.exists():
+        return []
+
+    cutoff = int(time.time()) - (days * 24 * 60 * 60)
+    invocations = []
+
+    try:
+        with open(invocations_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if "|" in line:
+                    parts = line.split("|", 1)
+                    if len(parts) == 2:
+                        try:
+                            timestamp = int(parts[0])
+                            if timestamp >= cutoff:
+                                invocations.append((timestamp, parts[1]))
+                        except ValueError:
+                            continue
+    except IOError:
+        return []
+
+    return invocations
+
+
+def aggregate_invocations(invocations: list[tuple[int, str]]) -> dict[str, int]:
+    """Aggregate invocations by skill name."""
+    counts: dict[str, int] = {}
+    for _, skill_name in invocations:
+        counts[skill_name] = counts.get(skill_name, 0) + 1
+    return counts
+
+
+def format_time_ago(timestamp: int) -> str:
+    """Format a timestamp as a human-readable time ago string."""
+    now = int(time.time())
+    diff = now - timestamp
+
+    if diff < 60:
+        return "just now"
+    elif diff < 3600:
+        mins = diff // 60
+        return f"{mins} minute{'s' if mins != 1 else ''} ago"
+    elif diff < 86400:
+        hours = diff // 3600
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    else:
+        days = diff // 86400
+        return f"{days} day{'s' if days != 1 else ''} ago"
+
+
+def format_date(iso_date: str) -> str:
+    """Format an ISO date string."""
+    try:
+        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d")
+    except ValueError:
+        return iso_date[:10] if len(iso_date) >= 10 else iso_date
+
+
+def print_separator(char: str = "─", width: int = 60) -> None:
+    """Print a separator line."""
+    print(char * width)
+
+
+def print_inventory(
+    plugins: dict,
+    invocations: list[tuple[int, str]],
+    verbose: bool = False,
+    show_usage: bool = False,
+    days: int = 7,
+) -> None:
+    """Print the plugin inventory."""
+    print()
+    print("Installed Plugins")
+    print_separator()
+    print()
+
+    aggregated = aggregate_invocations(invocations)
+    total_invocations = len(invocations)
+    last_invocation = max((ts for ts, _ in invocations), default=0) if invocations else 0
+
+    plugin_count = 0
+
+    for plugin_key, plugin_entries in sorted(plugins.items()):
+        if not plugin_entries:
+            continue
+
+        # Use first entry (typically only one per plugin)
+        entry = plugin_entries[0]
+        install_path = Path(entry.get("installPath", ""))
+        version = entry.get("version", "unknown")
+
+        # Load plugin metadata
+        plugin_json = load_plugin_json(install_path)
+        name = plugin_json.get("name", plugin_key.split("@")[0])
+        description = plugin_json.get("description", "")
+
+        # Truncate description
+        if len(description) > 70:
+            description = description[:67] + "..."
+
+        # Count components
+        skills = count_skills(install_path)
+        commands = count_commands(install_path)
+        agents = count_agents(install_path)
+
+        # Print plugin info
+        print(f"{plugin_key}  v{version}")
+        if description:
+            print(f"  {description}")
+
+        # Components line
+        components = []
+        if skills:
+            components.append(f"Skills: {skills}")
+        if commands:
+            components.append(f"Commands: {commands}")
+        if agents:
+            components.append(f"Agents: {agents}")
+        if components:
+            print(f"  {' | '.join(components)}")
+
+        # Verbose info
+        if verbose:
+            print()
+            print(f"  Path: {install_path}")
+            installed_at = entry.get("installedAt", "")
+            updated_at = entry.get("lastUpdated", "")
+            git_sha = entry.get("gitCommitSha", "")[:8] if entry.get("gitCommitSha") else ""
+
+            if installed_at:
+                print(f"  Installed: {format_date(installed_at)}")
+            if updated_at and updated_at != installed_at:
+                print(f"  Updated: {format_date(updated_at)}")
+            if git_sha:
+                print(f"  Commit: {git_sha}")
+
+        # Usage stats (only for lastmilefirst which has tracking)
+        if "lastmilefirst" in plugin_key and aggregated:
+            print()
+            print(f"  Usage (last {days} days):")
+
+            if show_usage:
+                # Detailed breakdown
+                for skill_name, count in sorted(aggregated.items(), key=lambda x: -x[1]):
+                    print(f"    {skill_name}: {count}")
+            else:
+                # Summary line
+                top_items = sorted(aggregated.items(), key=lambda x: -x[1])[:3]
+                summary = "    " + "  ".join(f"{name}: {count}" for name, count in top_items)
+                print(summary)
+                if len(aggregated) > 3:
+                    print(f"    ... and {len(aggregated) - 3} more")
+
+            print(f"    Total: {total_invocations}")
+            if last_invocation:
+                print(f"  Last invocation: {format_time_ago(last_invocation)}")
+
+        print()
+        plugin_count += 1
+
+    if plugin_count == 0:
+        print("No plugins installed.")
+        print()
+
+    print_separator()
+    summary_parts = [f"{plugin_count} plugin{'s' if plugin_count != 1 else ''} installed"]
+    if total_invocations:
+        summary_parts.append(f"{total_invocations} invocations (last {days} days)")
+    print(" | ".join(summary_parts))
+    print()
+
+
+def print_json(
+    plugins: dict,
+    invocations: list[tuple[int, str]],
+    days: int = 7,
+) -> None:
+    """Print the plugin inventory as JSON."""
+    aggregated = aggregate_invocations(invocations)
+
+    output = {
+        "plugins": [],
+        "usage": {
+            "days": days,
+            "total_invocations": len(invocations),
+            "by_skill": aggregated,
+        },
+    }
+
+    for plugin_key, plugin_entries in sorted(plugins.items()):
+        if not plugin_entries:
+            continue
+
+        entry = plugin_entries[0]
+        install_path = Path(entry.get("installPath", ""))
+        plugin_json = load_plugin_json(install_path)
+
+        plugin_data = {
+            "key": plugin_key,
+            "name": plugin_json.get("name", plugin_key.split("@")[0]),
+            "version": entry.get("version", "unknown"),
+            "description": plugin_json.get("description", ""),
+            "install_path": str(install_path),
+            "installed_at": entry.get("installedAt", ""),
+            "last_updated": entry.get("lastUpdated", ""),
+            "git_commit_sha": entry.get("gitCommitSha", ""),
+            "components": {
+                "skills": count_skills(install_path),
+                "commands": count_commands(install_path),
+                "agents": count_agents(install_path),
+            },
+        }
+        output["plugins"].append(plugin_data)
+
+    print(json.dumps(output, indent=2))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Display installed Claude Code plugins with versions and usage stats"
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output as JSON",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show detailed info (paths, timestamps, git SHA)",
+    )
+    parser.add_argument(
+        "--usage", "-u",
+        action="store_true",
+        help="Show detailed usage breakdown by skill name",
+    )
+    parser.add_argument(
+        "--since",
+        type=int,
+        default=7,
+        metavar="DAYS",
+        help="Filter usage to last N days (default: 7)",
+    )
+    args = parser.parse_args()
+
+    # Load data
+    plugins = load_installed_plugins()
+    invocations = load_invocations(days=args.since)
+
+    if args.json:
+        print_json(plugins, invocations, days=args.since)
+    else:
+        print_inventory(
+            plugins,
+            invocations,
+            verbose=args.verbose,
+            show_usage=args.usage,
+            days=args.since,
+        )
+
+
+if __name__ == "__main__":
+    main()
