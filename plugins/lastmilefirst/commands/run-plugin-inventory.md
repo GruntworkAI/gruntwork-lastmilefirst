@@ -2,6 +2,18 @@
 
 Display installed Claude Code plugins with versions, component counts, and usage statistics.
 
+## IMPORTANT: Auto-Execute
+
+**When this command is invoked, Claude MUST immediately run:**
+
+```bash
+# Find latest version and run
+PLUGIN_DIR=$(ls -d ~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/ 2>/dev/null | sort -V | tail -1)
+python3 "${PLUGIN_DIR}skills/plugin-inventory/scripts/inventory.py" [any args]
+```
+
+Do NOT just display this documentation - execute the script and show the output.
+
 ## Usage
 
 ```
