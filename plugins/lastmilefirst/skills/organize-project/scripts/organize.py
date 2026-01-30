@@ -10,6 +10,7 @@ Establishes consistent project structure:
 
 Always shows what will happen and asks for confirmation before any changes.
 """
+from __future__ import annotations
 
 import argparse
 import re
@@ -439,6 +440,7 @@ def main():
             total_scattered = sum(len(v) for v in scattered.values())
             if total_scattered:
                 print(f"  • Move {total_scattered} scattered files")
+            choice = None  # Skip execution in dry-run mode
         elif auto_yes:
             choice = "O"
         else:
@@ -455,7 +457,7 @@ def main():
                 print("Exiting.")
                 return
 
-        if choice == "O":
+        if not dry_run and choice == "O":
             # Create missing directories
             if structure["missing_dirs"]:
                 create_structure(project_root, structure["missing_dirs"])

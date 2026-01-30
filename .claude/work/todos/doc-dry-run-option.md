@@ -1,6 +1,6 @@
 # Todo: Document --dry-run option in organize-project SKILL.md
 
-**Status:** pending
+**Status:** complete
 **Priority:** medium
 **Created:** 2026-01-29
 

@@ -187,16 +187,29 @@ Migrating files...
 python ${SKILL_ROOT}/scripts/organize.py
 ```
 
-Or for a specific project:
+Preview changes without making them (dry run):
+
+```bash
+python ${SKILL_ROOT}/scripts/organize.py --dry-run
+```
+
+For a specific project:
 
 ```bash
 python ${SKILL_ROOT}/scripts/organize.py /path/to/project
+python ${SKILL_ROOT}/scripts/organize.py /path/to/project --dry-run
 ```
 
 Skip CLAUDE.md check:
 
 ```bash
 python ${SKILL_ROOT}/scripts/organize.py --skip-claude-check
+```
+
+Auto-confirm all actions (non-interactive):
+
+```bash
+python ${SKILL_ROOT}/scripts/organize.py --yes
 ```
 
 ## Technical Details
