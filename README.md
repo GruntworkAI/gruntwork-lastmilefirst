@@ -43,7 +43,7 @@ To get the latest plugin versions:
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [lastmilefirst](plugins/lastmilefirst/) | 0.9.4 | AI expert agents, CLAUDE.md management, project organization |
+| [lastmilefirst](plugins/lastmilefirst/) | 0.9.5 | AI expert agents, CLAUDE.md management, project organization |
 
 ## About
 
