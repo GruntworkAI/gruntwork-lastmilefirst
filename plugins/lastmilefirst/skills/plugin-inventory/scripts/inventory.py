@@ -19,6 +19,34 @@ def get_claude_dir() -> Path:
     return Path.home() / ".claude"
 
 
+def parse_semver(version: str) -> tuple[int, int, int]:
+    """Parse a semver string into a tuple for comparison."""
+    try:
+        parts = version.split(".")
+        return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0, int(parts[2]) if len(parts) > 2 else 0)
+    except (ValueError, IndexError):
+        return (0, 0, 0)
+
+
+def get_latest_cached_version(marketplace: str, plugin_name: str) -> tuple[str, Path] | None:
+    """Find the latest cached version of a plugin."""
+    cache_dir = get_claude_dir() / "plugins" / "cache" / marketplace / plugin_name
+    if not cache_dir.exists():
+        return None
+
+    versions = []
+    for item in cache_dir.iterdir():
+        if item.is_dir() and not item.name.startswith("."):
+            versions.append((parse_semver(item.name), item.name, item))
+
+    if not versions:
+        return None
+
+    versions.sort(reverse=True)
+    _, version_str, path = versions[0]
+    return (version_str, path)
+
+
 def load_installed_plugins() -> dict:
     """Load installed plugins from installed_plugins.json."""
     plugins_file = get_claude_dir() / "plugins" / "installed_plugins.json"
@@ -175,8 +203,27 @@ def print_inventory(
         install_path = Path(entry.get("installPath", ""))
         version = entry.get("version", "unknown")
 
-        # Load plugin metadata
-        plugin_json = load_plugin_json(install_path)
+        # Check for newer cached version
+        # plugin_key format: "name@marketplace"
+        parts = plugin_key.split("@")
+        plugin_name = parts[0]
+        marketplace = parts[1] if len(parts) > 1 else ""
+
+        cached_info = get_latest_cached_version(marketplace, plugin_name) if marketplace else None
+        cached_version, cached_path = cached_info if cached_info else (None, None)
+
+        # Use cached path if it's newer (Claude Code loads from cache after marketplace update)
+        active_path = install_path
+        active_version = version
+        version_mismatch = False
+
+        if cached_version and parse_semver(cached_version) > parse_semver(version):
+            active_path = cached_path
+            active_version = cached_version
+            version_mismatch = True
+
+        # Load plugin metadata from active path
+        plugin_json = load_plugin_json(active_path)
         name = plugin_json.get("name", plugin_key.split("@")[0])
         description = plugin_json.get("description", "")
 
@@ -184,13 +231,16 @@ def print_inventory(
         if len(description) > 70:
             description = description[:67] + "..."
 
-        # Count components
-        skills = count_skills(install_path)
-        commands = count_commands(install_path)
-        agents = count_agents(install_path)
+        # Count components from active path
+        skills = count_skills(active_path)
+        commands = count_commands(active_path)
+        agents = count_agents(active_path)
 
         # Print plugin info
-        print(f"{plugin_key}  v{version}")
+        if version_mismatch:
+            print(f"{plugin_key}  v{active_version} (cached, installed: v{version})")
+        else:
+            print(f"{plugin_key}  v{active_version}")
         if description:
             print(f"  {description}")
 
@@ -279,21 +329,41 @@ def print_json(
 
         entry = plugin_entries[0]
         install_path = Path(entry.get("installPath", ""))
-        plugin_json = load_plugin_json(install_path)
+        version = entry.get("version", "unknown")
+
+        # Check for newer cached version
+        parts = plugin_key.split("@")
+        plugin_name = parts[0]
+        marketplace = parts[1] if len(parts) > 1 else ""
+
+        cached_info = get_latest_cached_version(marketplace, plugin_name) if marketplace else None
+        cached_version, cached_path = cached_info if cached_info else (None, None)
+
+        # Use cached path if it's newer
+        active_path = install_path
+        active_version = version
+
+        if cached_version and parse_semver(cached_version) > parse_semver(version):
+            active_path = cached_path
+            active_version = cached_version
+
+        plugin_json = load_plugin_json(active_path)
 
         plugin_data = {
             "key": plugin_key,
             "name": plugin_json.get("name", plugin_key.split("@")[0]),
-            "version": entry.get("version", "unknown"),
+            "version": active_version,
+            "installed_version": version,
             "description": plugin_json.get("description", ""),
             "install_path": str(install_path),
+            "active_path": str(active_path),
             "installed_at": entry.get("installedAt", ""),
             "last_updated": entry.get("lastUpdated", ""),
             "git_commit_sha": entry.get("gitCommitSha", ""),
             "components": {
-                "skills": count_skills(install_path),
-                "commands": count_commands(install_path),
-                "agents": count_agents(install_path),
+                "skills": count_skills(active_path),
+                "commands": count_commands(active_path),
+                "agents": count_agents(active_path),
             },
         }
         output["plugins"].append(plugin_data)

@@ -7,6 +7,16 @@ description: Display installed Claude Code plugins with versions, component coun
 
 Displays installed Claude Code plugins with versions and usage stats directly in the terminal, without requiring navigation through the interactive plugin UI.
 
+## IMPORTANT: Auto-Execute
+
+**When this skill is invoked via `/run-plugin-inventory`, Claude MUST immediately run the script:**
+
+```bash
+python3 ${SKILL_ROOT}/scripts/inventory.py [any args passed to command]
+```
+
+Do NOT just display this documentation - execute the script and show the output to the user.
+
 ## Usage
 
 ```bash
