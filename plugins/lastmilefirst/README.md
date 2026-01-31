@@ -59,21 +59,6 @@ claude --plugin-dir /path/to/gruntwork-marketplace/plugins/lastmilefirst
 - **Python 3.9+** - Required for Overwatch hooks
 - **Git** - For repository status checks
 
-### Cross-Platform Implementation
-
-Overwatch hooks are implemented in Python for full cross-platform support:
-
-| Feature | Mac/Linux/Windows |
-|---------|-------------------|
-| Session tracking | Full |
-| Usage statistics | Full |
-| Plugin update checks | Full |
-| State file locking | Full (`fcntl`/`msvcrt`) |
-
-The Python implementation automatically uses the appropriate file locking mechanism:
-- Unix (macOS/Linux): `fcntl.flock()`
-- Windows: `msvcrt.locking()`
-
 ## Commands
 
 All commands use the `run-` prefix for discoverability via autocomplete.
@@ -91,10 +76,103 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | `/run-consult-operative` | Consult your private operatives |
 | `/run-create-operative` | Create a new private operative |
 | `/run-overwatch` | Check status and manage proactive monitoring |
+| `/run-plugin-inventory` | Show installed plugins with versions and usage stats |
+| `/run-todos-summary` | Aggregate todos across all projects in an org |
 
-## Operatives
+## Public Expert Agents
 
-Operatives are **private AI personas** you create for specialized needs - competitive advantages, domain-specific expertise, or project-specific knowledge that you don't want public.
+The plugin includes 13 AI expert personas you can consult when you need specialized knowledge. These are **public experts** - built into the plugin and available to everyone.
+
+### When to Use Experts
+
+- Claude becomes tunnel-visioned on one stack → call a specialist
+- You need domain knowledge outside your expertise → consult an expert
+- Complex decisions need strategic input → coordinate with Charles
+- Not sure who to ask → start with Scout, who routes to the right expert
+
+### Founding Team
+
+The core team with deep expertise in their domains:
+
+| Expert | Role | Personality |
+|--------|------|-------------|
+| **Charles** | CTO / Strategic Coordinator | Systems thinker, orchestrates multi-domain problems. Start here when unsure. "Each piece of work should make the next piece easier." |
+| **Adam** | AWS Infrastructure Wizard | Terraform, ECS/Fargate, deployment pipelines. Cost-conscious, security-aware. |
+| **Paloma** | Full-Stack Sorceress | Python/FastAPI + React/TypeScript. Known for elegant, type-safe solutions. Also handles state management issues. |
+| **Andor** | AI Systems Architect | Model selection, prompt engineering, AI integration patterns. "The AI Jedi." |
+| **Dino** | Product & Design Guru | UX strategy, user validation, design systems. Bridges tech and user needs. |
+| **Max** | MCP Protocol Engineer | Model Context Protocol, IDE integration, tooling automation. |
+| **Shannon** | Claude Code Expert | CLAUDE.md optimization, skills system, context management. |
+
+### Key Hires
+
+Specialists who extend the team's capabilities:
+
+| Expert | Role | Personality |
+|--------|------|-------------|
+| **Scout** | Multi-Agent Coordinator | Routes problems to the right expert. Start here when you're not sure who to ask. |
+| **Maya** | Development Methodologist | Agile, project planning, process design. Keeps projects on track. |
+| **Archer** | System Architect | ADRs, API design, database schema. Big-picture technical decisions. |
+| **Quinn** | QA Strategist | Test strategy, TDD, acceptance criteria. Quality advocate. |
+| **Reese** | Technology Researcher | Evaluation, comparison, feasibility studies. Evidence-based recommendations. |
+| **Otto** | DevOps Engineer | CI/CD, GitHub Actions, deployment automation. Pipeline specialist. |
+
+### Using Experts
+
+```bash
+# Interactive - shows available experts
+/run-consult-expert
+
+# Direct consultation
+/run-consult-expert paloma "Why is my React Query cache stale after mutation?"
+/run-consult-expert adam "Review my Terraform module for ECS"
+/run-consult-expert charles "Should we use Lambda or ECS for this service?"
+```
+
+### Experts via Task Tool (Parallel Agents)
+
+For complex problems, invoke experts as parallel agents:
+
+```
+Task: consult-paloma to review the authentication flow
+Task: consult-adam to check the infrastructure cost implications
+Task: scout-coordinator to analyze this cross-domain problem
+```
+
+## Private Operatives
+
+Operatives are **private AI personas** you create for specialized needs. They're the extension point that makes this plugin *yours*.
+
+### Why Private?
+
+The public experts handle general domain knowledge—Python best practices, AWS patterns, architecture principles. But your real competitive advantage isn't general knowledge. It's:
+
+- **Your company's coding standards** that took years to develop
+- **Your client's domain** that you've learned through hard-won experience
+- **Your proprietary methods** that differentiate your work
+- **Confidential knowledge** that can't be shared publicly
+
+Operatives keep this knowledge private while making it accessible through the same interface as public experts. Your secret sauce stays secret.
+
+### Extending the Plugin
+
+Operatives are how you extend lastmilefirst for your specific needs without forking the plugin:
+
+- **Company operatives** - Shared standards across your team (`~/.claude/operatives/`)
+- **Project operatives** - Client-specific knowledge (`.claude/operatives/`)
+- **Personal operatives** - Your own accumulated expertise
+
+When the public experts don't cover your domain, create an operative. When your company has specific patterns, encode them in an operative. When you're working with a client's proprietary system, build an operative that knows it.
+
+### Experts vs Operatives
+
+| Aspect | Public Experts | Private Operatives |
+|--------|----------------|-------------------|
+| **Source** | Built into plugin | You create them |
+| **Visibility** | Same for all users | Only visible to you |
+| **Knowledge** | General domain expertise | Your proprietary knowledge |
+| **Updates** | Plugin maintainers | You control them |
+| **Examples** | Paloma (Python), Adam (AWS) | Your company's standards, your client's domain, your methods |
 
 ### Creating Operatives
 
@@ -112,14 +190,18 @@ Operatives are **private AI personas** you create for specialized needs - compet
 
 ### Operative Storage
 
+Operatives are markdown files stored in:
+
 ```
 ~/.claude/operatives/       # User-level (available in all projects)
 .claude/operatives/         # Project-level (specific to one project)
 ```
 
-### Inheritance
+Project-level operatives override user-level operatives with the same name.
 
-Operatives can inherit from public experts:
+### Operative Template
+
+See `templates/operative.md` for the template. Operatives can inherit from public experts:
 
 ```markdown
 ---
@@ -127,32 +209,11 @@ name: razor
 title: Security Penetration Specialist
 base: paloma    # Inherits Python expertise from Paloma
 ---
+
+# Razor - Security Specialist
+
+Your custom persona definition here...
 ```
-
-## Public Expert Agents
-
-Parallel AI expert agents for complex multi-domain problems.
-
-### Founding Team
-| Agent | Domain |
-|-------|--------|
-| `consult-charles` | Strategic leadership, cross-domain coordination |
-| `consult-adam` | AWS infrastructure, Terraform, deployment |
-| `consult-paloma` | Python/React development, code quality |
-| `consult-andor` | AI systems, prompt engineering |
-| `consult-dino` | Product strategy, UX design |
-| `consult-max` | MCP protocol, IDE tooling |
-| `consult-shannon` | Claude Code optimization |
-
-### Key Hires
-| Agent | Domain |
-|-------|--------|
-| `consult-maya` | Development methodology, project planning |
-| `consult-archer` | System architecture, ADRs |
-| `scout-coordinator` | Multi-agent orchestration |
-| `consult-quinn` | QA strategy, TDD |
-| `consult-reese` | Technology research |
-| `consult-otto` | CI/CD, DevOps automation |
 
 ## Structure
 
@@ -160,7 +221,7 @@ Parallel AI expert agents for complex multi-domain problems.
 lastmilefirst/
 ├── .claude-plugin/
 │   └── plugin.json         # Plugin manifest
-├── commands/               # Minimal slash commands (for autocomplete)
+├── commands/               # Slash commands (for autocomplete)
 │   └── run-*.md            # All prefixed with run-
 ├── skills/                 # Full skill implementations
 │   ├── organize-claude/
@@ -170,6 +231,8 @@ lastmilefirst/
 │   ├── consult-operative/
 │   ├── create-operative/
 │   ├── overwatch/
+│   ├── plugin-inventory/
+│   ├── todos-summary/
 │   └── get-started/
 ├── agents/                 # Parallel expert agents (via Task tool)
 │   ├── scout-coordinator.md
@@ -178,6 +241,8 @@ lastmilefirst/
 │   └── *.md
 ├── templates/              # Templates for creating new items
 │   └── operative.md
+├── hooks/                  # Overwatch automation
+│   └── scripts/
 └── README.md
 ```
 
@@ -185,11 +250,13 @@ lastmilefirst/
 
 ### Commands (inline)
 ```bash
-/run-get-started             # See what's available
-/run-organize-claude         # Audit CLAUDE.md hierarchy
-/run-review-project          # Review project documentation
-/run-consult-expert          # Interactive expert consultation
-/run-consult-operative razor # Use your private operative
+/run-get-started              # See what's available
+/run-organize-claude          # Audit CLAUDE.md hierarchy
+/run-review-project           # Review project documentation
+/run-consult-expert           # Interactive expert consultation
+/run-consult-operative razor  # Use your private operative
+/run-plugin-inventory         # Check installed plugins and usage
+/run-todos-summary            # See todos across all projects
 ```
 
 ### Agents (parallel via Task tool)
