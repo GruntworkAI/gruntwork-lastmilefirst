@@ -13,6 +13,72 @@ Most developers build features first and figure out deployment, configuration, a
 - Establish quality gates before shipping
 - Set up expert access before you're stuck
 
+## Concepts
+
+### Tiered CLAUDE.md
+
+Claude Code reads `CLAUDE.md` files for project context. This plugin structures them in three tiers:
+
+```
+~/Code/CLAUDE.md              # Workspace-level: your preferences, global patterns
+~/Code/mycompany/CLAUDE.md    # Org-level: team standards, shared conventions
+~/Code/mycompany/app/CLAUDE.md # Project-level: specific context, commands, gotchas
+```
+
+**Why "workspace"?** The top level isn't your home directory—that's too broad. Your workspace (e.g., `~/Code/`) is the broadest *safe* scope: everything you let Claude touch. Workspace preferences apply to all your development. Org standards apply to team projects. Project specifics stay local.
+
+**Why tiers?** Lower levels inherit from higher levels. No duplication, clear override path. Your teammate's workspace preferences don't pollute your projects; your shared org standards do.
+
+### Project Structure
+
+The plugin enforces a standard structure that both humans and Claude can navigate:
+
+```
+project/
+├── CLAUDE.md           # Project context (stays at root)
+├── README.md           # Project overview (stays at root)
+├── docs/               # Static reference documentation
+│   ├── architecture.md
+│   └── deployment.md
+└── .claude/            # Working artifacts (ephemeral)
+    ├── work/
+    │   ├── todos/      # Active tasks
+    │   ├── plans/      # Implementation plans
+    │   └── sessions/   # Session notes, reviews
+    ├── debt/           # Technical debt tracking
+    └── archive/        # Auto-archived old items
+```
+
+**Why `docs/` vs `.claude/`?** Documentation is permanent reference—architecture decisions, deployment guides. Working artifacts are ephemeral—today's todos, this sprint's plan. Mixing them creates clutter and confusion. Separating them keeps both clean.
+
+**Why `.claude/`?** It's Claude-optimized. Consistent structure means Claude finds context instantly. Session notes persist across conversations. Todos don't get lost in random markdown files.
+
+**Why human-readable markdown?** Plans, session notes, and todos live in `.claude/work/` as markdown files—not databases, not proprietary formats. This matters when multiple team members work on the same project:
+
+- Your teammate's Claude session can read your session notes
+- You can review plans Claude drafted before approving them
+- Handoffs between developers (or between Claude sessions) have context
+- Everything is git-tracked and diffable
+
+The structure is Claude-optimized for fast context retrieval *and* human-readable for collaboration and review.
+
+### The Mental Model
+
+| Component | What It Is | When to Use |
+|-----------|------------|-------------|
+| **CLAUDE.md** | Project context and instructions | Always—Claude reads this automatically |
+| **Skills** | Reusable workflows with documentation | Complex multi-step tasks (`/organize-project`) |
+| **Agents** | Expert personas via Task tool | Parallel consultation, specialized knowledge |
+| **Operatives** | Your private expert personas | Proprietary knowledge, company-specific patterns |
+
+**Why all four?** Different problems need different tools:
+- CLAUDE.md gives Claude *passive* context it always has
+- Skills give Claude *active* workflows it can execute
+- Agents give Claude *specialized expertise* to consult
+- Operatives give *you* a way to extend the system with private knowledge
+
+They compound: CLAUDE.md tells Claude about your project, skills organize it, agents provide expertise, and operatives add your secret sauce.
+
 ## Installation
 
 Run these commands inside a Claude Code session:
