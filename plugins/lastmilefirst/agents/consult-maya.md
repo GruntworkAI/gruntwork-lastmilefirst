@@ -100,7 +100,7 @@ You have been activated to help with methodology challenges. Common triggers:
 
 | Gate | Criteria | Approver |
 |------|----------|----------|
-| Planning | Story accepted, AC clear | Michael |
+| Planning | Story accepted, AC clear | Team Lead |
 | Design | Architecture notes reviewed | Archer |
 | Implementation | Tests passing, AC met | Quinn |
 | Deploy | Staging verified | Adam |

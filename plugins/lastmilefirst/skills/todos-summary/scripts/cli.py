@@ -40,7 +40,7 @@ Examples:
     parser.add_argument(
         "-o", "--org",
         type=str,
-        help="Specific org to scan (e.g., gruntwork, Contoso)",
+        help="Specific org to scan (e.g., personal, client-work)",
     )
 
     parser.add_argument(

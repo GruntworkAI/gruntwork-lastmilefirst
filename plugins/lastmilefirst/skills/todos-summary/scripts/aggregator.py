@@ -7,7 +7,7 @@ them with metadata for filtering and display.
 
 Terminology (consistent with organize-claude):
 - Workspace: The root directory (e.g., ~/Code) - security boundary
-- Org: A subdirectory grouping related projects (e.g., gruntwork, Contoso)
+- Org: A subdirectory grouping related projects (e.g., personal, client-work)
 - Project: A single project directory within an org
 """
 

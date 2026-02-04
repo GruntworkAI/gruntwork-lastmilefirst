@@ -14,7 +14,7 @@ Consistent with other lastmilefirst skills:
 | Term | Definition | Example |
 |------|------------|---------|
 | **Workspace** | Root directory (security boundary) | `~/Code` |
-| **Org** | Subdirectory grouping related projects | `gruntwork`, `Contoso` |
+| **Org** | Subdirectory grouping related projects | `personal`, `client-work` |
 | **Project** | Individual project within an org | `gruntwork-remail` |
 
 ## Triggers
@@ -44,7 +44,7 @@ Configure your workspace at `~/.claude/workspace-config.json`:
   "workspace": "~/Code",
   "orgs": [
     {"name": "gruntwork", "default": true},
-    {"name": "Contoso", "sensitive": true}
+    {"name": "client-work", "sensitive": true}
   ],
   "exclude_patterns": ["node_modules", ".git", "venv"]
 }

@@ -25,7 +25,7 @@ Manages Claude configuration across your development workspace. Currently handle
 │   │   └── CLAUDE.md
 │   └── ...
 │
-└── Contoso/                   # Another org (optional)
+└── client-work/                  # Another org (optional)
     ├── CLAUDE.md                 # Org-specific overrides (optional)
     └── client-project/
         └── CLAUDE.md             # PROJECT LEVEL
@@ -106,7 +106,7 @@ User Level: ~/Code/CLAUDE.md
 ORG COVERAGE
 --------------------------------------------------------------
   ✗ gruntwork/CLAUDE.md         MISSING (10 projects below)
-  ✗ Contoso/CLAUDE.md        MISSING (0 projects below)
+  ✗ client-work/CLAUDE.md       MISSING (0 projects below)
 
 PROJECT COVERAGE: gruntwork/ (10 projects)
 --------------------------------------------------------------
