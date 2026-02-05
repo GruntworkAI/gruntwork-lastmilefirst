@@ -79,6 +79,29 @@ The structure is Claude-optimized for fast context retrieval *and* human-readabl
 
 They compound: CLAUDE.md tells Claude about your project, skills organize it, agents provide expertise, and operatives add your secret sauce.
 
+### The PARC Workflow
+
+Claude follows the PARC workflow by default, scaling ceremony to task complexity:
+
+```
+Plan → Allocate → Review → Compound
+```
+
+| Step | Purpose | Trivial Task | Complex Task |
+|------|---------|--------------|--------------|
+| **Plan** | Think before doing | Skip | Full planning, experts |
+| **Allocate** | Delegate to agents | Direct execution | Orchestrate multiple agents |
+| **Review** | Verify correctness | Quick check | Tests, reviewers, E2E |
+| **Compound** | Capture learnings | Skip | Prompt for wisdom/operative |
+
+**The key tension:** YAGNI vs YAGWYDI
+- **YAGNI** (You Aren't Gonna Need It) - Don't overbuild features
+- **YAGWYDI** (You're Gonna Wish You Did It) - Do invest in infrastructure
+
+PARC applies YAGNI to features and YAGWYDI to scaffolding. Don't add speculative functionality, but do capture patterns and build operatives that compound future value.
+
+For critical work, use `/run-strict-parc` to enforce explicit gates between phases.
+
 ## Installation
 
 Run these commands inside a Claude Code session:
@@ -132,6 +155,7 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | Command | Purpose |
 |---------|---------|
 | `/run-get-started` | Quick orientation and available commands |
+| `/run-organize-orgs` | Set up org infrastructure (org.json, operatives, wisdom repos) |
 | `/run-organize-claude` | Audit and scaffold CLAUDE.md hierarchy (user/org/project) |
 | `/run-organize-project` | Enforce consistent project structure (docs/, .claude/) |
 | `/run-review-claude` | Review CLAUDE.md for gaps, suggest additions |
@@ -141,6 +165,9 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | `/run-consult-expert` | Consult public AI expert personas |
 | `/run-consult-operative` | Consult your private operatives |
 | `/run-create-operative` | Create a new private operative |
+| `/run-search-wisdom` | Search org stack-wisdom for patterns and insights |
+| `/run-add-wisdom` | Capture hard-won lessons to stack-wisdom |
+| `/run-strict-parc` | Enforce strict PARC workflow with explicit gates |
 | `/run-overwatch` | Check status and manage proactive monitoring |
 | `/run-plugin-inventory` | Show installed plugins with versions and usage stats |
 | `/run-todos-summary` | Aggregate todos across all projects in an org |
@@ -256,14 +283,112 @@ When the public experts don't cover your domain, create an operative. When your 
 
 ### Operative Storage
 
-Operatives are markdown files stored in:
+Operatives are markdown files stored at three levels:
 
 ```
-~/.claude/operatives/       # User-level (available in all projects)
-.claude/operatives/         # Project-level (specific to one project)
+.claude/operatives/              # Project-level (specific to one project)
+[org]/[org]-operatives/          # Org-level (shared with team, git-tracked)
+~/.claude/operatives/            # User-level (your personal operatives)
 ```
 
-Project-level operatives override user-level operatives with the same name.
+**Lookup precedence:** Project → Org → User (first match wins)
+
+### Recommended Structure
+
+```
+~/Code/                          # Workspace
+├── CLAUDE.md                    # Workspace preferences
+├── personal/                    # Personal projects and experiments
+│   ├── CLAUDE.md                # Personal standards
+│   ├── .claude/org.json         # Org config
+│   ├── personal-operatives/     # Your personal specialists
+│   └── [projects]/
+├── work/                        # Primary professional org
+│   ├── CLAUDE.md                # Team standards
+│   ├── .claude/org.json
+│   ├── work-operatives/         # Team operatives (git repo)
+│   │   ├── compliance-bot.md
+│   │   └── deploy-master.md
+│   └── [projects]/
+└── work-2/                      # Second work org (e.g., different client)
+    ├── CLAUDE.md                # Client-specific standards
+    ├── .claude/org.json
+    └── work-2-operatives/       # Client-specific operatives
+```
+
+You can have multiple work orgs for different clients, companies, or contexts.
+
+### Org Configuration
+
+Each org can have a `.claude/org.json` for custom settings:
+
+```json
+{
+  "name": "work",
+  "operatives": {
+    "repo": "work-operatives"
+  },
+  "stack_wisdom": {
+    "repo": "work-stack-wisdom"
+  }
+}
+```
+
+If no config exists, the plugin uses conventions: `[org]-operatives/` and `[org]-stack-wisdom/`.
+
+## Stack-Wisdom
+
+Stack-wisdom is your org's institutional insight - patterns that took time to learn, captured so future sessions (and teammates) benefit immediately.
+
+### Wisdom vs. Knowledge
+
+| Wisdom | Knowledge |
+|--------|-----------|
+| Patterns and practices | Facts and data |
+| Lessons learned | Reference documentation |
+| Gotchas and pitfalls | API specifications |
+| Insights from experience | Datasets and configs |
+
+### Three Types of Wisdom
+
+| Type | Location | Purpose |
+|------|----------|---------|
+| **Patterns** | `stack-wisdom/` | Solutions to recurring problems |
+| **Circuit Breakers** | `circuit-breakers/` | Detection for critical failures |
+| **Triggers** | `triggers/` | Keywords that signal specific issues |
+
+### Using Stack-Wisdom
+
+```bash
+# Search for relevant wisdom
+/run-search-wisdom terraform workspace
+/run-search-wisdom "resource already exists"
+
+# Add new wisdom after solving a hard problem
+/run-add-wisdom
+```
+
+### The Compound Loop
+
+1. **Encounter a problem** - Something takes 30+ minutes to debug
+2. **Solve it** - With or without expert help
+3. **Capture the insight** - `/run-add-wisdom` to add the pattern
+4. **Future benefit** - Next time, `/run-search-wisdom` finds it instantly
+
+This is the "compound" in compound engineering - every hard-won insight becomes future leverage.
+
+### Stack-Wisdom Structure
+
+```
+[org]-stack-wisdom/
+├── stack-wisdom/           # Patterns and solutions
+│   ├── terraform-workspace-check.md
+│   └── python-venv-corruption.md
+├── circuit-breakers/       # Critical failure detection
+│   └── production-deploy-guard.md
+└── triggers/               # Proactive detection keywords
+    └── debugging-loop-signals.md
+```
 
 ### Operative Template
 
@@ -290,12 +415,17 @@ lastmilefirst/
 ├── commands/               # Slash commands (for autocomplete)
 │   └── run-*.md            # All prefixed with run-
 ├── skills/                 # Full skill implementations
+│   ├── organize-orgs/
 │   ├── organize-claude/
 │   ├── organize-project/
 │   ├── review-*/
 │   ├── consult-expert/
 │   ├── consult-operative/
 │   ├── create-operative/
+│   ├── search-wisdom/
+│   ├── add-wisdom/
+│   ├── parc/
+│   ├── strict-parc/
 │   ├── overwatch/
 │   ├── plugin-inventory/
 │   ├── todos-summary/
@@ -306,7 +436,11 @@ lastmilefirst/
 ├── personas/               # Expert persona definitions
 │   └── *.md
 ├── templates/              # Templates for creating new items
-│   └── operative.md
+│   ├── operative.md
+│   ├── org.json
+│   ├── wisdom-pattern.md
+│   ├── operatives-readme.md
+│   └── stack-wisdom-readme.md
 ├── hooks/                  # Overwatch automation
 │   └── scripts/
 └── README.md
@@ -333,6 +467,10 @@ Task: consult-adam for AWS deployment help
 # Multi-agent orchestration
 Task: scout-coordinator to analyze cross-domain problem
 ```
+
+## Philosophy
+
+For a deeper exploration of the ideas behind this plugin, see [Last Mile First: Fast Alone, Far Together](https://outsideshot.substack.com/p/last-mile-first-fast-alone-far-together).
 
 ## Related
 

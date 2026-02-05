@@ -147,6 +147,61 @@ POTENTIAL CONTRADICTIONS
 
 ## Scaffold Templates
 
+### Workspace-Level Template
+
+```markdown
+# Development Workspace
+
+## Security Boundary
+
+This CLAUDE.md establishes the security boundary for Claude. Everything under ~/Code/ is accessible; nothing outside is.
+
+## PARC Workflow (Default)
+
+Claude follows the PARC workflow for all development work:
+
+**P**lan → **A**llocate → **R**eview → **C**ompound
+
+| Step | Purpose | Scales With Complexity |
+|------|---------|------------------------|
+| **Plan** | Think before doing | Light for trivial, thorough for complex |
+| **Allocate** | Delegate to right agents | Skip for simple, orchestrate for complex |
+| **Review** | Verify correctness | Always (tests, validation) |
+| **Compound** | Capture learnings | When insights are hard-won |
+
+**Key principle:** YAGNI for features, YAGWYDI for infrastructure.
+
+For strict enforcement: `/run-strict-parc`
+
+## Org Structure
+
+| Org | Purpose |
+|-----|---------|
+| personal/ | Side projects, experiments, personal tools |
+| work/ | Professional work |
+
+Each org has:
+- `CLAUDE.md` - Org conventions
+- `.claude/org.json` - Org config
+- `[org]-operatives/` - AI specialists
+- `[org]-stack-wisdom/` - Patterns and lessons
+
+## Workspace Conventions
+
+### Naming
+- snake_case for code (matches Python backend as source of truth)
+- kebab-case for files and URLs
+
+### Before Any Task
+1. Check stack-wisdom: `/run-search-wisdom [topic]`
+2. Assess complexity (trivial → complex)
+3. Apply appropriate PARC ceremony
+
+### After Significant Work
+1. Offer to compound learnings
+2. Consider: wisdom, operative, CLAUDE.md update?
+```
+
 ### Org-Level Template
 
 ```markdown
@@ -155,6 +210,31 @@ POTENTIAL CONTRADICTIONS
 ## Overview
 
 {Org description - personal projects, client work, etc.}
+
+## PARC Workflow
+
+Claude follows the PARC workflow, scaling with task complexity:
+
+| Step | What | When to Emphasize |
+|------|------|-------------------|
+| **Plan** | Think before doing | Complex features, unfamiliar domains |
+| **Allocate** | Delegate to right agents | Multi-domain work, parallelizable tasks |
+| **Review** | Verify correctness | All changes (tests, code review, validation) |
+| **Compound** | Capture learnings | Hard-won insights, new patterns |
+
+**YAGNI vs YAGWYDI:**
+- YAGNI for features (don't overbuild)
+- YAGWYDI for infrastructure (invest in scaffolding that compounds)
+
+**For critical work:** Use `/run-strict-parc` to enforce explicit gates.
+
+## Org Resources
+
+| Resource | Location | Purpose |
+|----------|----------|---------|
+| Operatives | `{org}-operatives/` | Org-specific AI specialists |
+| Stack-wisdom | `{org}-stack-wisdom/` | Patterns and lessons learned |
+| Config | `.claude/org.json` | Org settings |
 
 ## Org-Specific Conventions
 
@@ -360,8 +440,35 @@ Pre-flight: Checking CLAUDE.md...
 [Q] Quit
 ```
 
+## Integration with organize-orgs
+
+When auditing an org, organize-claude checks for org infrastructure (org.json, operatives, stack-wisdom):
+
+```
+$ /run-organize-claude
+
+ORG COVERAGE
+--------------------------------------------------------------
+  ✓ work/CLAUDE.md exists
+    ⚠️ Org infrastructure incomplete:
+      - Missing .claude/org.json
+      - Missing work-operatives/
+      - Missing work-stack-wisdom/
+
+[O] Run organize-orgs to set up infrastructure
+[S] Skip and continue with CLAUDE.md audit
+```
+
+**When to suggest organize-orgs:**
+- Org has CLAUDE.md but no org.json
+- Org exists but missing operatives repo
+- Org exists but missing stack-wisdom repo
+
+This ensures orgs have full infrastructure for operatives and wisdom, not just CLAUDE.md files.
+
 ## Related Skills
 
+- `organize-orgs` - Set up org infrastructure (org.json, operatives, wisdom repos)
 - `review-claude` - Review CLAUDE.md files for gaps, suggest additions
 - `organize-project` - In-project file organization (calls this skill)
 - `review-docs` - Reviews documentation quality

@@ -24,15 +24,29 @@ For quick creation, the `/run-create-operative` command may suffice.
 ```
 Public Experts (Marketplace)
 ├── Founding Team - General domain experts
-└── Key Hires - BMAD workflow specialists
+└── Key Hires - Workflow specialists
     │
     ▼ [Inheritance possible]
     │
 Private Operatives (Your Elite Team)
 ├── User-level (~/.claude/operatives/)
 │   └── Available across all your projects
+├── Org-level ([org]-operatives/)
+│   └── Shared across team/org projects
 └── Project-level (.claude/operatives/)
     └── Specific to one project/client
+```
+
+### Recommended Org Structure
+
+```
+~/Code/                    # Workspace
+├── work/                  # Professional org
+│   ├── .claude/org.json   # Org config
+│   └── work-operatives/   # Team operatives (git repo)
+└── personal/              # Personal org
+    ├── .claude/org.json
+    └── personal-operatives/
 ```
 
 ### What Makes a Good Operative
@@ -88,8 +102,9 @@ Question 2: "What's their specialty in one line?"
 Question 3: "Where should this operative live?"
 - Header: "Scope"
 - Options:
-  - "User-level" (available everywhere)
+  - "Org-level" (shared with team, version controlled)
   - "Project-level" (this project only)
+  - "User-level" (your personal operatives, all projects)
 
 Question 4: "Should they inherit from a public expert?"
 - Header: "Base"
@@ -145,6 +160,9 @@ Based on input, craft:
 # For user-level
 mkdir -p ~/.claude/operatives
 
+# For org-level (discover org root first, then use config or convention)
+# e.g., ~/Code/work/work-operatives/
+
 # For project-level
 mkdir -p .claude/operatives
 ```
@@ -156,11 +174,25 @@ ${PLUGIN_ROOT}/templates/operative.md
 
 3. Fill in the template with gathered information
 
-4. Write the file:
+4. Write the file based on scope:
 ```
-~/.claude/operatives/{name}.md       # user-level
-.claude/operatives/{name}.md         # project-level
+~/.claude/operatives/{name}.md              # user-level
+[org-root]/[operatives-repo]/{name}.md      # org-level
+.claude/operatives/{name}.md                # project-level
 ```
+
+### Org-Level Creation
+
+When creating an org-level operative:
+
+1. Discover the org root (walk up to find CLAUDE.md in direct child of workspace)
+2. Read `[org-root]/.claude/org.json` for `operatives.repo` setting
+3. If no config, use convention: `[org-name]-operatives/`
+4. If the operatives repo doesn't exist, offer to create it:
+   - Create directory
+   - Initialize git repo
+   - Add README.md with operative documentation
+5. Write the operative file to the repo
 
 ### Step 5: Validate
 
@@ -271,17 +303,20 @@ Familiar with this project's stack:
 
 ### Listing Operatives
 
-When user runs `/run-consult-operative` without arguments, scan both directories:
+When user runs `/run-consult-operative` without arguments, scan all three levels:
 
 ```bash
-# Check user-level
-ls ~/.claude/operatives/*.md 2>/dev/null
-
 # Check project-level
 ls .claude/operatives/*.md 2>/dev/null
+
+# Check org-level (after discovering org root and operatives repo)
+ls [org-root]/[operatives-repo]/*.md 2>/dev/null
+
+# Check user-level
+ls ~/.claude/operatives/*.md 2>/dev/null
 ```
 
-Parse each file's frontmatter to display name and title.
+Parse each file's frontmatter to display name and title, grouped by level.
 
 ### Editing Operatives
 

@@ -43,7 +43,7 @@ To get the latest plugin versions:
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [lastmilefirst](plugins/lastmilefirst/) | 0.9.7 | AI expert agents, CLAUDE.md management, project organization |
+| [lastmilefirst](plugins/lastmilefirst/) | 0.10.0 | PARC workflow, AI expert agents, org-level operatives and stack-wisdom |
 
 ## About
 

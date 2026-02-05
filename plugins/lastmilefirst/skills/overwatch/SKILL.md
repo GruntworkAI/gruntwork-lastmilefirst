@@ -27,6 +27,7 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Stale todos | Every session | Any todos older than 14 days |
 | Missing CLAUDE.md | Every session | No CLAUDE.md in project |
 | Expert roster sync | Every session | User CLAUDE.md missing experts or operatives |
+| Org infrastructure | Every session | Missing org.json, operatives, or wisdom repo |
 
 ## How It Works
 
@@ -73,6 +74,52 @@ When `/run-overwatch check` is called:
 
 1. Force run all checks regardless of state
 2. Display full report
+
+## Org Infrastructure Check
+
+This check ensures the current org has proper infrastructure for operatives and stack-wisdom.
+
+### What It Checks
+
+1. **Discover current org**: Walk up from cwd to find org root (directory with CLAUDE.md that's a direct child of workspace)
+2. **Check org.json**: Does `[org]/.claude/org.json` exist?
+3. **Check operatives repo**: Does `[org]/[org]-operatives/` exist (or path from org.json)?
+4. **Check stack-wisdom repo**: Does `[org]/[org]-stack-wisdom/` exist (or path from org.json)?
+
+### Alert Conditions
+
+- ⚠️ "Org '[name]' missing .claude/org.json - run `/run-organize-orgs`"
+- ⚠️ "Org '[name]' missing operatives repo - run `/run-organize-orgs`"
+- ⚠️ "Org '[name]' missing stack-wisdom repo - run `/run-organize-orgs`"
+- ⚠️ "Org '[name]' org.json references non-existent repo: [path]"
+
+### How to Fix
+
+Run `/run-organize-orgs` to scaffold missing infrastructure:
+
+```bash
+/run-organize-orgs
+```
+
+This will:
+- Create `.claude/org.json` with default config
+- Create `[org]-operatives/` git repo
+- Create `[org]-stack-wisdom/` git repo with structure
+
+### Detection Algorithm
+
+```
+1. Find workspace root (e.g., ~/Code/)
+2. Find current org (parent directory that's direct child of workspace)
+3. If no org detected, skip check (user may be at workspace level)
+4. Check for [org]/.claude/org.json
+5. If org.json exists:
+   - Read operatives.repo and stack_wisdom.repo settings
+   - Check if those paths exist
+6. If org.json doesn't exist:
+   - Check for convention: [org]-operatives/, [org]-stack-wisdom/
+7. Report any missing infrastructure
+```
 
 ## Expert Roster Sync Check
 

@@ -5,6 +5,54 @@ All notable changes to the lastmilefirst plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-02-04
+
+### Added
+- **PARC Workflow** - Plan, Allocate, Review, Compound
+  - Default operating mode for Claude - scales ceremony to task complexity
+  - YAGNI vs YAGWYDI tension: YAGNI for features, YAGWYDI for infrastructure
+  - `parc` skill documenting the workflow
+  - `/run-strict-parc` command for enforced discipline with explicit gates
+  - PARC tracking files in `.claude/work/parc/`
+
+- **Org-Level Infrastructure**
+  - `organize-orgs` skill - explains orgs, scaffolds infrastructure
+  - Orgs as first-class concept (even "personal" is an org)
+  - Recommended structure: `personal/` and `work/` orgs
+  - `.claude/org.json` configuration file for each org
+
+- **Org-Level Operatives**
+  - Three-tier lookup: Project → Org → User
+  - Operatives repo per org: `[org]-operatives/`
+  - Updated `consult-operative` with org discovery
+  - Updated `create-operative` with org-level option
+
+- **Stack-Wisdom System**
+  - Wisdom vs Knowledge distinction (patterns vs facts)
+  - `search-wisdom` skill - find patterns, insights, circuit breakers
+  - `add-wisdom` skill - capture hard-won lessons
+  - Stack-wisdom repo per org: `[org]-stack-wisdom/`
+  - Templates: `wisdom-pattern.md`, `operatives-readme.md`, `stack-wisdom-readme.md`
+
+- **Overwatch Enhancements**
+  - Org infrastructure check (missing org.json, operatives, wisdom repos)
+  - Alerts at session start when org infrastructure incomplete
+  - Integration with organize-orgs for remediation
+
+- **CLAUDE.md Templates**
+  - Workspace-level template includes PARC workflow
+  - Org-level template includes PARC, org resources section
+  - Templates scaffold PARC-by-default
+
+- **Documentation**
+  - Philosophy article link: "Last Mile First: Fast Alone, Far Together"
+  - PARC Workflow section in README
+  - Stack-Wisdom section in README
+
+### Changed
+- `organize-claude` now detects missing org infrastructure and suggests `organize-orgs`
+- Plugin description updated to highlight PARC workflow
+
 ## [0.9.7] - 2026-02-04
 
 ### Fixed

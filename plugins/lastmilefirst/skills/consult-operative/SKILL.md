@@ -25,10 +25,52 @@ Operatives are **private personas** that you create for specialized needs:
 
 ## Where Operatives Live
 
-The command searches in order:
+The command searches in order (first match wins):
 
 1. **Project-level**: `.claude/operatives/` (project-specific operatives)
-2. **User-level**: `~/.claude/operatives/` (your personal operatives)
+2. **Org-level**: `~/[workspace]/[org]/[operatives-repo]/` (shared team operatives)
+3. **User-level**: `~/.claude/operatives/` (your personal operatives)
+
+### Org-Level Discovery
+
+To find org operatives:
+
+1. Walk up from current directory to find the org root (contains `CLAUDE.md` and is direct child of workspace like `~/Code/`)
+2. Check for `[org]/.claude/org.json` - if exists, read `operatives.repo` setting
+3. If no config, use convention: `[org]-operatives/` directory
+4. Look for operative files in that repo
+
+**Example org.json:**
+```json
+{
+  "name": "acme-corp",
+  "operatives": {
+    "repo": "acme-operatives"
+  }
+}
+```
+
+**Resolution example for `~/Code/acme-corp/webapp/`:**
+- Org root: `~/Code/acme-corp/`
+- Config: `~/Code/acme-corp/.claude/org.json`
+- Operatives: `~/Code/acme-corp/acme-operatives/` (from config or convention)
+
+### Recommended Org Structure
+
+New users should create two default orgs:
+
+```
+~/Code/                    # Workspace
+├── CLAUDE.md              # Workspace preferences
+├── work/                  # Professional projects
+│   ├── CLAUDE.md
+│   ├── .claude/org.json
+│   └── work-operatives/
+└── personal/              # Side projects
+    ├── CLAUDE.md
+    ├── .claude/org.json
+    └── personal-operatives/
+```
 
 ## Finding the Operative
 
@@ -42,8 +84,22 @@ When invoked:
    - Subdirectories are allowed (e.g., `security/razor`)
    - If invalid, respond: "Invalid operative name. Names cannot contain '..' or start with '/' or '~'."
 3. Look for `<name>.md` in project operatives: `.claude/operatives/<name>.md`
-4. If not found, look in user operatives: `~/.claude/operatives/<name>.md`
-5. If not found, respond: "Operative '<name>' not found. Create one with `/run-create-operative`"
+4. If not found, discover org root and look in org operatives repo
+5. If not found, look in user operatives: `~/.claude/operatives/<name>.md`
+6. If not found, respond: "Operative '<name>' not found. Create one with `/run-create-operative`"
+
+### Org Discovery Algorithm
+
+```
+1. Start from current working directory
+2. Walk up until you find a directory that:
+   a. Contains CLAUDE.md AND
+   b. Is a direct child of a workspace (~/Code/, ~/Projects/, etc.)
+3. This is the org root
+4. Check [org-root]/.claude/org.json for operatives.repo
+5. If no config, try convention: [org-root]/[org-name]-operatives/
+6. Look for [name].md in that directory
+```
 
 ## Loading the Operative
 
@@ -78,7 +134,7 @@ You are Razor, a security-focused operative specialized in...
 
 ## Listing Available Operatives
 
-If called without arguments, list available operatives:
+If called without arguments, list available operatives from all three levels:
 
 ```
 /run-consult-operative
@@ -90,7 +146,10 @@ Response:
 
 ### Project-level (.claude/operatives/)
 - razor - Security penetration specialist
+
+### Org-level (acme-operatives/)
 - nexus - Data pipeline architect
+- compliance-bot - Regulatory requirements checker
 
 ### User-level (~/.claude/operatives/)
 - ghost - Stealth refactoring expert
@@ -99,6 +158,8 @@ Response:
 Use: /run-consult-operative <name> "your question"
 Create new: /run-create-operative
 ```
+
+When listing, scan all three directories and parse each file's frontmatter to display name and title. Group by level for clarity.
 
 ## Differences from Public Experts
 

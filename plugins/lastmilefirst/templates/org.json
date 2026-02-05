@@ -1,0 +1,13 @@
+{
+  "name": "{{ORG_NAME}}",
+  "operatives": {
+    "repo": "{{ORG_NAME}}-operatives"
+  },
+  "stack_wisdom": {
+    "repo": "{{ORG_NAME}}-stack-wisdom"
+  },
+  "workflow": {
+    "complexity_threshold": "moderate",
+    "auto_compound": true
+  }
+}
