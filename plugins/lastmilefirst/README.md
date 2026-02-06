@@ -29,6 +29,54 @@ Claude Code reads `CLAUDE.md` files for project context. This plugin structures 
 
 **Why tiers?** Lower levels inherit from higher levels. No duplication, clear override path. Your teammate's workspace preferences don't pollute your projects; your shared org standards do.
 
+### Workspace Structure
+
+```
+~/Code/                              # Workspace (security boundary)
+├── CLAUDE.md                        # Workspace preferences
+│
+├── personal/                        # Org: personal projects
+│   ├── CLAUDE.md                    # Your standards
+│   ├── .claude/org.json             # Org config
+│   ├── personal-operatives/         # Git repo: your AI specialists
+│   ├── personal-stack-wisdom/       # Git repo: your patterns & lessons
+│   ├── side-project/                # Project
+│   └── experiments/                 # Project
+│
+├── work/                            # Org: professional work
+│   ├── CLAUDE.md                    # Team standards
+│   ├── .claude/org.json
+│   ├── work-operatives/             # Git repo: team specialists
+│   ├── work-stack-wisdom/           # Git repo: team patterns
+│   ├── main-product/                # Project
+│   └── api-service/                 # Project
+│
+└── client-acme/                     # Org: client-specific
+    ├── CLAUDE.md                    # Client conventions
+    ├── .claude/org.json
+    ├── client-acme-operatives/      # Git repo: client specialists
+    ├── client-acme-stack-wisdom/    # Git repo: client patterns
+    └── acme-app/                    # Project
+```
+
+**Why orgs?** Projects within an org share operatives and stack-wisdom. Solve a problem once, benefit everywhere.
+
+**Why "personal" as an org?** You're a team of one plus AI agents. Your patterns and lessons are institutional knowledge worth preserving.
+
+**Why separate git repos?** Operatives and stack-wisdom repos are independent of projects - they're shared across all projects in the org and version-controlled separately.
+
+**Org configuration:** Each org's `.claude/org.json` specifies its repos:
+
+```json
+{
+  "name": "work",
+  "operatives": { "repo": "work-operatives" },
+  "stack_wisdom": { "repo": "work-stack-wisdom" }
+}
+```
+
+If no config exists, the plugin uses conventions: `[org]-operatives/` and `[org]-stack-wisdom/`.
+
 ### Project Structure
 
 The plugin enforces a standard structure that both humans and Claude can navigate:
@@ -292,49 +340,6 @@ Operatives are markdown files stored at three levels:
 ```
 
 **Lookup precedence:** Project → Org → User (first match wins)
-
-### Recommended Structure
-
-```
-~/Code/                          # Workspace
-├── CLAUDE.md                    # Workspace preferences
-├── personal/                    # Personal projects and experiments
-│   ├── CLAUDE.md                # Personal standards
-│   ├── .claude/org.json         # Org config
-│   ├── personal-operatives/     # Your personal specialists
-│   └── [projects]/
-├── work/                        # Primary professional org
-│   ├── CLAUDE.md                # Team standards
-│   ├── .claude/org.json
-│   ├── work-operatives/         # Team operatives (git repo)
-│   │   ├── compliance-bot.md
-│   │   └── deploy-master.md
-│   └── [projects]/
-└── work-2/                      # Second work org (e.g., different client)
-    ├── CLAUDE.md                # Client-specific standards
-    ├── .claude/org.json
-    └── work-2-operatives/       # Client-specific operatives
-```
-
-You can have multiple work orgs for different clients, companies, or contexts.
-
-### Org Configuration
-
-Each org can have a `.claude/org.json` for custom settings:
-
-```json
-{
-  "name": "work",
-  "operatives": {
-    "repo": "work-operatives"
-  },
-  "stack_wisdom": {
-    "repo": "work-stack-wisdom"
-  }
-}
-```
-
-If no config exists, the plugin uses conventions: `[org]-operatives/` and `[org]-stack-wisdom/`.
 
 ## Stack-Wisdom
 
