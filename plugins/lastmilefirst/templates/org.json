@@ -6,6 +6,10 @@
   "stack_wisdom": {
     "repo": "{{ORG_NAME}}-stack-wisdom"
   },
+  "stack_knowledge": {
+    "type": "local",
+    "path": "stack-knowledge"
+  },
   "workflow": {
     "complexity_threshold": "moderate",
     "auto_compound": true

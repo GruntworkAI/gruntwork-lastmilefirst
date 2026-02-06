@@ -215,6 +215,8 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | `/run-create-operative` | Create a new private operative |
 | `/run-search-wisdom` | Search org stack-wisdom for patterns and insights |
 | `/run-add-wisdom` | Capture hard-won lessons to stack-wisdom |
+| `/run-search-knowledge` | Search org stack-knowledge for facts and documentation |
+| `/run-add-knowledge` | Capture facts and reference material to stack-knowledge |
 | `/run-strict-parc` | Enforce strict PARC workflow with explicit gates |
 | `/run-overwatch` | Check status and manage proactive monitoring |
 | `/run-plugin-inventory` | Show installed plugins with versions and usage stats |
@@ -411,6 +413,71 @@ base: paloma    # Inherits Python expertise from Paloma
 Your custom persona definition here...
 ```
 
+## Stack-Knowledge
+
+Stack-knowledge is your org's factual repository - documentation, reference material, and data that future sessions need to access.
+
+### Knowledge vs. Wisdom
+
+| Knowledge | Wisdom |
+|-----------|--------|
+| Facts and data | Patterns and practices |
+| Reference documentation | Lessons learned |
+| API specifications | Gotchas and pitfalls |
+| Datasets and configs | Insights from experience |
+
+**Example:** "The API rate limit is 100/minute" is knowledge. "Always implement exponential backoff because the API rate limit causes issues at scale" is wisdom.
+
+### Knowledge Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Client** | Client-specific facts | "Acme uses Oracle 12c" |
+| **Project** | Project documentation | "Auth uses JWT with 24h expiry" |
+| **Product** | Product specifications | "Premium tier allows 10 users" |
+| **Domain** | Domain expertise | "Healthcare requires HIPAA logging" |
+| **Reference** | General reference | "AWS Lambda max timeout is 15min" |
+
+### Using Stack-Knowledge
+
+```bash
+# Search for relevant knowledge
+/run-search-knowledge authentication
+/run-search-knowledge "Acme API"
+
+# Add new knowledge after learning something useful
+/run-add-knowledge
+```
+
+### Storage Backends
+
+Stack-knowledge supports multiple backends via org.json configuration:
+
+```json
+{
+  "stack_knowledge": {
+    "type": "local",
+    "path": "stack-knowledge"
+  }
+}
+```
+
+Currently supported:
+- **local** - Markdown files in the org directory (default)
+
+**Coming soon:** Community adapters for Confluence, Notion, Sharepoint, and more. See `templates/knowledge-adapter.md` for the adapter interface.
+
+### Local Storage Structure
+
+```
+[org]-stack-knowledge/     # or stack-knowledge/ if using local path
+├── client/               # Client-specific facts
+├── project/              # Project documentation
+├── product/              # Product specifications
+├── domain/               # Domain expertise
+└── reference/            # General reference
+```
+
 ## Structure
 
 ```
@@ -429,6 +496,8 @@ lastmilefirst/
 │   ├── create-operative/
 │   ├── search-wisdom/
 │   ├── add-wisdom/
+│   ├── search-knowledge/
+│   ├── add-knowledge/
 │   ├── parc/
 │   ├── strict-parc/
 │   ├── overwatch/
@@ -444,6 +513,7 @@ lastmilefirst/
 │   ├── operative.md
 │   ├── org.json
 │   ├── wisdom-pattern.md
+│   ├── knowledge-adapter.md
 │   ├── operatives-readme.md
 │   └── stack-wisdom-readme.md
 ├── hooks/                  # Overwatch automation

@@ -7,6 +7,23 @@ description: Capture patterns, insights, and hard-won lessons to org stack-wisdo
 
 Capture patterns, insights, and hard-won lessons to your org's stack-wisdom repository.
 
+## Wisdom vs Knowledge
+
+This skill captures **wisdom**, not knowledge. Know the difference:
+
+| Wisdom (this skill) | Knowledge (`/run-add-knowledge`) |
+|---------------------|----------------------------------|
+| Patterns and practices | Facts and data |
+| Lessons learned | Documentation |
+| Gotchas and pitfalls | Reference material |
+| "What we learned" | "What exists" |
+| Debugging insights | API specs, configs |
+| Prevention strategies | Client requirements |
+
+**The test:**
+- "This will probably be helpful in a different project someday" → **Wisdom**
+- "This is specific to how this project/client works" → **Knowledge**
+
 ## When to Add Wisdom
 
 Add wisdom when you've learned something worth remembering:
