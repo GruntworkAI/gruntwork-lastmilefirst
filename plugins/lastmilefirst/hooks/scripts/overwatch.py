@@ -91,7 +91,8 @@ def _load_state_unlocked() -> Dict[str, Any]:
     default_state: Dict[str, Any] = {
         "last_review": 0,
         "last_organize": 0,
-        "last_plugin_check": 0
+        "last_plugin_check": 0,
+        "last_secret_scan": 0,
     }
 
     if not state_file.exists():
@@ -119,7 +120,8 @@ def load_state() -> Dict[str, Any]:
     default_state: Dict[str, Any] = {
         "last_review": 0,
         "last_organize": 0,
-        "last_plugin_check": 0
+        "last_plugin_check": 0,
+        "last_secret_scan": 0,
     }
 
     with file_lock(lock_file):

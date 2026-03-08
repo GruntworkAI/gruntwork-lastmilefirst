@@ -25,6 +25,8 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Project organize | Every session | 14+ days since `/run-organize-project` |
 | Plugin updates | Weekly | 7+ days since last check |
 | Stale todos | Every session | Any todos older than 14 days |
+| Secret scan freshness | Every session | Never scanned or 7+ days since `/run-scan-secrets` |
+| Repo visibility | Every session | Current repo is PUBLIC |
 | Missing CLAUDE.md | Every session | No CLAUDE.md in project |
 | Expert roster sync | Every session | User CLAUDE.md missing experts or operatives |
 | Org infrastructure | Every session | Missing org.json, operatives, or wisdom repo |
@@ -41,6 +43,7 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 When you run these commands, overwatch records the timestamp:
 - `/run-review-project` → updates `last_review`
 - `/run-organize-project` → updates `last_organize`
+- `/run-scan-secrets` → updates `last_secret_scan`
 - `claude /plugin update` → updates `last_plugin_check`
 
 ## Manual State Update

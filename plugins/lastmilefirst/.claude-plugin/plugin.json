@@ -1,6 +1,6 @@
 {
   "name": "lastmilefirst",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Last Mile First methodology plugin: PARC workflow (Plan, Allocate, Review, Compound), AI expert agents, org-level operatives and stack-wisdom, and workspace organization.",
   "author": {
     "name": "Michael Fisher",
@@ -18,6 +18,8 @@
     "documentation-review",
     "ai-personas",
     "workspace-management",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "secret-scanning",
+    "security"
   ]
 }

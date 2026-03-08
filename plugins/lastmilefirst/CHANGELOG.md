@@ -5,6 +5,32 @@ All notable changes to the lastmilefirst plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-03-06
+
+### Added
+- **Secret Scanning** - `/run-scan-secrets` for detecting secrets and credentials
+  - Full git history scanning via gitleaks with custom format rules
+  - `--all` mode scans entire workspace (all repos under ~/Code/)
+  - `--audit` mode checks .gitignore gaps, dangerous committed files, repo visibility
+  - `--audit --github` inventories all public repos across GitHub account and orgs
+  - `--install-hooks` / `--uninstall-hooks` for global pre-commit hook via `core.hooksPath`
+  - `--add-format` interactive flow for org-specific secret patterns
+  - `--list-formats` / `--update-formats` for format library management
+  - Two-tier format library: common (plugin-shipped) + org (user-managed) in `~/.claude/lastmilefirst/secret-formats/`
+  - 16 custom gitleaks rules covering DB connection strings, env vars, terraform, hardcoded creds, webhooks, keys, JWT
+  - All output redacted by default to prevent secondary leaks
+
+- **Public Repo Awareness** - woven throughout the plugin
+  - Every scan checks repo visibility; public repos get warning banner + severity bump
+  - Pre-commit hook reminds on every commit to a public repo
+  - Overwatch session start alerts when working in a public repo
+  - GitHub account audit flags repos with suspicious names (internal, private, secret, config)
+
+- **Overwatch Integration**
+  - `check_secret_scan_status()` — alerts if never scanned or 7+ days stale
+  - `check_repo_visibility()` — alerts when working in a public repo
+  - `last_secret_scan` field in overwatch state
+
 ## [0.10.1] - 2026-02-05
 
 ### Added
