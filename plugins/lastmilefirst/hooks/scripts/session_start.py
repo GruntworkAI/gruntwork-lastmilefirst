@@ -216,6 +216,47 @@ def check_stale_todos() -> Optional[str]:
     return None
 
 
+def check_secret_scan_status(state: Dict) -> Optional[str]:
+    """Check days since last secret scan."""
+    last_scan = state.get("last_secret_scan", 0)
+    if last_scan == 0:
+        return "Never scanned for secrets - consider running /run-scan-secrets"
+
+    days_since = (int(time.time()) - last_scan) // 86400
+    if days_since >= 7:
+        return f"{days_since} days since last /run-scan-secrets"
+    return None
+
+
+def check_repo_visibility() -> Optional[str]:
+    """Check if current repo is public via gh CLI."""
+    try:
+        # First check if we're in a git repo with a remote
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None  # No remote, skip check
+
+        result = subprocess.run(
+            ["gh", "repo", "view", "--json", "visibility,nameWithOwner",
+             "-q", '.visibility + " " + .nameWithOwner'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            parts = result.stdout.strip().split(" ", 1)
+            if len(parts) == 2 and parts[0].upper() == "PUBLIC":
+                return f"You're working in a PUBLIC repo ({parts[1]})"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass  # gh not available or too slow - skip silently
+    return None
+
+
 def check_claude_md() -> Optional[str]:
     """Check if CLAUDE.md exists in current directory."""
     if not Path("CLAUDE.md").exists():
@@ -303,12 +344,22 @@ def main() -> None:
     if todos_alert:
         alerts.append(todos_alert)
 
-    # Check 7: CLAUDE.md
+    # Check 7: Secret scan status
+    secret_scan_alert = check_secret_scan_status(state)
+    if secret_scan_alert:
+        alerts.append(secret_scan_alert)
+
+    # Check 8: Repo visibility
+    visibility_alert = check_repo_visibility()
+    if visibility_alert:
+        alerts.append(visibility_alert)
+
+    # Check 9: CLAUDE.md
     claude_md_alert = check_claude_md()
     if claude_md_alert:
         alerts.append(claude_md_alert)
 
-    # Check 8: Cross-project blockers
+    # Check 10: Cross-project blockers
     blocker_alerts = check_cross_project_blockers()
     if blocker_alerts:
         alerts.extend(blocker_alerts)

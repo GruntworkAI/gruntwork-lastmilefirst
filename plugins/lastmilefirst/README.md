@@ -218,6 +218,7 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | `/run-search-knowledge` | Search org stack-knowledge for facts and documentation |
 | `/run-add-knowledge` | Capture facts and reference material to stack-knowledge |
 | `/run-strict-parc` | Enforce strict PARC workflow with explicit gates |
+| `/run-scan-secrets` | Scan repos for secrets, credentials, and sensitive data |
 | `/run-overwatch` | Check status and manage proactive monitoring |
 | `/run-plugin-inventory` | Show installed plugins with versions and usage stats |
 | `/run-todos-summary` | Aggregate todos across all projects in an org |
