@@ -3,16 +3,16 @@
 CLI entry point for secret scanning.
 
 Usage:
-    python cli.py                      # Scan current repo
-    python cli.py --all                # Scan all repos in workspace
-    python cli.py --pre-commit         # Scan staged changes (for hook)
-    python cli.py --audit              # Audit current repo hygiene
-    python cli.py --audit --github     # Audit all public GitHub repos
-    python cli.py --install-hooks      # Install global pre-commit hook
-    python cli.py --uninstall-hooks    # Remove pre-commit hook
-    python cli.py --list-formats       # Show active format rules
-    python cli.py --update-formats     # Refresh common formats from plugin
-    python cli.py --add-format         # Interactive (handled by SKILL.md)
+    python scan_secrets.py                      # Scan current repo
+    python scan_secrets.py --all                # Scan all repos in workspace
+    python scan_secrets.py --pre-commit         # Scan staged changes (for hook)
+    python scan_secrets.py --audit              # Audit current repo hygiene
+    python scan_secrets.py --audit --github     # Audit all public GitHub repos
+    python scan_secrets.py --install-hooks      # Install global pre-commit hook
+    python scan_secrets.py --uninstall-hooks    # Remove pre-commit hook
+    python scan_secrets.py --list-formats       # Show active format rules
+    python scan_secrets.py --update-formats     # Refresh common formats from plugin
+    python scan_secrets.py --add-format         # Interactive (handled by SKILL.md)
 """
 from __future__ import annotations
 
@@ -30,12 +30,12 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python cli.py                    # Scan current repo
-    python cli.py --all              # Scan all workspace repos
-    python cli.py --audit            # Audit repo hygiene
-    python cli.py --audit --github   # List all public repos
-    python cli.py --install-hooks    # Install pre-commit hook
-    python cli.py --list-formats     # Show format rules
+    python scan_secrets.py                    # Scan current repo
+    python scan_secrets.py --all              # Scan all workspace repos
+    python scan_secrets.py --audit            # Audit repo hygiene
+    python scan_secrets.py --audit --github   # List all public repos
+    python scan_secrets.py --install-hooks    # Install pre-commit hook
+    python scan_secrets.py --list-formats     # Show format rules
         """,
     )
 

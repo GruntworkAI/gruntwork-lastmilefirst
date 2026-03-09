@@ -50,7 +50,7 @@ Two new session-start checks:
 ## Process Notes
 
 - Local repo was behind GitHub (0.9.5 vs 0.10.1) — caught during version bump. Lesson: always `git pull` before modifying plugin source.
-- All skills use generic `cli.py` as entry point — noted for future rename consideration across all skills.
+- Renamed generic `cli.py` entry points to descriptive names across all skills (v0.11.1): `todos_summary.py`, `scan_secrets.py`, `organize_project.py`.
 - Plan was written assuming 0.10.1 base — adapted on the fly after pulling latest.
 
 ## Files Changed
