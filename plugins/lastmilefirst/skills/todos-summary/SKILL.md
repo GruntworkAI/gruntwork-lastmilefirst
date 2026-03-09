@@ -192,10 +192,10 @@ At session start, Overwatch shows a compact summary if there are urgent or block
 
 ```bash
 # Run the CLI directly
-python ${SKILL_ROOT}/scripts/cli.py
+python ${SKILL_ROOT}/scripts/todos_summary.py
 
 # With options
-python ${SKILL_ROOT}/scripts/cli.py --all --format json
+python ${SKILL_ROOT}/scripts/todos_summary.py --all --format json
 ```
 
 ## Startup Behavior

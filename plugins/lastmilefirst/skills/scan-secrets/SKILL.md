@@ -50,7 +50,7 @@ Scans full git history of the current repository using gitleaks with merged cust
 
 **Run:**
 ```bash
-python3 ${SKILL_DIR}/scripts/cli.py
+python3 ${SKILL_DIR}/scripts/scan_secrets.py
 ```
 
 ### `--all`: Scan All Workspace Repos
@@ -59,7 +59,7 @@ Walks `~/Code/` two levels deep finding git repos, scans each.
 
 **Run:**
 ```bash
-python3 ${SKILL_DIR}/scripts/cli.py --all
+python3 ${SKILL_DIR}/scripts/scan_secrets.py --all
 ```
 
 ### `--audit`: Repo Hygiene Audit
@@ -71,7 +71,7 @@ Checks a single repo for:
 
 **Run:**
 ```bash
-python3 ${SKILL_DIR}/scripts/cli.py --audit
+python3 ${SKILL_DIR}/scripts/scan_secrets.py --audit
 ```
 
 ### `--audit --github`: GitHub Account Audit
@@ -83,7 +83,7 @@ Scans your entire GitHub account (personal + orgs):
 
 **Run:**
 ```bash
-python3 ${SKILL_DIR}/scripts/cli.py --audit --github
+python3 ${SKILL_DIR}/scripts/scan_secrets.py --audit --github
 ```
 
 ### `--install-hooks`: Pre-commit Hook
@@ -92,14 +92,14 @@ Installs a global pre-commit hook that scans staged changes before every commit.
 
 **How it works:**
 - Sets `git config --global core.hooksPath` to `~/.claude/lastmilefirst/git-hooks/`
-- Hook calls `cli.py --pre-commit` which runs `gitleaks protect --staged`
+- Hook calls `scan_secrets.py --pre-commit` which runs `gitleaks protect --staged`
 - If secrets found: blocks commit, shows findings
 - If repo is public: adds reminder line to every commit output
 - Detects and warns about existing `core.hooksPath` before overriding
 
 **Run:**
 ```bash
-python3 ${SKILL_DIR}/scripts/cli.py --install-hooks
+python3 ${SKILL_DIR}/scripts/scan_secrets.py --install-hooks
 ```
 
 ### `--add-format`: Add Custom Format (Interactive)
@@ -138,7 +138,7 @@ Shows all active rules from both tiers with source indicator (common vs org).
 
 **Run:**
 ```bash
-python3 ${SKILL_DIR}/scripts/cli.py --list-formats
+python3 ${SKILL_DIR}/scripts/scan_secrets.py --list-formats
 ```
 
 ### `--update-formats`: Refresh Common Rules
@@ -147,7 +147,7 @@ Copies the latest `common_secret_formats.toml` from the plugin to the user's for
 
 **Run:**
 ```bash
-python3 ${SKILL_DIR}/scripts/cli.py --update-formats
+python3 ${SKILL_DIR}/scripts/scan_secrets.py --update-formats
 ```
 
 ## Secret Format Libraries
