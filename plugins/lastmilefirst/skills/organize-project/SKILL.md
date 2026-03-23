@@ -129,87 +129,62 @@ If these directories exist at project root (not symlinks):
 - Files modified in last 7 days
 - TODOs with `status: in_progress` or `status: pending`
 
-## Interactive Flow
+## Claude Workflow
 
-```
-$ /run-organize-project
+This skill uses **Claude as the conversational layer**. The script runs non-interactively with CLI flags; Claude gathers user intent and passes the right arguments.
 
-Pre-flight: Checking CLAUDE.md configuration...
-  ✓ CLAUDE.md exists
-
-Checking project structure...
-
-Documentation:
-  ✗ docs/ (missing)
-
-Working artifacts:
-  ✓ .claude/
-  ✗ .claude/work/todos/
-  ✗ .claude/work/plans/
-  ✗ .claude/work/sessions/
-  ✗ .claude/debt/
-
-Found scattered files in root:
-  Documentation:
-    - DEPLOYMENT_GUIDE.md → docs/
-    - API_DOCUMENTATION.md → docs/
-
-  Work artifacts:
-    - SESSION_2025-01-15.md → .claude/work/sessions/
-    - TODO.md → .claude/work/todos/
-    - FEATURE_AUTH.md → .claude/work/plans/
-
-[O] Organize (create structure and migrate)
-[Q] Quit
-
-> O
-
-Creating structure...
-  ✓ docs/
-  ✓ .claude/work/todos/
-  ✓ .claude/work/plans/
-  ✓ .claude/work/sessions/
-  ✓ .claude/debt/
-
-Migrating files...
-  → DEPLOYMENT_GUIDE.md → docs/deployment-guide.md
-  → API_DOCUMENTATION.md → docs/api-documentation.md
-  → SESSION_2025-01-15.md → .claude/work/sessions/
-  → TODO.md → .claude/work/todos/
-  → FEATURE_AUTH.md → .claude/work/plans/
-
-✅ Organized. 5 files migrated.
-```
-
-## How to Run
+### Step 1: Dry run audit
 
 ```bash
-python ${SKILL_ROOT}/scripts/organize_project.py
+python3 ${SKILL_ROOT}/scripts/organize_project.py --dry-run
 ```
 
-Preview changes without making them (dry run):
+Present findings to user. Show what would be organized and what could be archived.
+
+### Step 2: Ask user what to do
+
+Based on output, suggest the appropriate action:
+
+- Structure issues found: "I found missing directories and scattered files. Want me to organize?"
+  ```bash
+  python3 ${SKILL_ROOT}/scripts/organize_project.py --organize
+  ```
+
+- Archive candidates found: "There are N old files that could be archived. Archive them?"
+  ```bash
+  python3 ${SKILL_ROOT}/scripts/organize_project.py --archive
+  ```
+
+- Both needed: "Want me to organize structure AND archive old files?"
+  ```bash
+  python3 ${SKILL_ROOT}/scripts/organize_project.py --all
+  ```
+
+### Step 3: Confirm results
+
+Run dry-run again to verify the updated state.
+
+## Commands Reference
 
 ```bash
-python ${SKILL_ROOT}/scripts/organize_project.py --dry-run
-```
+# Audit only (default, no changes)
+python3 ${SKILL_ROOT}/scripts/organize_project.py
+python3 ${SKILL_ROOT}/scripts/organize_project.py --dry-run
 
-For a specific project:
+# Create structure and migrate scattered files
+python3 ${SKILL_ROOT}/scripts/organize_project.py --organize
 
-```bash
-python ${SKILL_ROOT}/scripts/organize_project.py /path/to/project
-python ${SKILL_ROOT}/scripts/organize_project.py /path/to/project --dry-run
-```
+# Archive old files
+python3 ${SKILL_ROOT}/scripts/organize_project.py --archive
 
-Skip CLAUDE.md check:
+# Both organize and archive
+python3 ${SKILL_ROOT}/scripts/organize_project.py --all
 
-```bash
-python ${SKILL_ROOT}/scripts/organize_project.py --skip-claude-check
-```
+# For a specific project
+python3 ${SKILL_ROOT}/scripts/organize_project.py /path/to/project --organize
 
-Auto-confirm all actions (non-interactive):
-
-```bash
-python ${SKILL_ROOT}/scripts/organize_project.py --yes
+# Auto-confirm all actions
+python3 ${SKILL_ROOT}/scripts/organize_project.py --yes
 ```
 
 ## Technical Details
@@ -229,11 +204,10 @@ python ${SKILL_ROOT}/scripts/organize_project.py --yes
 
 ## Implementation Notes
 
-- Interactive only - always asks for confirmation before changes
+- Non-interactive: uses CLI flags, Claude handles conversation
 - Files are moved, not copied
 - Archive serves as rollback mechanism
 - Symlinks maintain backwards compatibility for legacy directories
-- CLAUDE.md check can be skipped with `--skip-claude-check` flag
 
 ## Related Skills
 

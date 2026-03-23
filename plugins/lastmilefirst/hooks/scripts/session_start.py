@@ -264,6 +264,34 @@ def check_claude_md() -> Optional[str]:
     return None
 
 
+def check_overwatch_guidance() -> Optional[str]:
+    """Check if any CLAUDE.md in the hierarchy contains Overwatch response guidance."""
+    search_paths = [
+        Path("CLAUDE.md"),           # Project level
+        Path.home() / "Code" / "CLAUDE.md",  # Top-level workspace
+    ]
+
+    # Walk up to find org-level CLAUDE.md (parent of current project)
+    cwd = Path.cwd()
+    if cwd.parent != cwd:
+        org_claude = cwd.parent / "CLAUDE.md"
+        if org_claude not in search_paths:
+            search_paths.insert(1, org_claude)
+
+    keywords = ["overwatch", "overwatch alert", "overwatch response"]
+
+    for path in search_paths:
+        try:
+            if path.exists():
+                content = path.read_text(encoding="utf-8").lower()
+                if any(kw in content for kw in keywords):
+                    return None  # Found guidance, no alert needed
+        except (OSError, IOError):
+            continue
+
+    return "No Overwatch response guidance in CLAUDE.md \u2014 Claude may ignore alerts"
+
+
 def check_cross_project_blockers() -> List[str]:
     """
     Check for urgent/blocked todos across all projects.
@@ -359,7 +387,12 @@ def main() -> None:
     if claude_md_alert:
         alerts.append(claude_md_alert)
 
-    # Check 10: Cross-project blockers
+    # Check 10: Overwatch response guidance
+    guidance_alert = check_overwatch_guidance()
+    if guidance_alert:
+        alerts.append(guidance_alert)
+
+    # Check 11: Cross-project blockers
     blocker_alerts = check_cross_project_blockers()
     if blocker_alerts:
         alerts.extend(blocker_alerts)

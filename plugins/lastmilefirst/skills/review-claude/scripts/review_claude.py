@@ -359,28 +359,25 @@ def main():
         print("\n✓ All reviewed files have expected sections.")
         return
 
-    # Offer to generate suggestions
+    # Generate suggestions if requested via --suggest or --yes
     all_gaps = user_gaps + org_gaps + project_gaps
 
-    if args.suggest or args.yes:
-        choice = "Y"
-    else:
-        print("\n" + "-" * 60)
-        choice = input("\nGenerate suggestions for files with gaps? [y/N]: ").strip().upper()
+    if not (args.suggest or args.yes):
+        print("\n  Run again with --suggest to generate suggestion templates for gaps.")
+        return
 
-    if choice == "Y":
-        for review in all_gaps:
-            file_path = review["path"]
-            level = determine_level(file_path, workspace)
-            template_path = get_template_path(level)
+    for review in all_gaps:
+        file_path = review["path"]
+        level = determine_level(file_path, workspace)
+        template_path = get_template_path(level)
 
-            suggestions = generate_suggestions(review, template_path)
-            suggestions_file = file_path.parent / "CLAUDE.md.suggestions"
-            suggestions_file.write_text(suggestions)
-            print(f"  ✓ {suggestions_file}")
+        suggestions = generate_suggestions(review, template_path)
+        suggestions_file = file_path.parent / "CLAUDE.md.suggestions"
+        suggestions_file.write_text(suggestions)
+        print(f"  ✓ {suggestions_file}")
 
-        print(f"\n✓ Generated {len(all_gaps)} suggestion files.")
-        print("  Review each .suggestions file and copy relevant sections to your CLAUDE.md")
+    print(f"\n✓ Generated {len(all_gaps)} suggestion files.")
+    print("  Review each .suggestions file and copy relevant sections to your CLAUDE.md")
 
 
 if __name__ == "__main__":

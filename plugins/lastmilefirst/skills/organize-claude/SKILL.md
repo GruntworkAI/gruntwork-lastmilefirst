@@ -333,74 +333,98 @@ Project Level (~/Code/gruntwork/project/CLAUDE.md)
 - Explicit > inherited (if specified at lower level, it wins)
 - Contradictions are flagged for review
 
-## Commands
+## Claude Workflow
+
+This skill uses **Claude as the conversational layer**. The script runs non-interactively with CLI flags; Claude gathers user intent and passes the right arguments.
+
+### Step 1: Check for config
 
 ```bash
-# Full audit (default)
-python ${SKILL_ROOT}/scripts/organize_claude.py
-
-# Scaffold specific level
-python ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-org gruntwork
-python ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project gruntwork-leamo
-
-# Update user-level mappings only
-python ${SKILL_ROOT}/scripts/organize_claude.py --update-mappings
-
-# Dry run
-python ${SKILL_ROOT}/scripts/organize_claude.py --dry-run
-
-# Reconfigure
-python ${SKILL_ROOT}/scripts/organize_claude.py --setup
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --show-config
 ```
 
-**Note:** For reviewing existing CLAUDE.md files and suggesting additions, use the `review-claude` skill.
+**If no config exists**, ask the user conversationally:
+1. "What's your workspace root directory?" (e.g., `~/Code`)
+2. "What are your org directories?" (or offer to auto-detect)
+
+Then run setup with their answers:
+
+```bash
+# With explicit orgs:
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --setup --workspace ~/Code --orgs "gruntwork,work"
+
+# Auto-detect orgs from workspace subdirectories:
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --setup --workspace ~/Code
+```
+
+### Step 2: Run audit
+
+```bash
+python3 ${SKILL_ROOT}/scripts/organize_claude.py
+```
+
+Present the results conversationally. Highlight missing org/project CLAUDE.md files and mapping gaps.
+
+### Step 3: Offer actions based on findings
+
+Based on audit output, suggest specific commands:
+
+- Missing org files: "I can scaffold CLAUDE.md for [org]. Want me to?"
+  ```bash
+  python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-org ORGNAME
+  python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-all-orgs
+  ```
+
+- Missing project files: "These projects need CLAUDE.md. Create them?"
+  ```bash
+  python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project PROJNAME
+  python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-all-projects
+  ```
+
+- Mapping gaps: "Your project directory mapping is out of date. Update it?"
+  ```bash
+  python3 ${SKILL_ROOT}/scripts/organize_claude.py --update-mappings
+  ```
+
+- Everything needs work: "Want me to do a full sync?"
+  ```bash
+  python3 ${SKILL_ROOT}/scripts/organize_claude.py --full-sync --yes
+  ```
+
+### Step 4: Confirm results
+
+Run audit again to show the updated state.
+
+## Commands Reference
+
+```bash
+# Config management
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --show-config
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --setup --workspace ~/Code --orgs "org1,org2"
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --setup --workspace ~/Code  # auto-detect orgs
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --add-org neworg
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --remove-org oldorg
+
+# Audit (default, read-only)
+python3 ${SKILL_ROOT}/scripts/organize_claude.py
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --dry-run
+
+# Scaffold specific items
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-org gruntwork
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project gruntwork-leamo
+
+# Scaffold all missing
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-all-orgs
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-all-projects
+
+# Full sync (scaffold all + show mapping updates)
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --full-sync --yes
+
+# Update mappings
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --update-mappings
+```
 
 ## Configuration
-
-On first run, the skill prompts for configuration:
-
-```
-$ /run-organize-claude
-
-============================================================
-ORGANIZE-CLAUDE SETUP
-============================================================
-
-This skill manages CLAUDE.md files across your workspace.
-Let's configure your environment.
-
-WORKSPACE PATH
-----------------------------------------
-The workspace is your security boundary - the root directory
-where Claude operates. Your user-level CLAUDE.md lives here.
-
-Choose a location that is:
-  - Broad enough to include everything Claude needs to work on
-  - Narrow enough to keep Claude isolated from sensitive areas
-  - NOT your home directory (~) - that's too broad!
-
-Examples: ~/Code, ~/Projects, ~/dev
-
-Workspace path: ~/Code
-
-ORG DIRECTORIES
-----------------------------------------
-Orgs are subdirectories that group related projects.
-Examples: 'personal', 'work', 'client-acme', 'opensource'
-
-Enter org names (comma-separated), or leave blank to scan for directories:
-
-Org names: personal, work
-
-CONFIGURATION SUMMARY
-----------------------------------------
-  Workspace: /Users/you/Code
-  Orgs: personal, work
-
-Save this configuration? [Y/n]: y
-
-  Config saved to ~/.config/organize-claude/config.json
-```
 
 Config is stored at `~/.config/organize-claude/config.json`:
 
@@ -412,59 +436,7 @@ Config is stored at `~/.config/organize-claude/config.json`:
 }
 ```
 
-### Config Commands
-
-```bash
-# Show current config
-python ${SKILL_ROOT}/scripts/organize_claude.py --show-config
-
-# Reconfigure
-python ${SKILL_ROOT}/scripts/organize_claude.py --setup
-
-# Override workspace for one run
-python ${SKILL_ROOT}/scripts/organize_claude.py --workspace ~/OtherCode
-```
-
-## Integration with organize-project
-
-The `organize-project` skill checks CLAUDE.md status:
-
-```
-$ /run-organize-project
-
-Pre-flight: Checking CLAUDE.md...
-  ✗ This project has no CLAUDE.md file
-
-[C] Create CLAUDE.md first (runs run-organize-claude --scaffold-project)
-[S] Skip and continue with project organization
-[Q] Quit
-```
-
-## Integration with organize-orgs
-
-When auditing an org, organize-claude checks for org infrastructure (org.json, operatives, stack-wisdom):
-
-```
-$ /run-organize-claude
-
-ORG COVERAGE
---------------------------------------------------------------
-  ✓ work/CLAUDE.md exists
-    ⚠️ Org infrastructure incomplete:
-      - Missing .claude/org.json
-      - Missing work-operatives/
-      - Missing work-stack-wisdom/
-
-[O] Run organize-orgs to set up infrastructure
-[S] Skip and continue with CLAUDE.md audit
-```
-
-**When to suggest organize-orgs:**
-- Org has CLAUDE.md but no org.json
-- Org exists but missing operatives repo
-- Org exists but missing stack-wisdom repo
-
-This ensures orgs have full infrastructure for operatives and wisdom, not just CLAUDE.md files.
+**Note:** For reviewing existing CLAUDE.md files and suggesting additions, use the `review-claude` skill.
 
 ## Related Skills
 

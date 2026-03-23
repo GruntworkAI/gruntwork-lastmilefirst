@@ -25,61 +25,44 @@ Reviews CLAUDE.md files at all hierarchy levels (user, org, project) against exp
 | Starting work in unfamiliar project | "Let me review this project's CLAUDE.md to see if all sections are complete." |
 | User asks about project conventions | "I can review your CLAUDE.md files for completeness. Want me to check?" |
 
-## Commands
+## Claude Workflow
+
+This skill uses **Claude as the conversational layer**. The script runs non-interactively; Claude presents results and offers next steps.
+
+### Step 1: Run review
 
 ```bash
-# Review all CLAUDE.md files in workspace
-python ${SKILL_ROOT}/scripts/review_claude.py
+python3 ${SKILL_ROOT}/scripts/review_claude.py
+```
+
+Present the review summary. Highlight files with gaps and what sections are missing.
+
+### Step 2: Offer suggestions
+
+If gaps were found, ask: "I found gaps in N files. Want me to generate suggestion templates?"
+
+```bash
+# Generate suggestions for all files with gaps
+python3 ${SKILL_ROOT}/scripts/review_claude.py --suggest
+
+# For a specific file
+python3 ${SKILL_ROOT}/scripts/review_claude.py --file PATH --suggest
+```
+
+## Commands Reference
+
+```bash
+# Review all CLAUDE.md files in workspace (report only)
+python3 ${SKILL_ROOT}/scripts/review_claude.py
 
 # Review and auto-generate suggestions for gaps
-python ${SKILL_ROOT}/scripts/review_claude.py --suggest
+python3 ${SKILL_ROOT}/scripts/review_claude.py --suggest
 
 # Review a specific file
-python ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/CLAUDE.md
+python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/CLAUDE.md
 
 # Generate suggestions for a specific file
-python ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/CLAUDE.md --suggest
-```
-
-## Output
-
-```
-============================================================
-CLAUDE.MD REVIEW
-============================================================
-
-Workspace: /Users/you/Code
-
-USER-LEVEL CLAUDE.MD REVIEW
-------------------------------------------------------------
-
-  Code/CLAUDE.md: All sections present ✓
-
-ORG-LEVEL CLAUDE.MD REVIEW
-------------------------------------------------------------
-
-  gruntwork/CLAUDE.md: All sections present ✓
-
-PROJECT-LEVEL CLAUDE.MD REVIEW
-------------------------------------------------------------
-
-  gruntwork-remail/CLAUDE.md:
-    Present: 4 sections
-    Missing: 3 sections
-      - ### Cloud Details (AWS/GCP region and account table)
-      - ### Terraform Workspaces (Workspace to environment mapping)
-      - ## Gotchas (Learned-the-hard-way issues table)
-
-============================================================
-REVIEW SUMMARY
-============================================================
-  Files reviewed: 8
-  Files with gaps: 1
-
-Generate suggestions for files with gaps? [y/N]: y
-  ✓ /Users/you/Code/gruntwork/gruntwork-remail/CLAUDE.md.suggestions
-
-✓ Generated 1 suggestion files.
+python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/CLAUDE.md --suggest
 ```
 
 ## Suggest Mode
