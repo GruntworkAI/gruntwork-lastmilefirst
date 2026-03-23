@@ -115,18 +115,15 @@ def resolve_conflict(target: Path) -> Path:
     return target.parent / f"{stem}_{timestamp}{suffix}"
 
 
-def prompt_choice(message: str, choices: list[tuple[str, str]]) -> str:
-    """Show choices and get user input."""
-    print(f"\n{message}")
-    for key, desc in choices:
-        print(f"  [{key}] {desc}")
-    print()
-    while True:
-        choice = input("> ").strip().upper()
-        valid = [c[0].upper() for c in choices]
-        if choice in valid:
-            return choice
-        print(f"Please enter one of: {', '.join(valid)}")
+def should_act(args, action: str) -> bool:
+    """Check if we should perform a given action based on CLI flags."""
+    if args.yes or args.all:
+        return True
+    if action == "organize" and args.organize:
+        return True
+    if action == "archive" and args.archive:
+        return True
+    return False
 
 
 def check_structure(project_root: Path) -> dict:
@@ -405,6 +402,9 @@ def main():
     parser.add_argument("path", nargs="?", default=".", help="Project root path")
     parser.add_argument("--dry-run", action="store_true", help="Show what would happen without making changes")
     parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm all actions")
+    parser.add_argument("--organize", action="store_true", help="Create structure and migrate scattered files")
+    parser.add_argument("--archive", action="store_true", help="Archive old files")
+    parser.add_argument("--all", action="store_true", help="Organize and archive (equivalent to --organize --archive)")
     args = parser.parse_args()
 
     project_root = Path(args.path).resolve()
@@ -440,24 +440,10 @@ def main():
             total_scattered = sum(len(v) for v in scattered.values())
             if total_scattered:
                 print(f"  • Move {total_scattered} scattered files")
-            choice = None  # Skip execution in dry-run mode
-        elif auto_yes:
-            choice = "O"
-        else:
-            choice = prompt_choice(
-                "What would you like to do?",
-                [
-                    ("O", "Organize (create structure and migrate)"),
-                    ("S", "Skip to archive phase"),
-                    ("Q", "Quit"),
-                ]
-            )
+        elif not should_act(args, "organize"):
+            print("\n  Run again with --organize to create structure and migrate files.")
 
-            if choice == "Q":
-                print("Exiting.")
-                return
-
-        if not dry_run and choice == "O":
+        if not dry_run and should_act(args, "organize"):
             # Create missing directories
             if structure["missing_dirs"]:
                 create_structure(project_root, structure["missing_dirs"])
@@ -499,25 +485,11 @@ def main():
         print("=" * 60)
         return
 
-    if auto_yes:
-        choice = "A"
-    else:
-        choice = prompt_choice(
-            "What would you like to do?",
-            [
-                ("A", f"Archive {len(candidates)} files to .claude/archive/{archive_month}/"),
-                ("S", "Skip archiving"),
-                ("Q", "Quit"),
-            ]
-        )
-
-        if choice in ("Q", "S"):
-            print("Exiting.")
-            return
-
-    if choice == "A":
+    if should_act(args, "archive"):
         archived = archive_files(project_root, candidates)
         print(f"\n✓ Archived {archived} files.")
+    else:
+        print("\n  Run again with --archive to archive these files.")
 
     print("\nOrganization complete.")
 

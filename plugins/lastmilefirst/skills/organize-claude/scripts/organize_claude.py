@@ -40,84 +40,46 @@ def save_config(config: dict) -> None:
     print(f"\n  Config saved to {CONFIG_PATH}")
 
 
-def prompt_for_config() -> dict:
-    """Interactive setup for first run or reconfiguration."""
-    print("\n" + "=" * 60)
-    print("ORGANIZE-CLAUDE SETUP")
-    print("=" * 60)
-    print("\nThis skill manages CLAUDE.md files across your workspace.")
-    print("Let's configure your environment.\n")
+def scan_orgs(workspace: Path) -> list[str]:
+    """Auto-detect org directories by scanning workspace for non-hidden subdirectories."""
+    orgs = []
+    for item in sorted(workspace.iterdir()):
+        if item.is_dir() and not item.name.startswith("."):
+            orgs.append(item.name)
+    return orgs
 
-    # Workspace path
-    print("WORKSPACE PATH")
-    print("-" * 40)
-    print("The workspace is your security boundary - the root directory")
-    print("where Claude operates. Your user-level CLAUDE.md lives here.")
-    print("\nChoose a location that is:")
-    print("  - Broad enough to include everything Claude needs to work on")
-    print("  - Narrow enough to keep Claude isolated from sensitive areas")
-    print("  - NOT your home directory (~) - that's too broad!")
-    print("\nExamples: ~/Code, ~/Projects, ~/dev")
 
-    while True:
-        workspace_input = input("\nWorkspace path: ").strip()
-        if not workspace_input:
-            print("  Please enter a path.")
-            continue
+def setup_config(workspace_path: str, orgs_str: Optional[str] = None, auto_create: bool = False) -> dict:
+    """Create config from CLI arguments (no interactive prompts)."""
+    workspace = Path(workspace_path).expanduser().resolve()
 
-        # Warn if they try to use home directory
-        if workspace_input in ("~", "~/", "$HOME", "$HOME/"):
-            print("  WARNING: Using your home directory as workspace is a security risk.")
-            print("  Claude would have access to everything. Choose a subdirectory instead.")
-            continue
+    # Validate workspace
+    if workspace == Path.home():
+        print("ERROR: Home directory is too broad. Use a subdirectory like ~/Code")
+        sys.exit(1)
 
-        workspace = Path(workspace_input).expanduser().resolve()
-
-        # Also check if resolved path is home directory
-        if workspace == Path.home():
-            print("  WARNING: This resolves to your home directory - too broad!")
-            print("  Choose a subdirectory like ~/Code or ~/Projects.")
-            continue
-        if not workspace.exists():
-            create = input(f"  {workspace} doesn't exist. Create it? [y/N]: ").strip().lower()
-            if create == 'y':
-                workspace.mkdir(parents=True, exist_ok=True)
-                print(f"  Created {workspace}")
-            else:
-                continue
-        if not workspace.is_dir():
-            print(f"  {workspace} is not a directory.")
-            continue
-        break
-
-    # Org directories
-    print("\n\nORG DIRECTORIES")
-    print("-" * 40)
-    print("Orgs are subdirectories that group related projects.")
-    print("Examples: 'personal', 'work', 'client-acme', 'opensource'")
-    print("\nEnter org names (comma-separated), or leave blank to scan for directories:")
-
-    orgs_input = input("\nOrg names: ").strip()
-
-    if orgs_input:
-        orgs = [o.strip() for o in orgs_input.split(",") if o.strip()]
-    else:
-        # Scan for directories
-        print(f"\n  Scanning {workspace} for directories...")
-        orgs = []
-        for item in sorted(workspace.iterdir()):
-            if item.is_dir() and not item.name.startswith("."):
-                orgs.append(item.name)
-        if orgs:
-            print(f"  Found: {', '.join(orgs)}")
-            confirm = input("  Use these? [Y/n]: ").strip().lower()
-            if confirm == 'n':
-                orgs_input = input("  Enter org names (comma-separated): ").strip()
-                orgs = [o.strip() for o in orgs_input.split(",") if o.strip()]
+    if not workspace.exists():
+        if auto_create:
+            workspace.mkdir(parents=True, exist_ok=True)
+            print(f"  Created {workspace}")
         else:
-            print("  No directories found. Enter org names manually.")
-            orgs_input = input("  Org names (comma-separated): ").strip()
-            orgs = [o.strip() for o in orgs_input.split(",") if o.strip()]
+            print(f"ERROR: {workspace} does not exist. Create it first or pass --yes to auto-create.")
+            sys.exit(1)
+
+    if not workspace.is_dir():
+        print(f"ERROR: {workspace} is not a directory.")
+        sys.exit(1)
+
+    # Determine orgs
+    if orgs_str:
+        orgs = [o.strip() for o in orgs_str.split(",") if o.strip()]
+    else:
+        # Auto-detect by scanning workspace
+        orgs = scan_orgs(workspace)
+        if orgs:
+            print(f"  Auto-detected orgs: {', '.join(orgs)}")
+        else:
+            print("  No org directories found in workspace.")
 
     config = {
         "workspace": str(workspace),
@@ -125,30 +87,64 @@ def prompt_for_config() -> dict:
         "created": datetime.now().isoformat(),
     }
 
-    # Confirm
-    print("\n\nCONFIGURATION SUMMARY")
-    print("-" * 40)
+    save_config(config)
+
+    print("\n  CONFIGURATION SUMMARY")
     print(f"  Workspace: {workspace}")
     print(f"  Orgs: {', '.join(orgs) if orgs else '(none)'}")
-
-    save = input("\nSave this configuration? [Y/n]: ").strip().lower()
-    if save != 'n':
-        save_config(config)
 
     return config
 
 
-def get_config(force_setup: bool = False) -> dict:
-    """Get configuration, prompting for setup if needed."""
-    if force_setup:
-        return prompt_for_config()
+def add_org_to_config(org_name: str) -> dict:
+    """Add an org to existing config."""
+    config = load_config()
+    if not config:
+        print("ERROR: No configuration found. Run --setup first.")
+        sys.exit(1)
 
+    orgs = config.get("orgs", [])
+    if org_name in orgs:
+        print(f"  Org '{org_name}' already in config.")
+    else:
+        orgs.append(org_name)
+        config["orgs"] = orgs
+        save_config(config)
+        print(f"  Added org '{org_name}'. Orgs: {', '.join(orgs)}")
+
+    return config
+
+
+def remove_org_from_config(org_name: str) -> dict:
+    """Remove an org from existing config."""
+    config = load_config()
+    if not config:
+        print("ERROR: No configuration found. Run --setup first.")
+        sys.exit(1)
+
+    orgs = config.get("orgs", [])
+    if org_name not in orgs:
+        print(f"  Org '{org_name}' not in config. Current orgs: {', '.join(orgs)}")
+    else:
+        orgs.remove(org_name)
+        config["orgs"] = orgs
+        save_config(config)
+        print(f"  Removed org '{org_name}'. Orgs: {', '.join(orgs)}")
+
+    return config
+
+
+def get_config_or_exit() -> dict:
+    """Load config or exit with helpful error message."""
     config = load_config()
     if config:
         return config
 
-    print("\nNo configuration found. Let's set up organize-claude.")
-    return prompt_for_config()
+    print("No configuration found.")
+    print("\nTo set up, Claude should run:")
+    print("  python organize_claude.py --setup --workspace ~/Code")
+    print("  python organize_claude.py --setup --workspace ~/Code --orgs \"org1,org2\"")
+    sys.exit(1)
 
 
 def get_workspace_root(config: dict) -> Path:
@@ -311,18 +307,6 @@ def validate_project_mapping(
     return in_mapping_not_disk, on_disk_not_mapping
 
 
-def prompt_choice(message: str, choices: list[tuple[str, str]]) -> str:
-    """Show choices and get user input."""
-    print(f"\n{message}")
-    for key, desc in choices:
-        print(f"  [{key}] {desc}")
-    print()
-    while True:
-        choice = input("> ").strip().upper()
-        valid = [c[0].upper() for c in choices]
-        if choice in valid:
-            return choice
-        print(f"Please enter one of: {', '.join(valid)}")
 
 
 def scaffold_org_claude_md(org_path: Path, org_name: str, projects: list) -> None:
@@ -457,14 +441,14 @@ def show_audit_report(
     # Org level
     print("\nORG COVERAGE")
     print("-" * 60)
-    for org_name, org_path, has_claude in org_info:
+    for org_name, org_path, has_claude in orgs:
         projects = all_projects.get(org_name, [])
         project_count = len(projects)
         status = "✓" if has_claude else "✗ MISSING"
         print(f"  {status} {org_name}/CLAUDE.md ({project_count} projects below)")
 
     # Project level per org
-    for org_name, org_path, _ in org_info:
+    for org_name, org_path, _ in orgs:
         projects = all_projects.get(org_name, [])
         if not projects:
             continue
@@ -513,13 +497,25 @@ def show_audit_report(
 
 def main():
     parser = argparse.ArgumentParser(description="Organize CLAUDE.md configuration files")
-    parser.add_argument("--workspace", type=Path, help="Override workspace root path")
-    parser.add_argument("--setup", action="store_true", help="Run interactive setup (reconfigure)")
+
+    # Config management
+    parser.add_argument("--setup", action="store_true", help="Create or reconfigure workspace config")
+    parser.add_argument("--workspace", type=str, help="Workspace root path (required with --setup)")
+    parser.add_argument("--orgs", type=str, help="Comma-separated org names (with --setup; auto-detects if omitted)")
+    parser.add_argument("--add-org", type=str, help="Add an org to existing config")
+    parser.add_argument("--remove-org", type=str, help="Remove an org from existing config")
     parser.add_argument("--show-config", action="store_true", help="Show current configuration")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would happen")
+
+    # Actions
     parser.add_argument("--scaffold-org", type=str, help="Scaffold CLAUDE.md for specific org")
     parser.add_argument("--scaffold-project", type=str, help="Scaffold CLAUDE.md for specific project")
-    parser.add_argument("--update-mappings", action="store_true", help="Update user-level project mappings")
+    parser.add_argument("--scaffold-all-orgs", action="store_true", help="Scaffold all missing org-level CLAUDE.md files")
+    parser.add_argument("--scaffold-all-projects", action="store_true", help="Scaffold all missing project-level CLAUDE.md files")
+    parser.add_argument("--update-mappings", action="store_true", help="Show missing project mappings for user-level CLAUDE.md")
+    parser.add_argument("--full-sync", action="store_true", help="Scaffold all missing files and show mapping updates")
+
+    # Modifiers
+    parser.add_argument("--dry-run", action="store_true", help="Show what would happen without making changes")
     parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm all actions")
     args = parser.parse_args()
 
@@ -534,19 +530,32 @@ def main():
             print(f"  Created: {config.get('created', 'unknown')}")
         else:
             print(f"\nNo configuration found at {CONFIG_PATH}")
-            print("Run with --setup to configure.")
+            print("Run with --setup --workspace ~/Code to configure.")
         return
 
-    # Get or create config
-    config = get_config(force_setup=args.setup)
+    # Handle --setup
+    if args.setup:
+        if not args.workspace:
+            print("ERROR: --setup requires --workspace PATH")
+            print("  Example: --setup --workspace ~/Code")
+            print("  Example: --setup --workspace ~/Code --orgs \"gruntwork,work\"")
+            sys.exit(1)
+        setup_config(args.workspace, args.orgs, auto_create=args.yes)
+        return
 
-    # Allow command-line override of workspace
-    if args.workspace:
-        workspace = args.workspace.expanduser().resolve()
-        orgs = get_orgs(config)
-    else:
-        workspace = get_workspace_root(config)
-        orgs = get_orgs(config)
+    # Handle --add-org / --remove-org
+    if args.add_org:
+        add_org_to_config(args.add_org)
+        return
+
+    if args.remove_org:
+        remove_org_from_config(args.remove_org)
+        return
+
+    # All other actions require existing config
+    config = get_config_or_exit()
+    workspace = get_workspace_root(config)
+    orgs = get_orgs(config)
 
     dry_run = args.dry_run
 
@@ -570,13 +579,12 @@ def main():
     all_project_list = []
     for org_name, projects in all_projects.items():
         for proj_name, proj_path, has_claude in projects:
-            # Use short name for mapping comparison
             short_name = proj_name.replace(f"{org_name}-", "")
             all_project_list.append((short_name, proj_path, has_claude))
 
     mapping_validation = validate_project_mapping(mapping, all_project_list) if mapping else None
 
-    # Show audit report
+    # Show audit report (always)
     show_audit_report(workspace, user_claude, org_info, all_projects, mapping_validation)
 
     if dry_run:
@@ -585,7 +593,7 @@ def main():
         print("=" * 60)
         return
 
-    # Determine what actions are available
+    # Determine what's missing
     missing_orgs = [o for o in org_info if not o[2]]
     missing_projects = []
     for org_name, projects in all_projects.items():
@@ -593,56 +601,75 @@ def main():
             if not has_claude:
                 missing_projects.append((org_name, proj_name, proj_path))
 
-    if not missing_orgs and not missing_projects and not (mapping_validation and mapping_validation[1]):
-        print("\n✓ All CLAUDE.md files present, mappings valid.")
+    has_mapping_gaps = mapping_validation and mapping_validation[1]
+
+    # Determine which actions to take based on flags
+    do_orgs = args.scaffold_all_orgs or args.full_sync or args.yes
+    do_projects = args.scaffold_all_projects or args.full_sync or args.yes
+    do_mappings = args.update_mappings or args.full_sync or args.yes
+
+    # Handle specific scaffold requests
+    if args.scaffold_org:
+        for org_name, org_path, has_claude in orgs:
+            if org_name == args.scaffold_org:
+                if has_claude:
+                    print(f"\n  {org_name}/CLAUDE.md already exists.")
+                else:
+                    projects = all_projects.get(org_name, [])
+                    scaffold_org_claude_md(org_path, org_name, projects)
+                return
+        print(f"\n  Org '{args.scaffold_org}' not found in config.")
         return
 
-    # Build choices
-    choices = [("A", "Audit only (no changes)")]
-
-    if missing_orgs:
-        choices.append(("O", f"Scaffold {len(missing_orgs)} missing org-level files"))
-
-    if missing_projects:
-        choices.append(("P", f"Scaffold {len(missing_projects)} missing project-level files"))
-
-    if mapping_validation and mapping_validation[1]:
-        choices.append(("U", "Update user-level project mappings"))
-
-    if len(choices) > 2:  # More than just Audit and Quit
-        choices.append(("F", "Full sync (all of the above)"))
-
-    choices.append(("Q", "Quit"))
-
-    if args.yes:
-        choice = "F" if "F" in [c[0] for c in choices] else "A"
-    else:
-        choice = prompt_choice("What would you like to do?", choices)
-
-    if choice == "Q" or choice == "A":
-        print("Exiting.")
+    if args.scaffold_project:
+        for org_name, projects in all_projects.items():
+            for proj_name, proj_path, has_claude in projects:
+                if proj_name == args.scaffold_project:
+                    if has_claude:
+                        print(f"\n  {proj_name}/CLAUDE.md already exists.")
+                    else:
+                        scaffold_project_claude_md(proj_path, proj_name, org_name)
+                    return
+        print(f"\n  Project '{args.scaffold_project}' not found.")
         return
 
-    # Execute chosen actions
-    if choice in ("O", "F") and missing_orgs:
+    # Execute bulk actions if flags were given
+    acted = False
+
+    if do_orgs and missing_orgs:
         print("\nScaffolding org-level CLAUDE.md files...")
         for org_name, org_path, _ in missing_orgs:
             projects = all_projects.get(org_name, [])
             scaffold_org_claude_md(org_path, org_name, projects)
+        acted = True
 
-    if choice in ("P", "F") and missing_projects:
+    if do_projects and missing_projects:
         print("\nScaffolding project-level CLAUDE.md files...")
         for org_name, proj_name, proj_path in missing_projects:
             scaffold_project_claude_md(proj_path, proj_name, org_name)
+        acted = True
 
-    if choice in ("U", "F") and mapping_validation and mapping_validation[1]:
-        print("\nUpdating project mappings...")
-        print("  (Manual step: Add missing projects to ~/Code/CLAUDE.md Project Directory Mapping table)")
+    if do_mappings and has_mapping_gaps:
+        print("\nMissing project mappings (add to ~/Code/CLAUDE.md):")
         for name, path in mapping_validation[1]:
             short_name = name.replace("gruntwork-", "")
             print(f"  | {short_name} | {path} |")
+        acted = True
 
-    print("\n✓ Organization complete.")
+    if acted:
+        print("\n✓ Organization complete.")
+    elif not missing_orgs and not missing_projects and not has_mapping_gaps:
+        print("\n✓ All CLAUDE.md files present, mappings valid.")
+    else:
+        # Report what could be done
+        print("\nAvailable actions:")
+        if missing_orgs:
+            print(f"  --scaffold-all-orgs    Scaffold {len(missing_orgs)} missing org-level files")
+        if missing_projects:
+            print(f"  --scaffold-all-projects  Scaffold {len(missing_projects)} missing project-level files")
+        if has_mapping_gaps:
+            print(f"  --update-mappings      Show {len(mapping_validation[1])} missing project mappings")
+        print(f"  --full-sync            Do all of the above")
 
 
 if __name__ == "__main__":
