@@ -140,6 +140,14 @@ Present prioritized action list and offer to execute:
 - Onboarding to understand project state
 - After extended development sprints
 
+## Update Overwatch
+
+After completing the review, update the project's Overwatch state:
+
+```bash
+python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review
+```
+
 ## Notes
 
 - Comprehensive but may take longer than individual reviews

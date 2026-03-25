@@ -281,6 +281,14 @@ Overwatch proactively alerts when org infrastructure is missing:
 
 This means you'll be reminded at session start if your current org is missing infrastructure - you don't have to remember to run organize-orgs manually.
 
+## Update Overwatch
+
+After completing org organization, update the org's Overwatch state:
+
+```bash
+python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py organize --scope org
+```
+
 ## Related Skills
 
 - `organize-claude` - CLAUDE.md file hierarchy

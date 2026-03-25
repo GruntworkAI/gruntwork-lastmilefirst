@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from overwatch import (
     load_state,
+    resolve_context,
+    get_scoped_state,
     get_plugins_dir,
     get_invocations_file,
     get_tmp_dir,
@@ -52,33 +54,35 @@ def check_git_status() -> Optional[str]:
         )
         lines = [line for line in result.stdout.strip().split('\n') if line]
         if lines:
-            return f"  {len(lines)} uncommitted file(s) in this repo"
+            return f"ACTION REQUIRED: {len(lines)} uncommitted file(s) in this repo. Commit or stash before proceeding."
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass  # Git not available or too slow - skip silently
     return None
 
 
-def check_review_status(state: Dict) -> Optional[str]:
-    """Check days since last review."""
+def check_review_status(state: Dict, project_label: Optional[str] = None) -> Optional[str]:
+    """Check days since last review for a project."""
     last_review = state.get("last_review", 0)
+    label = f" of {project_label}" if project_label else ""
     if last_review == 0:
-        return "No project review on record - consider running /review-project"
+        return f"ACTION REQUIRED: No project review on record{label}. Run /run-review-project before starting other work."
 
     days_since = (int(time.time()) - last_review) // 86400
     if days_since >= 7:
-        return f"{days_since} days since last /review-project"
+        return f"ACTION REQUIRED: {days_since} days since last review{label}. Run /run-review-project."
     return None
 
 
-def check_organize_status(state: Dict) -> Optional[str]:
-    """Check days since last organize."""
+def check_organize_status(state: Dict, project_label: Optional[str] = None) -> Optional[str]:
+    """Check days since last organize for a project."""
     last_organize = state.get("last_organize", 0)
     if last_organize == 0:
         return None  # Don't alert on first run
 
+    label = f" of {project_label}" if project_label else ""
     days_since = (int(time.time()) - last_organize) // 86400
     if days_since >= 14:
-        return f"{days_since} days since last /organize-project"
+        return f"ACTION REQUIRED: {days_since} days since last organization{label}. Run /run-organize-project."
     return None
 
 
@@ -212,20 +216,52 @@ def check_stale_todos() -> Optional[str]:
         pass
 
     if stale_count > 0:
-        return f"{stale_count} todo(s) older than 14 days - consider /review-work"
+        return f"ACTION REQUIRED: {stale_count} todo(s) older than 14 days. Run /run-review-work to triage."
     return None
 
 
-def check_secret_scan_status(state: Dict) -> Optional[str]:
-    """Check days since last secret scan."""
+def check_secret_scan_status(state: Dict, project_label: Optional[str] = None) -> Optional[str]:
+    """Check days since last secret scan for a project."""
     last_scan = state.get("last_secret_scan", 0)
+    label = f" of {project_label}" if project_label else ""
     if last_scan == 0:
-        return "Never scanned for secrets - consider running /run-scan-secrets"
+        return f"ACTION REQUIRED: Never scanned for secrets{label}. Run /run-scan-secrets before proceeding."
 
     days_since = (int(time.time()) - last_scan) // 86400
     if days_since >= 7:
-        return f"{days_since} days since last /run-scan-secrets"
+        return f"ACTION REQUIRED: {days_since} days since last secrets scan{label}. Run /run-scan-secrets."
     return None
+
+
+def check_claude_review_status(
+    project_state: Dict,
+    org_state: Dict,
+    global_state: Dict,
+    project_label: Optional[str] = None,
+    org_label: Optional[str] = None,
+) -> List[str]:
+    """Check CLAUDE.md review freshness at all levels. 30-day threshold."""
+    alerts: List[str] = []
+    threshold = 30 * 86400
+    now = int(time.time())
+
+    checks = [
+        (global_state, "last_review_claude", "user-level CLAUDE.md"),
+    ]
+    if org_label:
+        checks.append((org_state, "last_review_claude", f"org CLAUDE.md ({org_label})"))
+    if project_label:
+        checks.append((project_state, "last_review_claude", f"project CLAUDE.md ({project_label})"))
+
+    for state, field, label in checks:
+        ts = state.get(field, 0)
+        if ts == 0:
+            alerts.append(f"WARNING: Never reviewed {label}. Consider running /run-review-claude.")
+        elif (now - ts) >= threshold:
+            days = (now - ts) // 86400
+            alerts.append(f"WARNING: {days} days since last review of {label}. Consider running /run-review-claude.")
+
+    return alerts
 
 
 def check_repo_visibility() -> Optional[str]:
@@ -251,7 +287,7 @@ def check_repo_visibility() -> Optional[str]:
         if result.returncode == 0:
             parts = result.stdout.strip().split(" ", 1)
             if len(parts) == 2 and parts[0].upper() == "PUBLIC":
-                return f"You're working in a PUBLIC repo ({parts[1]})"
+                return f"WARNING: PUBLIC repo ({parts[1]}) — do not commit secrets or sensitive content"
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass  # gh not available or too slow - skip silently
     return None
@@ -260,7 +296,7 @@ def check_repo_visibility() -> Optional[str]:
 def check_claude_md() -> Optional[str]:
     """Check if CLAUDE.md exists in current directory."""
     if not Path("CLAUDE.md").exists():
-        return "No CLAUDE.md in this project - consider /organize-claude scaffold"
+        return "ACTION REQUIRED: No CLAUDE.md in this project. Run /run-organize-project to scaffold."
     return None
 
 
@@ -289,7 +325,7 @@ def check_overwatch_guidance() -> Optional[str]:
         except (OSError, IOError):
             continue
 
-    return "No Overwatch response guidance in CLAUDE.md \u2014 Claude may ignore alerts"
+    return "ACTION REQUIRED: No Overwatch response guidance in CLAUDE.md. Run /run-organize-claude to add it."
 
 
 def check_cross_project_blockers() -> List[str]:
@@ -337,28 +373,36 @@ def check_cross_project_blockers() -> List[str]:
 def main() -> None:
     alerts: List[str] = []
 
-    # Load state
-    state = load_state()
+    # Resolve current context and load scoped state
+    ctx = resolve_context()
+    project_label = ctx["project"].split("/")[-1] if ctx["project"] else None
+    org_label = ctx["org"]
+
+    project_state = get_scoped_state("projects", ctx["project"]) if ctx["project"] else {}
+    org_state = get_scoped_state("orgs", ctx["org"]) if ctx["org"] else {}
+    global_state = get_scoped_state("global", None)
 
     # Check 1: Git status
     git_alert = check_git_status()
     if git_alert:
         alerts.append(git_alert)
 
-    # Check 2: Review status
-    review_alert = check_review_status(state)
-    if review_alert:
-        alerts.append(review_alert)
+    # Check 2: Review status (project-scoped, skip if not in a project)
+    if ctx["project"]:
+        review_alert = check_review_status(project_state, project_label)
+        if review_alert:
+            alerts.append(review_alert)
 
-    # Check 3: Organize status
-    organize_alert = check_organize_status(state)
-    if organize_alert:
-        alerts.append(organize_alert)
+    # Check 3: Organize status (project-scoped, skip if not in a project)
+    if ctx["project"]:
+        organize_alert = check_organize_status(project_state, project_label)
+        if organize_alert:
+            alerts.append(organize_alert)
 
     # Check 4: Plugin updates
     plugin_updates = check_plugin_updates()
     if plugin_updates:
-        alerts.append("Plugin updates available:")
+        alerts.append("ACTION REQUIRED: Plugin updates available. Update before starting work:")
         alerts.extend(plugin_updates)
         alerts.append("   Run: claude plugin update <plugin>@<marketplace>")
 
@@ -372,10 +416,11 @@ def main() -> None:
     if todos_alert:
         alerts.append(todos_alert)
 
-    # Check 7: Secret scan status
-    secret_scan_alert = check_secret_scan_status(state)
-    if secret_scan_alert:
-        alerts.append(secret_scan_alert)
+    # Check 7: Secret scan status (project-scoped, skip if not in a project)
+    if ctx["project"]:
+        secret_scan_alert = check_secret_scan_status(project_state, project_label)
+        if secret_scan_alert:
+            alerts.append(secret_scan_alert)
 
     # Check 8: Repo visibility
     visibility_alert = check_repo_visibility()
@@ -397,6 +442,13 @@ def main() -> None:
     if blocker_alerts:
         alerts.extend(blocker_alerts)
 
+    # Check 12: CLAUDE.md review freshness (all levels)
+    claude_review_alerts = check_claude_review_status(
+        project_state, org_state, global_state, project_label, org_label
+    )
+    if claude_review_alerts:
+        alerts.extend(claude_review_alerts)
+
     # Output to both stdout (for Claude context) and stderr (for user terminal)
     if alerts:
         header = [
@@ -405,12 +457,26 @@ def main() -> None:
             "|  OVERWATCH" + " " * 46 + "|",
             "-" * 59,
         ]
+        # Count actionable alerts
+        action_count = sum(1 for a in alerts if a.startswith("ACTION REQUIRED:") or a.startswith("WARNING:"))
+
+        # Directive block for Claude (only on stdout, not stderr)
+        directive = []
+        if action_count > 0:
+            directive = [
+                "",
+                f"DIRECTIVE: {action_count} item(s) above require action. Present each as a recommendation",
+                "to the user BEFORE proceeding with their request. Do not silently skip them.",
+            ]
+
         # Print to stdout for Claude
         for line in header:
             print(line)
         for alert in alerts:
             print(alert)
-        # Echo to stderr for user visibility
+        for line in directive:
+            print(line)
+        # Echo to stderr for user visibility (alerts only, no directive)
         for line in header:
             print(line, file=sys.stderr)
         for alert in alerts:

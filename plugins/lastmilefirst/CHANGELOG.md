@@ -5,6 +5,26 @@ All notable changes to the lastmilefirst plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-03-24
+
+### Added
+- **Per-Project/Per-Org Overwatch State Tracking** — Overwatch now tracks review, organize, and scan timestamps independently for each project and org, replacing the old single-global-timestamp model
+  - State file upgraded to v2 format with `global`, `orgs`, and `projects` scopes
+  - Lazy, automatic migration from v1 — no user action needed
+  - `update_state.py` rewritten with `--scope` (project/org/global) and `--key` args, auto-detects current project from CWD
+  - `update_state.py status` shows current project/org/global state; `--all` shows everything tracked
+  - Session start alerts are now context-aware: show project name in messages, skip project-scoped alerts when at workspace root
+
+- **CLAUDE.md Review Tracking** — new `last_review_claude` field tracked at all three levels (user, org, project) with 30-day staleness threshold
+
+- **Skill Overwatch Integration** — `review-project`, `organize-project`, `review-claude`, and `organize-orgs` skills now include an "Update Overwatch" step so state gets recorded after each run
+
+### Changed
+- `scan-secrets` now records `last_secret_scan` per-project instead of globally
+- `session_start.py` resolves current org/project context before generating alerts
+- `overwatch.py` exports new functions: `resolve_context()`, `get_scoped_state()`, `update_scoped_state()`, `update_project_state()`, `update_org_state()`
+- `update_state_field()` preserved for backward compatibility (operates on global scope)
+
 ## [0.11.0] - 2026-03-06
 
 ### Added
