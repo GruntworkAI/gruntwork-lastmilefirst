@@ -116,6 +116,23 @@ Sections are defined in template frontmatter (single source of truth):
 - Gotchas
 - Testing
 
+## Update Overwatch
+
+After completing the review, update Overwatch state for each level reviewed:
+
+```bash
+# Project-level CLAUDE.md
+python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude
+
+# Org-level CLAUDE.md
+python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope org
+
+# User-level CLAUDE.md
+python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope global
+```
+
+Run whichever levels were actually reviewed in the session.
+
 ## Future Enhancement
 
 When CLAUDE.md files exceed ~200 lines with path-specific sections, review-claude will recommend considering Claude Rules for context efficiency.

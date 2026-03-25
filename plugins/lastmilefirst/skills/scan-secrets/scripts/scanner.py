@@ -321,15 +321,14 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
 
 
 def update_scan_timestamp() -> None:
-    """Update the overwatch state with current scan timestamp."""
+    """Update the overwatch state with current scan timestamp (project-scoped)."""
     try:
-        # Import overwatch utilities
         hooks_scripts = (
             Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
         )
         sys.path.insert(0, str(hooks_scripts))
-        from overwatch import update_state_field
+        from overwatch import update_project_state
 
-        update_state_field("last_secret_scan", int(time.time()))
+        update_project_state("last_secret_scan", int(time.time()))
     except (ImportError, Exception):
         pass  # Non-critical — don't fail scan over state update
