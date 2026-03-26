@@ -28,7 +28,16 @@ from overwatch import (
     get_lock_file,
     file_lock,
     version_compare,
+    _load_organize_config,
 )
+
+# Import archetype detection from organize-claude
+_ARCHETYPES_DIR = Path(__file__).parent.parent.parent / "skills" / "organize-claude" / "scripts"
+sys.path.insert(0, str(_ARCHETYPES_DIR))
+try:
+    from archetypes import detect_archetype as _detect_archetype
+except ImportError:
+    _detect_archetype = None
 
 # Path to todos-summary scripts (sibling skill)
 TODOS_SUMMARY_SCRIPTS = Path(__file__).parent.parent.parent / "skills" / "todos-summary" / "scripts"
@@ -328,6 +337,248 @@ def check_overwatch_guidance() -> Optional[str]:
     return "ACTION REQUIRED: No Overwatch response guidance in CLAUDE.md. Run /run-organize-claude to add it."
 
 
+def check_archetype() -> Optional[str]:
+    """Check if project CLAUDE.md declares an archetype."""
+    if _detect_archetype is None:
+        return None  # Archetype module not available, skip silently
+
+    claude_md = Path("CLAUDE.md")
+    if not claude_md.exists():
+        return None  # No CLAUDE.md — separate check handles this
+
+    try:
+        content = claude_md.read_text()
+        archetype = _detect_archetype(content)
+        if archetype is None:
+            return "WARNING: No archetype set in project CLAUDE.md. Add `## Archetype: Deployable|Usable|Referenceable|Experimental` for targeted section checks."
+    except (OSError, IOError):
+        pass
+    return None
+
+
+def check_org_infrastructure(config: Dict) -> List[str]:
+    """Check org infrastructure: org.json, operatives repo, stack-wisdom repo."""
+    alerts: List[str] = []
+    workspace = Path(config.get("workspace", ""))
+    if not workspace.is_dir():
+        return alerts
+
+    for org_name in config.get("orgs", []):
+        org_dir = workspace / org_name
+        if not org_dir.is_dir():
+            continue
+
+        org_json = org_dir / ".claude" / "org.json"
+        operatives_dir = None
+        wisdom_dir = None
+
+        if org_json.exists():
+            try:
+                with open(org_json, encoding="utf-8") as f:
+                    org_data = json.load(f)
+                operatives_dir = org_dir / org_data.get("operatives", {}).get("repo", f"{org_name}-operatives")
+                wisdom_dir = org_dir / org_data.get("stack_wisdom", {}).get("repo", f"{org_name}-stack-wisdom")
+            except (json.JSONDecodeError, IOError):
+                operatives_dir = org_dir / f"{org_name}-operatives"
+                wisdom_dir = org_dir / f"{org_name}-stack-wisdom"
+        else:
+            alerts.append(f"WARNING: Org '{org_name}' missing .claude/org.json — run /run-organize-orgs")
+            operatives_dir = org_dir / f"{org_name}-operatives"
+            wisdom_dir = org_dir / f"{org_name}-stack-wisdom"
+
+        if not operatives_dir.is_dir():
+            alerts.append(f"WARNING: Org '{org_name}' missing operatives repo — run /run-organize-orgs")
+        if not wisdom_dir.is_dir():
+            alerts.append(f"WARNING: Org '{org_name}' missing stack-wisdom repo — run /run-organize-orgs")
+
+    return alerts
+
+
+def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
+    """
+    Scan all projects across all orgs for health metrics.
+    Returns compact summary (session start) or full per-project detail (--full).
+    """
+    workspace = Path(config.get("workspace", ""))
+    if not workspace.is_dir():
+        return []
+
+    state = load_state()
+    now = int(time.time())
+
+    total = 0
+    missing_archetype = []
+    never_reviewed = []
+    stale_reviewed = []
+    never_scanned = []
+    stale_scanned = []
+    never_organized = []
+    stale_organized = []
+    missing_claude_md = []
+
+    for org_name in config.get("orgs", []):
+        org_dir = workspace / org_name
+        if not org_dir.is_dir():
+            continue
+
+        for project_dir in sorted(org_dir.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            # Skip hidden dirs and non-project dirs (like CLAUDE.md files)
+            if project_dir.name.startswith("."):
+                continue
+
+            project_key = f"{org_name}/{project_dir.name}"
+            project_label = project_dir.name
+            total += 1
+
+            project_state = state.get("projects", {}).get(project_key, {})
+
+            # Check CLAUDE.md exists
+            claude_md = project_dir / "CLAUDE.md"
+            if not claude_md.exists():
+                missing_claude_md.append(project_label)
+            else:
+                # Check archetype
+                if _detect_archetype is not None:
+                    try:
+                        content = claude_md.read_text(encoding="utf-8")
+                        if _detect_archetype(content) is None:
+                            missing_archetype.append(project_label)
+                    except (OSError, IOError):
+                        pass
+
+            # Check review freshness
+            last_review = project_state.get("last_review", 0)
+            if last_review == 0:
+                never_reviewed.append(project_label)
+            elif (now - last_review) // 86400 >= 7:
+                stale_reviewed.append(project_label)
+
+            # Check secret scan freshness
+            last_scan = project_state.get("last_secret_scan", 0)
+            if last_scan == 0:
+                never_scanned.append(project_label)
+            elif (now - last_scan) // 86400 >= 7:
+                stale_scanned.append(project_label)
+
+            # Check organize freshness
+            last_organize = project_state.get("last_organize", 0)
+            if last_organize == 0:
+                never_organized.append(project_label)
+            elif (now - last_organize) // 86400 >= 14:
+                stale_organized.append(project_label)
+
+    if total == 0:
+        return []
+
+    if full:
+        return _format_workspace_full(
+            total, missing_claude_md, missing_archetype,
+            never_reviewed, stale_reviewed,
+            never_scanned, stale_scanned,
+            never_organized, stale_organized,
+        )
+
+    return _format_workspace_summary(
+        total, missing_claude_md, missing_archetype,
+        never_reviewed, stale_reviewed,
+        never_scanned, stale_scanned,
+    )
+
+
+def _format_workspace_summary(
+    total: int,
+    missing_claude_md: List[str],
+    missing_archetype: List[str],
+    never_reviewed: List[str],
+    stale_reviewed: List[str],
+    never_scanned: List[str],
+    stale_scanned: List[str],
+) -> List[str]:
+    """Compact one-line summary for session start."""
+    parts = []
+    if missing_claude_md:
+        parts.append(f"{len(missing_claude_md)}/{total} missing CLAUDE.md")
+    if missing_archetype:
+        parts.append(f"{len(missing_archetype)}/{total} missing archetype")
+    review_issues = len(never_reviewed) + len(stale_reviewed)
+    if review_issues:
+        parts.append(f"{review_issues}/{total} need review")
+    scan_issues = len(never_scanned) + len(stale_scanned)
+    if scan_issues:
+        parts.append(f"{scan_issues}/{total} need secret scan")
+
+    if not parts:
+        return [f"WORKSPACE: All {total} projects healthy"]
+
+    summary = " | ".join(parts)
+    return [
+        f"WORKSPACE: {summary}",
+        "   Run /run-overwatch check for per-project details",
+    ]
+
+
+def _format_workspace_full(
+    total: int,
+    missing_claude_md: List[str],
+    missing_archetype: List[str],
+    never_reviewed: List[str],
+    stale_reviewed: List[str],
+    never_scanned: List[str],
+    stale_scanned: List[str],
+    never_organized: List[str],
+    stale_organized: List[str],
+) -> List[str]:
+    """Full per-project breakdown for /run-overwatch check."""
+    lines: List[str] = []
+    lines.append(f"WORKSPACE REPORT ({total} projects)")
+    lines.append("-" * 50)
+
+    if missing_claude_md:
+        lines.append(f"  Missing CLAUDE.md ({len(missing_claude_md)}):")
+        for p in missing_claude_md:
+            lines.append(f"    - {p}")
+
+    if missing_archetype:
+        lines.append(f"  Missing archetype ({len(missing_archetype)}):")
+        for p in missing_archetype:
+            lines.append(f"    - {p}")
+
+    if never_reviewed:
+        lines.append(f"  Never reviewed ({len(never_reviewed)}):")
+        for p in never_reviewed:
+            lines.append(f"    - {p}")
+    if stale_reviewed:
+        lines.append(f"  Review overdue >7d ({len(stale_reviewed)}):")
+        for p in stale_reviewed:
+            lines.append(f"    - {p}")
+
+    if never_scanned:
+        lines.append(f"  Never scanned for secrets ({len(never_scanned)}):")
+        for p in never_scanned:
+            lines.append(f"    - {p}")
+    if stale_scanned:
+        lines.append(f"  Secret scan overdue >7d ({len(stale_scanned)}):")
+        for p in stale_scanned:
+            lines.append(f"    - {p}")
+
+    if never_organized:
+        lines.append(f"  Never organized ({len(never_organized)}):")
+        for p in never_organized:
+            lines.append(f"    - {p}")
+    if stale_organized:
+        lines.append(f"  Organize overdue >14d ({len(stale_organized)}):")
+        for p in stale_organized:
+            lines.append(f"    - {p}")
+
+    if not any([missing_claude_md, missing_archetype, never_reviewed, stale_reviewed,
+                never_scanned, stale_scanned, never_organized, stale_organized]):
+        lines.append("  All projects healthy!")
+
+    return lines
+
+
 def check_cross_project_blockers() -> List[str]:
     """
     Check for urgent/blocked todos across all projects.
@@ -371,6 +622,7 @@ def check_cross_project_blockers() -> List[str]:
 
 
 def main() -> None:
+    full_mode = "--full" in sys.argv
     alerts: List[str] = []
 
     # Resolve current context and load scoped state
@@ -381,6 +633,9 @@ def main() -> None:
     project_state = get_scoped_state("projects", ctx["project"]) if ctx["project"] else {}
     org_state = get_scoped_state("orgs", ctx["org"]) if ctx["org"] else {}
     global_state = get_scoped_state("global", None)
+
+    # Load workspace config for cross-project checks
+    config = _load_organize_config() or {}
 
     # Check 1: Git status
     git_alert = check_git_status()
@@ -442,12 +697,30 @@ def main() -> None:
     if blocker_alerts:
         alerts.extend(blocker_alerts)
 
-    # Check 12: CLAUDE.md review freshness (all levels)
+    # Check 12: Project archetype declaration (current project only)
+    if ctx["project"]:
+        archetype_alert = check_archetype()
+        if archetype_alert:
+            alerts.append(archetype_alert)
+
+    # Check 13: CLAUDE.md review freshness (all levels)
     claude_review_alerts = check_claude_review_status(
         project_state, org_state, global_state, project_label, org_label
     )
     if claude_review_alerts:
         alerts.extend(claude_review_alerts)
+
+    # Check 14: Org infrastructure (all orgs)
+    if config:
+        org_infra_alerts = check_org_infrastructure(config)
+        if org_infra_alerts:
+            alerts.extend(org_infra_alerts)
+
+    # Check 15: Workspace-level project summary (summary or full)
+    if config:
+        workspace_alerts = check_workspace_summary(config, full=full_mode)
+        if workspace_alerts:
+            alerts.extend(workspace_alerts)
 
     # Output to both stdout (for Claude context) and stderr (for user terminal)
     if alerts:
@@ -482,12 +755,13 @@ def main() -> None:
         for alert in alerts:
             print(alert, file=sys.stderr)
 
-    # Clear session change log
-    session_log = get_tmp_dir() / "session-changes.log"
-    try:
-        session_log.unlink(missing_ok=True)
-    except (OSError, IOError):
-        pass  # Ignore errors clearing log
+    # Clear session change log (skip in --full mode, only for session start)
+    if not full_mode:
+        session_log = get_tmp_dir() / "session-changes.log"
+        try:
+            session_log.unlink(missing_ok=True)
+        except (OSError, IOError):
+            pass  # Ignore errors clearing log
 
 
 if __name__ == "__main__":
