@@ -1,0 +1,73 @@
+---
+# Required sections for Usable project CLAUDE.md
+# Archetype: You install, run, or invoke it (gems, CLIs, plugins, SDKs)
+required_sections:
+  - header: "## Development Environment"
+    description: "Runtime setup, start commands"
+  - header: "## Installation"
+    description: "How to install or add as dependency"
+  - header: "## Configuration"
+    description: "Settings, env vars, config files"
+  - header: "## Testing"
+    description: "Test commands"
+  - header: "## Publishing"
+    description: "How to release or publish new versions"
+  - header: "## Gotchas"
+    description: "Learned-the-hard-way issues table"
+---
+
+# {{PROJECT_NAME}}
+
+{{PROJECT_DESCRIPTION}}
+
+## Archetype: Usable
+
+---
+
+## Development Environment
+
+```bash
+{{DEV_SETUP_COMMANDS}}
+```
+
+---
+
+## Installation
+
+```bash
+{{INSTALL_COMMANDS}}
+```
+
+---
+
+## Configuration
+
+{{CONFIGURATION_DETAILS}}
+
+---
+
+## Testing
+
+```bash
+{{TEST_COMMANDS}}
+```
+
+---
+
+## Publishing
+
+```bash
+{{PUBLISH_COMMANDS}}
+```
+
+---
+
+## Gotchas (Learned the Hard Way)
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| | | |
+
+---
+
+*Inherits from ~/Code/CLAUDE.md and ~/Code/{{ORG}}/CLAUDE.md*

@@ -58,6 +58,25 @@ Manages Claude configuration across your development workspace. Currently handle
 - Validate rule syntax and coverage
 - Ensure rules align with CLAUDE.md policies
 
+## Project Archetypes
+
+Every project CLAUDE.md should declare its archetype near the top. This controls which sections are expected and reviewed.
+
+| Archetype | When to Use | Key Sections |
+|-----------|-------------|-------------|
+| **Deployable** | You deploy it somewhere (AWS, Vercel, etc.) | Infrastructure, Cloud Details, Terraform Workspaces, Deployment, Testing |
+| **Usable** | You install/run/invoke it (gems, CLIs, plugins, SDKs) | Installation, Configuration, Publishing, Testing |
+| **Referenceable** | You read/consult it (knowledge archives, docs) | Content Structure, How to Update |
+| **Experimental** | New project, shape TBD | Quick Commands (minimal) |
+
+Format in CLAUDE.md: `## Archetype: Deployable` (right after project description).
+
+When scaffolding a new project, pass `--archetype` to get the right template:
+
+```bash
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project myproject --archetype usable
+```
+
 ## When to Use
 
 - Setting up a new workspace or machine
@@ -375,9 +394,9 @@ Based on audit output, suggest specific commands:
   python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-all-orgs
   ```
 
-- Missing project files: "These projects need CLAUDE.md. Create them?"
+- Missing project files: "These projects need CLAUDE.md. Create them?" Ask "What kind of project is this?" and offer the four archetypes.
   ```bash
-  python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project PROJNAME
+  python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project PROJNAME --archetype deployable
   python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-all-projects
   ```
 
@@ -412,6 +431,7 @@ python3 ${SKILL_ROOT}/scripts/organize_claude.py --dry-run
 # Scaffold specific items
 python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-org gruntwork
 python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project gruntwork-leamo
+python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-project gruntwork-leamo --archetype deployable
 
 # Scaffold all missing
 python3 ${SKILL_ROOT}/scripts/organize_claude.py --scaffold-all-orgs

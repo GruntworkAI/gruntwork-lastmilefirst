@@ -1,0 +1,116 @@
+---
+# Required sections for Deployable project CLAUDE.md
+# Archetype: You deploy it somewhere (AWS, Vercel, etc.)
+required_sections:
+  - header: "## Development Environment"
+    description: "Runtime setup, start commands"
+  - header: "## Infrastructure"
+    description: "Cloud provider, region, account details"
+  - header: "### Cloud Details"
+    description: "AWS/GCP region and account table"
+  - header: "### Terraform Workspaces"
+    description: "Workspace to environment mapping"
+  - header: "## Deployment"
+    description: "Deploy commands and verification"
+  - header: "## Gotchas"
+    description: "Learned-the-hard-way issues table"
+  - header: "## Testing"
+    description: "Test commands"
+---
+
+# {{PROJECT_NAME}}
+
+{{PROJECT_DESCRIPTION}}
+
+## Archetype: Deployable
+
+---
+
+## Development Environment
+
+### CRITICAL: {{PRIMARY_RUNTIME}} Setup
+
+{{RUNTIME_SETUP_INSTRUCTIONS}}
+
+**Starting the {{PRIMARY_COMPONENT}}:**
+```bash
+{{START_COMMANDS}}
+```
+
+**Common issues:**
+{{COMMON_DEV_ISSUES}}
+
+---
+
+## Infrastructure
+
+### CRITICAL: Check Terraform Workspace First
+
+**Before ANY terraform command:**
+```bash
+terraform workspace show  # Must match your target environment!
+```
+
+### Cloud Details
+
+| Setting | Value |
+|---------|-------|
+| **Provider** | {{CLOUD_PROVIDER}} |
+| **Region** | {{CLOUD_REGION}} |
+| **Account/Project** | {{CLOUD_ACCOUNT}} |
+
+### Terraform Workspaces
+
+| Workspace | Environment | Var File | Notes |
+|-----------|-------------|----------|-------|
+| dev | Development | terraform.tfvars.dev | {{DEV_NOTES}} |
+| stg | Staging | terraform.tfvars.stg | {{STG_NOTES}} |
+| prd | Production | terraform.tfvars.prd | {{PRD_NOTES}} |
+
+---
+
+## Deployment
+
+### Code Deployment (Frequent)
+
+```bash
+{{CODE_DEPLOY_COMMANDS}}
+```
+
+### Verify Deployment
+
+```bash
+{{VERIFY_COMMANDS}}
+```
+
+### Environment URLs
+
+| Environment | URL | Health Check |
+|-------------|-----|--------------|
+| dev | {{DEV_URL}} | {{DEV_HEALTH}} |
+| stg | {{STG_URL}} | {{STG_HEALTH}} |
+| prd | {{PRD_URL}} | {{PRD_HEALTH}} |
+
+---
+
+## Gotchas (Learned the Hard Way)
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| | | |
+
+---
+
+## Testing
+
+```bash
+# Unit tests
+{{UNIT_TEST_CMD}}
+
+# Integration tests
+{{INTEGRATION_TEST_CMD}}
+```
+
+---
+
+*Inherits from ~/Code/CLAUDE.md and ~/Code/{{ORG}}/CLAUDE.md*

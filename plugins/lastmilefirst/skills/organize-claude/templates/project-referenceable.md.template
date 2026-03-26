@@ -1,0 +1,43 @@
+---
+# Required sections for Referenceable project CLAUDE.md
+# Archetype: You read and consult it (knowledge archives, docs, wisdom repos)
+required_sections:
+  - header: "## Content Structure"
+    description: "How content is organized"
+  - header: "## How to Update"
+    description: "Process for adding or modifying content"
+  - header: "## Gotchas"
+    description: "Learned-the-hard-way issues table"
+---
+
+# {{PROJECT_NAME}}
+
+{{PROJECT_DESCRIPTION}}
+
+## Archetype: Referenceable
+
+This is a reference resource, not a deployed service. No infrastructure, no deployment, no tests. The work is reading, writing, and building from these materials.
+
+---
+
+## Content Structure
+
+{{CONTENT_STRUCTURE_DESCRIPTION}}
+
+---
+
+## How to Update
+
+{{UPDATE_PROCESS}}
+
+---
+
+## Gotchas (Learned the Hard Way)
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| | | |
+
+---
+
+*Inherits from ~/Code/CLAUDE.md and ~/Code/{{ORG}}/CLAUDE.md*

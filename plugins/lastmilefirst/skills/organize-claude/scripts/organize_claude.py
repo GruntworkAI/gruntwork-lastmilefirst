@@ -19,6 +19,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from archetypes import (
+    VALID_ARCHETYPES,
+    detect_archetype,
+    get_template_name_for_archetype,
+    format_archetype_choices,
+)
+
 # Config file location
 CONFIG_PATH = Path.home() / ".config" / "organize-claude" / "config.json"
 
@@ -352,9 +359,19 @@ def scaffold_org_claude_md(org_path: Path, org_name: str, projects: list) -> Non
     print(f"  ✓ Created {output_path}")
 
 
-def scaffold_project_claude_md(project_path: Path, project_name: str, org_name: str) -> None:
-    """Create a scaffold CLAUDE.md for a project."""
-    template_path = Path(__file__).parent.parent / "templates" / "project-claude.md.template"
+def scaffold_project_claude_md(
+    project_path: Path, project_name: str, org_name: str, archetype: Optional[str] = None
+) -> None:
+    """Create a scaffold CLAUDE.md for a project, optionally archetype-specific."""
+    templates_dir = Path(__file__).parent.parent / "templates"
+
+    # Select archetype-specific template if provided
+    if archetype:
+        template_path = templates_dir / get_template_name_for_archetype(archetype)
+        if not template_path.exists():
+            template_path = templates_dir / "project-claude.md.template"
+    else:
+        template_path = templates_dir / "project-claude.md.template"
 
     if template_path.exists():
         content = template_path.read_text()
@@ -509,6 +526,12 @@ def main():
     # Actions
     parser.add_argument("--scaffold-org", type=str, help="Scaffold CLAUDE.md for specific org")
     parser.add_argument("--scaffold-project", type=str, help="Scaffold CLAUDE.md for specific project")
+    parser.add_argument(
+        "--archetype",
+        type=str,
+        choices=VALID_ARCHETYPES,
+        help="Project archetype (deployable, usable, referenceable, experimental). Used with --scaffold-project.",
+    )
     parser.add_argument("--scaffold-all-orgs", action="store_true", help="Scaffold all missing org-level CLAUDE.md files")
     parser.add_argument("--scaffold-all-projects", action="store_true", help="Scaffold all missing project-level CLAUDE.md files")
     parser.add_argument("--update-mappings", action="store_true", help="Show missing project mappings for user-level CLAUDE.md")
@@ -628,7 +651,7 @@ def main():
                     if has_claude:
                         print(f"\n  {proj_name}/CLAUDE.md already exists.")
                     else:
-                        scaffold_project_claude_md(proj_path, proj_name, org_name)
+                        scaffold_project_claude_md(proj_path, proj_name, org_name, args.archetype)
                     return
         print(f"\n  Project '{args.scaffold_project}' not found.")
         return
