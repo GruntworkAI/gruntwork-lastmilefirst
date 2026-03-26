@@ -89,32 +89,37 @@ When gaps are found, `--suggest` generates a `.suggestions` file containing temp
 
 Review the suggestions and manually copy relevant parts to your CLAUDE.md.
 
+## Archetype-Aware Review
+
+Project-level reviews are archetype-aware. The review detects `## Archetype: X` in each project's CLAUDE.md and checks only the sections relevant to that archetype.
+
+| Archetype | Checked Sections |
+|-----------|-----------------|
+| **Deployable** | Dev Environment, Infrastructure, Cloud Details, Terraform Workspaces, Deployment, Gotchas, Testing |
+| **Usable** | Dev Environment, Installation, Configuration, Testing, Publishing, Gotchas |
+| **Referenceable** | Content Structure, How to Update, Gotchas |
+| **Experimental** | Quick Commands |
+| **No archetype** | Section checks skipped; finding reported to add archetype |
+
+Projects without an archetype get a "no archetype declared" finding instead of being checked against the full Deployable template. This avoids false positives for non-deployable projects.
+
 ## Expected Sections
 
-Sections are defined in template frontmatter (single source of truth):
-
-**User-level:**
+**User-level** (from template frontmatter):
 - Workspace Organization
 - Core Philosophy
 - Project Directory Mapping
 - Development Workflow
 - Quick Debugging Checklist
 
-**Org-level:**
+**Org-level** (from template frontmatter):
 - Security & Compliance
 - Naming Conventions
 - Approved Tools & Resources
 - Tech Stack
 - Projects
 
-**Project-level:**
-- Development Environment
-- Infrastructure
-- Cloud Details
-- Terraform Workspaces
-- Deployment
-- Gotchas
-- Testing
+**Project-level** (archetype-specific — see table above)
 
 ## Update Overwatch
 

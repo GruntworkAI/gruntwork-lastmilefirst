@@ -7,10 +7,13 @@ Identifies gaps and optionally generates suggestions for missing content.
 
 Uses the same config as organize-claude (shared workspace/orgs settings).
 References organize-claude templates for expected section definitions.
+Project-level reviews are archetype-aware: sections checked depend on the
+project's declared archetype (Deployable, Usable, Referenceable, Experimental).
 """
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +26,19 @@ TEMPLATES_DIR = ORGANIZE_CLAUDE_DIR / "templates"
 USER_TEMPLATE = TEMPLATES_DIR / "user-claude.md.template"
 ORG_TEMPLATE = TEMPLATES_DIR / "org-claude.md.template"
 PROJECT_TEMPLATE = TEMPLATES_DIR / "project-claude.md.template"
+
+# Import archetypes from organize-claude
+sys.path.insert(0, str(ORGANIZE_CLAUDE_DIR / "scripts"))
+from archetypes import (
+    VALID_ARCHETYPES,
+    ARCHETYPE_DESCRIPTIONS,
+    detect_archetype,
+    get_sections_for_archetype,
+    get_template_name_for_archetype,
+    format_archetype_choices,
+    infer_archetype,
+    infer_archetype_from_content,
+)
 
 
 def load_config() -> Optional[dict]:
@@ -91,8 +107,14 @@ def parse_template_frontmatter(template_path: Path) -> list[tuple[str, str]]:
     return sections
 
 
-def get_expected_sections(level: str) -> list[tuple[str, str]]:
-    """Get expected sections for a given level from template frontmatter."""
+def get_expected_sections(level: str, archetype: Optional[str] = None) -> list[tuple[str, str]]:
+    """
+    Get expected sections for a given level from template frontmatter.
+    For project level, uses archetype-specific sections if archetype is provided.
+    """
+    if level == "project" and archetype:
+        return get_sections_for_archetype(archetype)
+
     template_map = {
         "user": USER_TEMPLATE,
         "org": ORG_TEMPLATE,
@@ -104,8 +126,13 @@ def get_expected_sections(level: str) -> list[tuple[str, str]]:
     return []
 
 
-def get_template_path(level: str) -> Path:
-    """Get template path for a given level."""
+def get_template_path(level: str, archetype: Optional[str] = None) -> Path:
+    """Get template path for a given level, optionally archetype-specific."""
+    if level == "project" and archetype:
+        archetype_template = TEMPLATES_DIR / get_template_name_for_archetype(archetype)
+        if archetype_template.exists():
+            return archetype_template
+
     template_map = {
         "user": USER_TEMPLATE,
         "org": ORG_TEMPLATE,
@@ -114,15 +141,19 @@ def get_template_path(level: str) -> Path:
     return template_map.get(level, PROJECT_TEMPLATE)
 
 
-def review_claude_md(file_path: Path, expected_sections: list) -> dict:
+def review_claude_md(file_path: Path, expected_sections: list, level: str = "project") -> dict:
     """
     Review an existing CLAUDE.md against expected sections.
-    Returns dict with 'present', 'missing', and 'content' keys.
+    Returns dict with 'present', 'missing', 'archetype', 'archetype_missing',
+    'inferred_archetype', and 'content' keys.
     """
     result = {
         "path": file_path,
         "present": [],
         "missing": [],
+        "archetype": None,
+        "archetype_missing": False,
+        "inferred_archetype": None,
         "content": "",
     }
 
@@ -132,6 +163,21 @@ def review_claude_md(file_path: Path, expected_sections: list) -> dict:
 
     content = file_path.read_text()
     result["content"] = content
+
+    # Detect archetype for project-level files
+    if level == "project":
+        archetype = detect_archetype(content)
+        result["archetype"] = archetype
+        if archetype is None:
+            result["archetype_missing"] = True
+            # Try to infer from project directory structure, then from content
+            project_dir = file_path.parent
+            inferred, _scores = infer_archetype(project_dir)
+            if inferred is None:
+                inferred = infer_archetype_from_content(content)
+            result["inferred_archetype"] = inferred
+        else:
+            expected_sections = get_sections_for_archetype(archetype)
 
     for section_header, description in expected_sections:
         if section_header in content:
@@ -153,20 +199,40 @@ def show_review_report(reviews: list[dict], level: str) -> list[dict]:
         path = review["path"]
         present = review["present"]
         missing = review["missing"]
+        archetype = review.get("archetype")
+        archetype_missing = review.get("archetype_missing", False)
 
         if not review["content"]:
             print(f"\n  {path.name}: FILE MISSING")
             continue
 
-        if missing:
+        # Build label with archetype info for project-level
+        label = f"{path.parent.name}/{path.name}"
+        if level == "project":
+            if archetype:
+                label += f" [{archetype.capitalize()}]"
+            else:
+                label += " [No archetype]"
+
+        if archetype_missing:
             files_with_gaps.append(review)
-            print(f"\n  {path.parent.name}/{path.name}:")
+            inferred = review.get("inferred_archetype")
+            print(f"\n  {label}:")
+            if inferred:
+                print(f"    No archetype declared — inferred: {inferred.capitalize()}")
+                print(f"    Suggestion: add `## Archetype: {inferred.capitalize()}` to CLAUDE.md")
+            else:
+                print(f"    No archetype declared — could not infer")
+                print(f"    Add: ## Archetype: Deployable|Usable|Referenceable|Experimental")
+        elif missing:
+            files_with_gaps.append(review)
+            print(f"\n  {label}:")
             print(f"    Present: {len(present)} sections")
             print(f"    Missing: {len(missing)} sections")
             for header, desc in missing:
                 print(f"      - {header} ({desc})")
         else:
-            print(f"\n  {path.parent.name}/{path.name}: All sections present ✓")
+            print(f"\n  {label}: All sections present ✓")
 
     return files_with_gaps
 
@@ -175,6 +241,16 @@ def generate_suggestions(review: dict, template_path: Path) -> str:
     """Generate suggested additions for missing sections."""
     suggestions = []
     missing = review["missing"]
+    archetype_missing = review.get("archetype_missing", False)
+
+    if archetype_missing:
+        suggestions.append(f"# Archetype needed for {review['path'].parent.name}/CLAUDE.md")
+        suggestions.append(f"# Add one of these lines near the top of your CLAUDE.md:\n")
+        for name in VALID_ARCHETYPES:
+            desc = ARCHETYPE_DESCRIPTIONS[name]
+            suggestions.append(f"## Archetype: {name.capitalize()}")
+            suggestions.append(f"# {desc}\n")
+        return "\n".join(suggestions)
 
     if not missing:
         return ""
@@ -256,6 +332,7 @@ def main():
     parser.add_argument("--file", type=Path, help="Review a specific CLAUDE.md file")
     parser.add_argument("--suggest", action="store_true", help="Generate suggestions for gaps")
     parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm suggestion generation")
+    parser.add_argument("--fix", action="store_true", help="Add inferred archetype labels to CLAUDE.md files missing them")
     args = parser.parse_args()
 
     # Load config
@@ -276,16 +353,31 @@ def main():
             return
 
         level = determine_level(file_path, workspace)
-        expected_sections = get_expected_sections(level)
-        template_path = get_template_path(level)
 
-        review = review_claude_md(file_path, expected_sections)
+        # For project-level, detect archetype first
+        archetype = None
+        if level == "project" and file_path.exists():
+            content = file_path.read_text()
+            archetype = detect_archetype(content)
 
-        if not review["missing"]:
-            print(f"\n✓ {file_path.name} has all expected {level}-level sections.")
+        expected_sections = get_expected_sections(level, archetype)
+        template_path = get_template_path(level, archetype)
+
+        review = review_claude_md(file_path, expected_sections, level)
+
+        if review.get("archetype_missing"):
+            print(f"\n  No archetype declared in {file_path.name}")
+            print(f"  Add one of these near the top of your CLAUDE.md:")
+            print(format_archetype_choices())
             return
 
-        print(f"\nReviewing {file_path}...")
+        if not review["missing"]:
+            archetype_label = f" ({archetype.capitalize()})" if archetype else ""
+            print(f"\n✓ {file_path.name}{archetype_label} has all expected {level}-level sections.")
+            return
+
+        archetype_label = f" [{archetype.capitalize()}]" if archetype else ""
+        print(f"\nReviewing {file_path}{archetype_label}...")
         print(f"  Level: {level}")
         print(f"  Present: {len(review['present'])} sections")
         print(f"  Missing: {len(review['missing'])} sections")
@@ -312,23 +404,24 @@ def main():
     # Review user-level file
     user_claude_path = workspace / "CLAUDE.md"
     if user_claude_path.exists():
-        review = review_claude_md(user_claude_path, get_expected_sections("user"))
+        review = review_claude_md(user_claude_path, get_expected_sections("user"), "user")
         all_reviews["user"].append(review)
 
     # Review org-level files
     for org_name, org_path, has_claude in org_info:
         if has_claude:
             claude_path = org_path / "CLAUDE.md"
-            review = review_claude_md(claude_path, get_expected_sections("org"))
+            review = review_claude_md(claude_path, get_expected_sections("org"), "org")
             all_reviews["org"].append(review)
 
-    # Review project-level files
+    # Review project-level files (archetype-aware)
     for org_name, org_path, _ in org_info:
         projects = find_projects(org_path)
         for proj_name, proj_path, has_claude in projects:
             if has_claude:
                 claude_path = proj_path / "CLAUDE.md"
-                review = review_claude_md(claude_path, get_expected_sections("project"))
+                # Pass default sections; review_claude_md will detect archetype and override
+                review = review_claude_md(claude_path, get_expected_sections("project"), "project")
                 all_reviews["project"].append(review)
 
     # Show reports
@@ -349,27 +442,88 @@ def main():
     total_reviewed = len(all_reviews["user"]) + len(all_reviews["org"]) + len(all_reviews["project"])
     total_with_gaps = len(user_gaps) + len(org_gaps) + len(project_gaps)
 
+    # Count archetype stats
+    archetype_counts = {"labeled": 0, "unlabeled": 0}
+    for review in all_reviews["project"]:
+        if review.get("archetype"):
+            archetype_counts["labeled"] += 1
+        elif review.get("archetype_missing"):
+            archetype_counts["unlabeled"] += 1
+
     print("\n" + "=" * 60)
     print("REVIEW SUMMARY")
     print("=" * 60)
     print(f"  Files reviewed: {total_reviewed}")
     print(f"  Files with gaps: {total_with_gaps}")
 
+    if all_reviews["project"]:
+        total_projects = len(all_reviews["project"])
+        print(f"\n  Project archetypes: {archetype_counts['labeled']}/{total_projects} labeled")
+        if archetype_counts["unlabeled"] > 0:
+            print(f"  {archetype_counts['unlabeled']} project(s) need an archetype declaration")
+
     if total_with_gaps == 0:
         print("\n✓ All reviewed files have expected sections.")
+        return
+
+    # Fix archetype labels if requested
+    if args.fix:
+        fixed = 0
+        skipped = 0
+        for review in all_reviews["project"]:
+            if not review.get("archetype_missing"):
+                continue
+            inferred = review.get("inferred_archetype")
+            if not inferred:
+                skipped += 1
+                continue
+            file_path = review["path"]
+            content = review["content"]
+            # Insert archetype line after the first heading
+            lines = content.split("\n")
+            insert_idx = None
+            for i, line in enumerate(lines):
+                if line.startswith("# ") and not line.startswith("## "):
+                    insert_idx = i + 1
+                    # Skip blank lines after heading
+                    while insert_idx < len(lines) and lines[insert_idx].strip() == "":
+                        insert_idx += 1
+                    # Skip description paragraph (next non-empty, non-heading line)
+                    if insert_idx < len(lines) and not lines[insert_idx].startswith("#"):
+                        insert_idx += 1
+                        while insert_idx < len(lines) and lines[insert_idx].strip() == "":
+                            insert_idx += 1
+                    break
+
+            if insert_idx is None:
+                insert_idx = 0
+
+            archetype_block = f"\n## Archetype: {inferred.capitalize()}\n"
+            lines.insert(insert_idx, archetype_block)
+            file_path.write_text("\n".join(lines))
+            print(f"  ✓ {file_path.parent.name}: added ## Archetype: {inferred.capitalize()}")
+            fixed += 1
+
+        print(f"\n  Fixed: {fixed} file(s)")
+        if skipped:
+            print(f"  Skipped: {skipped} file(s) — could not infer archetype")
         return
 
     # Generate suggestions if requested via --suggest or --yes
     all_gaps = user_gaps + org_gaps + project_gaps
 
     if not (args.suggest or args.yes):
-        print("\n  Run again with --suggest to generate suggestion templates for gaps.")
+        hints = ["--suggest to generate suggestion templates for gaps"]
+        if archetype_counts["unlabeled"] > 0:
+            hints.append("--fix to add inferred archetype labels")
+        print(f"\n  Run again with {' or '.join(hints)}.")
         return
 
     for review in all_gaps:
         file_path = review["path"]
         level = determine_level(file_path, workspace)
-        template_path = get_template_path(level)
+        archetype = review.get("archetype")
+        template_path = get_template_path(level, archetype)
 
         suggestions = generate_suggestions(review, template_path)
         suggestions_file = file_path.parent / "CLAUDE.md.suggestions"

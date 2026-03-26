@@ -1,0 +1,27 @@
+---
+# Required sections for Experimental project CLAUDE.md
+# Archetype: New project, shape TBD
+required_sections:
+  - header: "## Quick Commands"
+    description: "Essential commands to get started"
+---
+
+# {{PROJECT_NAME}}
+
+{{PROJECT_DESCRIPTION}}
+
+## Archetype: Experimental
+
+This project is exploratory. Sections will be added as the shape becomes clear. When the project matures, update the archetype to Deployable, Usable, or Referenceable.
+
+---
+
+## Quick Commands
+
+```bash
+{{QUICK_COMMANDS}}
+```
+
+---
+
+*Inherits from ~/Code/CLAUDE.md and ~/Code/{{ORG}}/CLAUDE.md*
