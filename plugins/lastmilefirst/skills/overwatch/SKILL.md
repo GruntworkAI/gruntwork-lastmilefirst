@@ -30,6 +30,7 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Missing CLAUDE.md | Every session | No CLAUDE.md in project |
 | Expert roster sync | Every session | User CLAUDE.md missing experts or operatives |
 | Org infrastructure | Every session | Missing org.json, operatives, or wisdom repo |
+| Workspace summary | Every session | Cross-project health (archetypes, reviews, scans) |
 
 ## How It Works
 
@@ -63,7 +64,7 @@ When you run these commands, overwatch records the timestamp:
 
 When `/run-overwatch` or `/run-overwatch status` is called:
 
-1. Run the session-start checks manually
+1. Run the session-start script: `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session_start.py"`
 2. Display current state timestamps
 3. Show any active alerts
 4. Suggest next actions if needed
@@ -75,8 +76,9 @@ When `/run-overwatch reset` is called:
 
 When `/run-overwatch check` is called:
 
-1. Force run all checks regardless of state
-2. Display full report
+1. Run the session-start script with `--full` flag: `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session_start.py" --full`
+2. This produces a full per-project breakdown showing every project's health status
+3. Display the full report and suggest remediation actions
 
 ## Org Infrastructure Check
 
