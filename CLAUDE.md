@@ -2,6 +2,9 @@
 
 Claude Code plugin marketplace for Gruntwork development workflows.
 
+
+## Archetype: Usable
+
 ## CRITICAL: Version Bumping
 
 **When bumping a plugin version, you MUST update ALL of these files:**
