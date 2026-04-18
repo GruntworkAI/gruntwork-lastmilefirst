@@ -5,6 +5,18 @@ All notable changes to the lastmilefirst plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`audit-plugin` skill and `/run-audit-plugin` command** — wrapper around [Griffith](https://github.com/GruntworkAI/gruntwork-griffith) for plugin evaluation. Shells out to `griffith analyze <source> --json`, parses the result, and renders a markdown summary in the Claude session.
+  - Accepts git URLs, `owner/repo` GitHub shorthand, and local paths — supports both pre-install vetting and post-install re-audit
+  - `--strict` flag passes through to enable broader (noisier) security rules
+  - `--json` flag emits raw Griffith JSON for scripting / comparison
+  - Auto-discovers `griffith` binary: PATH first, then `~/Code/gruntwork/gruntwork-griffith/.venv/bin/griffith` dev fallback; clear install instructions if neither
+  - Escapes untrusted plugin content (names, paths, finding text) in code fences to prevent prompt injection into the surrounding Claude session
+  - Validates `schema_version` before rendering; warns on unknown versions
+  - Renders risk-level banner, inventory table, severity breakdown, footprint + efficiency rating, architecture pattern + recommendations, and findings detail grouped by severity (cap 10 per group)
+
 ## [0.13.0] - 2026-03-24
 
 ### Added
