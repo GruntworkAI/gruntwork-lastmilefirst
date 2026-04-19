@@ -1,0 +1,78 @@
+{
+  "schema_version": "0.1",
+  "plugin": {
+    "name": "deps-python",
+    "path": ".",
+    "source": "tests/fixtures/deps-python-plugin"
+  },
+  "inventory": {
+    "counts": {
+      "agents": 1,
+      "commands": 0,
+      "skills": 0,
+      "hooks": 0,
+      "mcp_servers": 0,
+      "personas": 0,
+      "templates": 0,
+      "unknown": 0
+    },
+    "totals": {"files": 1, "lines": 6}
+  },
+  "security": {
+    "risk_level": "none",
+    "finding_count": 0,
+    "findings": []
+  },
+  "footprint": {
+    "baseline_tokens_approx_cl100k": 100,
+    "on_demand_max": 118,
+    "primary_driver": "agents",
+    "efficiency_rating": "excellent",
+    "per_component": {"agents": 100}
+  },
+  "architecture": {
+    "pattern": "agent-heavy",
+    "efficiency_notes": [],
+    "recommendations": []
+  },
+  "dependencies": {
+    "scan_status": "tier1_only",
+    "manifests": [
+      {"path": "requirements.txt", "is_symlink": false, "size_skipped": false},
+      {"path": "pyproject.toml", "is_symlink": false, "size_skipped": false}
+    ],
+    "lockfiles": [],
+    "unscanned_manifests": [],
+    "ecosystems": ["PyPI"],
+    "package_count": 6,
+    "packages": [
+      {"ecosystem": "PyPI", "name": "fastapi", "constraint": ">=0.100", "kind": "runtime", "manifest": "pyproject.toml"},
+      {"ecosystem": "PyPI", "name": "uvicorn", "constraint": ">=0.20", "kind": "runtime", "manifest": "pyproject.toml"},
+      {"ecosystem": "PyPI", "name": "pytest", "constraint": ">=7.0", "kind": "optional", "manifest": "pyproject.toml"},
+      {"ecosystem": "PyPI", "name": "requests", "constraint": ">=2.25.0", "kind": "runtime", "manifest": "requirements.txt"},
+      {"ecosystem": "PyPI", "name": "Pillow", "constraint": ">=10.0.0,<11.0.0", "kind": "runtime", "manifest": "requirements.txt"},
+      {"ecosystem": "PyPI", "name": "tiktoken", "constraint": "==0.8.0", "kind": "runtime", "manifest": "requirements.txt"}
+    ],
+    "sca": null
+  },
+  "analysis_scope": ["static"],
+  "untrusted_fields": [
+    "plugin.name",
+    "security.findings[].file",
+    "architecture.efficiency_notes[]",
+    "architecture.recommendations[]",
+    "dependencies.manifests[].path",
+    "dependencies.lockfiles[].path",
+    "dependencies.unscanned_manifests[]",
+    "dependencies.packages[].ecosystem",
+    "dependencies.packages[].name",
+    "dependencies.packages[].constraint",
+    "dependencies.packages[].manifest"
+  ],
+  "meta": {
+    "griffith_version": "0.1.0",
+    "griffith_hardening_version": "1",
+    "analyzed_at": "2026-04-18T00:00:00Z",
+    "source_type": "path"
+  }
+}

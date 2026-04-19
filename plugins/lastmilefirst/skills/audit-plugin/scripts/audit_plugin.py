@@ -619,6 +619,10 @@ def render_single(report: dict) -> None:
     _render_architecture(enveloped["architecture"])
     print()
 
+    deps = enveloped.get("dependencies") or {}
+    if deps:
+        _render_dependencies(deps)
+
     if enveloped["security"]["findings"]:
         _render_findings_detail(enveloped["security"]["findings"])
         print()
@@ -676,6 +680,10 @@ def _render_single_no_walk(report: dict) -> None:
 
     _render_architecture(report["architecture"])
     print()
+
+    deps = report.get("dependencies") or {}
+    if deps:
+        _render_dependencies(deps)
 
     if report["security"]["findings"]:
         _render_findings_detail(report["security"]["findings"])
@@ -757,6 +765,103 @@ def _render_architecture(arch: dict) -> None:
         print("**Recommendations:**\n")
         for rec in arch["recommendations"]:
             print(f"- {rec}")
+
+
+# Maximum packages rendered per manifest table; excess collapsed to "+N more".
+_PACKAGES_PER_MANIFEST_CAP = 10
+
+
+def _render_dependencies(deps: dict) -> None:
+    """Render the Dependencies section (Tier 1 — Unit 2 scope).
+
+    State machine mirrors Griffith's Rich renderer:
+
+    - No manifests/lockfiles/packages/unscanned      → omit section.
+    - Every manifest is a symlink + no packages      → refusal line.
+    - Only unscanned_manifests populated             → parser-failure list.
+    - Otherwise                                      → full section (ecosystems,
+                                                       per-manifest packages,
+                                                       lockfiles, unscanned).
+
+    All strings in this section arrive already enveloped by the walker.
+    Runtime-kind packages render without an annotation; non-runtime kinds
+    ("dev", "optional", "peer") render with a parenthetical.
+    """
+    manifests = deps.get("manifests") or []
+    lockfiles = deps.get("lockfiles") or []
+    packages = deps.get("packages") or []
+    unscanned = deps.get("unscanned_manifests") or []
+
+    if not manifests and not lockfiles and not packages and not unscanned:
+        return  # terse minimal-plugin case
+
+    print("## Dependencies\n")
+
+    # Symlink-only case: all manifests are symlinks and no packages/lockfiles.
+    symlink_only = (
+        manifests and all(m.get("is_symlink") for m in manifests)
+        and not packages and not lockfiles
+    )
+    if symlink_only:
+        print(
+            "⚠️ **Symlinked manifests refused for safety.** "
+            "See Findings Detail above for per-file refusals.\n"
+        )
+        return
+
+    # Ecosystem + package summary.
+    ecosystems = deps.get("ecosystems") or []
+    if ecosystems:
+        # Ecosystems are strings in untrusted_fields[].packages[].ecosystem;
+        # here we read them off the top-level ecosystems[] which mirrors
+        # those values. The walker enveloped the package-level values but
+        # not the summary array, so envelope them here for consistency.
+        eco_display = ", ".join(_envelope(e) for e in ecosystems)
+        print(f"**Ecosystems:** {eco_display}  ·  **Packages:** {len(packages)}\n")
+    elif packages:
+        print(f"**Packages:** {len(packages)}\n")
+
+    # Per-manifest grouped packages.
+    if packages:
+        by_manifest: dict[str, list[dict]] = {}
+        for p in packages:
+            by_manifest.setdefault(p["manifest"], []).append(p)
+        for manifest_path in sorted(by_manifest):
+            group = by_manifest[manifest_path]
+            print(f"**{manifest_path}** ({len(group)})\n")
+            print("| Package | Constraint | Kind |")
+            print("|---------|-----------|------|")
+            for p in group[:_PACKAGES_PER_MANIFEST_CAP]:
+                # name / constraint / ecosystem / manifest arrive enveloped.
+                # kind is Griffith-controlled (runtime|dev|optional|peer);
+                # not in untrusted_fields, not enveloped.
+                name = p.get("name", "")
+                constraint = p.get("constraint", "") or "—"
+                kind = p.get("kind", "runtime")
+                kind_display = "" if kind == "runtime" else f"*{kind}*"
+                print(f"| {name} | {constraint} | {kind_display} |")
+            if len(group) > _PACKAGES_PER_MANIFEST_CAP:
+                extra = len(group) - _PACKAGES_PER_MANIFEST_CAP
+                print(f"\n*…and {extra} more (use `--json` for full list)*")
+            print()
+
+    # Lockfiles (detected, not parsed in Tier 1).
+    if lockfiles:
+        print(f"**Lockfiles detected ({len(lockfiles)}):**\n")
+        for lf in lockfiles[:5]:
+            print(f"- {lf['path']}")
+        if len(lockfiles) > 5:
+            print(f"- *…and {len(lockfiles) - 5} more*")
+        print()
+
+    # Unscanned manifests (parser failures) — info-level warning.
+    if unscanned:
+        print(f"⚠️ **Could not parse ({len(unscanned)}):**\n")
+        for path in unscanned[:5]:
+            print(f"- {path}")
+        if len(unscanned) > 5:
+            print(f"- *…and {len(unscanned) - 5} more*")
+        print()
 
 
 def _render_findings_detail(findings: list[dict], cap_per_severity: int = 10) -> None:

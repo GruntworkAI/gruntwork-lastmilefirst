@@ -5,12 +5,28 @@ description: Audit a Claude Code plugin before installing (or re-audit an instal
 
 # Audit Plugin
 
-Evaluate a Claude Code plugin using Griffith's static analyzer. Surfaces four dimensions of analysis:
+Evaluate a Claude Code plugin using Griffith's static analyzer. Surfaces five dimensions of analysis:
 
 1. **Inventory** — what components the plugin contains (agents, commands, skills, hooks, MCP servers)
 2. **Security** — risky patterns (shell execution, credential refs, settings tampering) across 22 ReDoS-safe regex rules
 3. **Footprint** — always-on baseline vs on-demand max context cost, with efficiency rating
 4. **Architecture** — classification (agent-heavy / skill-first / mcp-based / hybrid) with recommendations
+5. **Dependencies** — Tier 1 manifest + package listing (Python + Node parsed; Ruby/Go/Rust detected). Tier 2 CVE scanning via `--sca` — Unit 3 scope.
+
+## Output template (stable)
+
+Sections appear in a fixed order so downstream readers can rely on the layout:
+
+1. `# Plugin Audit: <name>` header
+2. Risk-level banner
+3. **Third-party content boundary** preamble
+4. `## Inventory`
+5. `## Security`
+6. `## Footprint`
+7. `## Architecture`
+8. `## Dependencies` — **omitted when the plugin has no manifests / lockfiles / packages / unscanned entries**
+9. `## Findings Detail` — only when findings are present
+10. Footer with timestamp + scope
 
 ## Prerequisites
 
@@ -46,15 +62,18 @@ The wrapper auto-discovers griffith in this order:
 
 ## How it works
 
-1. **Prereq check** — locates the `griffith` binary (PATH or dev install)
+1. **Prereq check** — locates the `griffith` binary (containment-checked `GRIFFITH_BIN` env → PATH → opt-in dev fallback)
 2. **Shell out** — runs `griffith analyze <source> --json` with optional `--strict`
-3. **Parse JSON** — validates schema_version and extracts key fields
-4. **Render in session** — produces a human-readable summary with:
+3. **Parse JSON** — handshakes `schema_version` (soft-fail with `GRIFFITH_ERR: SCHEMA_DRIFT` sentinel on mismatch); flags unknown top-level keys as a secondary drift signal
+4. **Envelope walk** — every plugin-controlled string is wrapped in `⟦…⟧` markers per `UNTRUSTED_FIELDS_V0_1 ∪ report["untrusted_fields"]`. See *Handling untrusted content* below
+5. **Render in session** — produces a human-readable summary with:
    - Risk level highlighted
    - Finding counts by severity
    - Footprint rating with primary driver
    - Architecture pattern + recommendations
-   - Untrusted fields wrapped in escaped blocks to prevent prompt injection into Claude's context
+   - **Dependencies (Tier 1)** — per-manifest package listing (Python + Node parsed; Ruby / Go / Rust detected but not parsed)
+   - **Dependencies (Tier 2 CVE)** — opt-in via `--sca`. Lands in Unit 3 of the Phase 1.5 upgrade
+   - Third-party content boundary preamble precedes every region containing untrusted data
 
 ## Script
 

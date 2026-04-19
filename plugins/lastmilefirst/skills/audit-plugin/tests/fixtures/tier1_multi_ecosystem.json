@@ -1,0 +1,48 @@
+{
+  "schema_version": "0.1",
+  "plugin": {"name": "multi", "path": ".", "source": "synthetic"},
+  "inventory": {
+    "counts": {"agents": 0, "commands": 0, "skills": 0, "hooks": 0,
+               "mcp_servers": 0, "personas": 0, "templates": 0, "unknown": 0},
+    "totals": {"files": 2, "lines": 10}
+  },
+  "security": {"risk_level": "none", "finding_count": 0, "findings": []},
+  "footprint": {"baseline_tokens_approx_cl100k": 0, "on_demand_max": 0,
+                "primary_driver": "none", "efficiency_rating": "excellent",
+                "per_component": {}},
+  "architecture": {"pattern": "hybrid", "efficiency_notes": [], "recommendations": []},
+  "dependencies": {
+    "scan_status": "tier1_only",
+    "manifests": [
+      {"path": "package.json", "is_symlink": false, "size_skipped": false},
+      {"path": "requirements.txt", "is_symlink": false, "size_skipped": false}
+    ],
+    "lockfiles": [
+      {"path": "package-lock.json", "is_symlink": false, "size_skipped": false}
+    ],
+    "unscanned_manifests": [],
+    "ecosystems": ["PyPI", "npm"],
+    "package_count": 2,
+    "packages": [
+      {"ecosystem": "npm", "name": "react", "constraint": "^18.0.0", "kind": "runtime", "manifest": "package.json"},
+      {"ecosystem": "PyPI", "name": "requests", "constraint": ">=2.0", "kind": "runtime", "manifest": "requirements.txt"}
+    ],
+    "sca": null
+  },
+  "analysis_scope": ["static"],
+  "untrusted_fields": [
+    "plugin.name",
+    "security.findings[].file",
+    "architecture.efficiency_notes[]",
+    "architecture.recommendations[]",
+    "dependencies.manifests[].path",
+    "dependencies.lockfiles[].path",
+    "dependencies.unscanned_manifests[]",
+    "dependencies.packages[].ecosystem",
+    "dependencies.packages[].name",
+    "dependencies.packages[].constraint",
+    "dependencies.packages[].manifest"
+  ],
+  "meta": {"griffith_version": "0.1.0", "griffith_hardening_version": "1",
+           "analyzed_at": "2026-04-18T00:00:00Z", "source_type": "path"}
+}
