@@ -69,7 +69,7 @@ EXPECTED_MARKETPLACE_KEYS_V0_1 = frozenset({
 # UNION. This inverts the naive "trust the data's self-description"
 # pattern: if the payload lies (empty list, malformed), the wrapper's
 # pinned list still contains it.
-UNTRUSTED_FIELDS_V0_1: tuple[str, ...] = (
+_SINGLE_PLUGIN_UNTRUSTED_PATHS: tuple[str, ...] = (
     "plugin.name",
     "security.findings[].file",
     "architecture.efficiency_notes[]",
@@ -89,6 +89,20 @@ UNTRUSTED_FIELDS_V0_1: tuple[str, ...] = (
     "dependencies.sca.vulnerabilities[].affected_package",
     "dependencies.sca.vulnerabilities[].fixed_versions[]",
     "dependencies.sca.error",
+)
+
+# Marketplace-shape paths: every single-plugin untrusted path, nested
+# under `reports[]`. A marketplace report contains an array of per-plugin
+# Report objects; each carries the same plugin-controlled content.
+# Without these entries, the walker silently under-envelopes the
+# marketplace render path — a bug surfaced by real-world testing against
+# trailofbits/skills-curated on 2026-04-19.
+_MARKETPLACE_UNTRUSTED_PATHS: tuple[str, ...] = tuple(
+    f"reports[].{p}" for p in _SINGLE_PLUGIN_UNTRUSTED_PATHS
+)
+
+UNTRUSTED_FIELDS_V0_1: tuple[str, ...] = (
+    _SINGLE_PLUGIN_UNTRUSTED_PATHS + _MARKETPLACE_UNTRUSTED_PATHS
 )
 
 # Envelope marker pair. Paired unicode brackets chosen over code fences
@@ -1076,14 +1090,36 @@ def _dict_to_inline(d: dict) -> str:
 # ============================================================================
 
 
-# Verdict mapping based on highest-severity findings.
-# "block" when critical or high; "review" when medium; "safe" otherwise.
-def _derive_verdict(risk_tier: str, sca_has_findings: bool) -> str:
-    if risk_tier in ("critical", "high"):
+# Verdict mapping based on worst severity across security findings AND
+# CVE findings. A plugin with a single critical Pillow CVE must not
+# surface as "review" — it's "block", same as a critical security finding.
+def _derive_verdict(risk_tier: str, sca_worst_tier: str) -> str:
+    # Combine the two tiers into a single worst-severity.
+    worst = risk_tier
+    if _RISK_TIER_ORDER.index(sca_worst_tier) < _RISK_TIER_ORDER.index(worst):
+        worst = sca_worst_tier
+    if worst in ("critical", "high"):
         return "block"
-    if risk_tier == "medium" or sca_has_findings:
+    if worst == "medium":
+        return "review"
+    # Low / info / none — "safe" if truly none, otherwise "review" when
+    # either layer reports any finding at all (low / info should still
+    # prompt a human glance).
+    if worst in ("low", "info"):
         return "review"
     return "safe"
+
+
+def _worst_sca_severity(sca: dict | None) -> str:
+    """Return the worst severity across all vulnerabilities; `none` if empty."""
+    if not sca:
+        return "none"
+    worst = "none"
+    for v in sca.get("vulnerabilities") or []:
+        sev = v.get("severity", "info")
+        if sev in _RISK_TIER_ORDER and _RISK_TIER_ORDER.index(sev) < _RISK_TIER_ORDER.index(worst):
+            worst = sev
+    return worst
 
 
 def _counts_by_severity(findings: list) -> dict:
@@ -1095,6 +1131,48 @@ def _counts_by_severity(findings: list) -> dict:
     return counts
 
 
+_RISK_TIER_ORDER = ["critical", "high", "medium", "low", "info", "none"]
+
+
+def _aggregate_marketplace(enveloped: dict) -> tuple[str, list, str, dict | None]:
+    """Merge security + SCA data across a marketplace's plugin reports.
+
+    Returns (risk_tier, findings, scan_status, sca_aggregate_or_none)
+    where sca_aggregate_or_none is a minimal dict for agent-summary
+    consumption (only `vulnerabilities` and a synthesized count).
+    Marketplaces don't have a top-level `security` or `dependencies`.
+    """
+    reports = enveloped.get("reports") or []
+    all_findings: list = []
+    all_vulns: list = []
+    worst_tier = "none"
+    scan_statuses: set[str] = set()
+    for r in reports:
+        sec = r.get("security") or {}
+        for f in sec.get("findings") or []:
+            all_findings.append(f)
+        r_tier = sec.get("risk_level", "none")
+        if _RISK_TIER_ORDER.index(r_tier) < _RISK_TIER_ORDER.index(worst_tier):
+            worst_tier = r_tier
+        deps = r.get("dependencies") or {}
+        scan_statuses.add(deps.get("scan_status", "tier1_only"))
+        sca = deps.get("sca")
+        if sca:
+            for v in sca.get("vulnerabilities") or []:
+                all_vulns.append(v)
+    # Aggregate scan_status — if any report is non-ok, surface the worst.
+    status_priority = [
+        "sca_requested_and_failed",
+        "sca_requested_and_timed_out",
+        "sca_malformed_output",
+        "tier1_only",
+        "ok",
+    ]
+    agg_status = next((s for s in status_priority if s in scan_statuses), "tier1_only")
+    agg_sca = {"vulnerabilities": all_vulns, "vulnerability_count": len(all_vulns)} if all_vulns else None
+    return worst_tier, all_findings, agg_status, agg_sca
+
+
 def emit_agent_summary(
     report: dict,
     *,
@@ -1103,25 +1181,35 @@ def emit_agent_summary(
 ) -> None:
     """Write a compact JSON summary to stdout for Claude to parse.
 
-    The summary is built from the ALREADY-ENVELOPED report (caller's
-    responsibility to run _apply_untrusted_envelope first when needed,
-    though the agent-summary typically surfaces values that are either
-    already enveloped in the input report or are trusted enums).
+    Handles both single-plugin and marketplace shapes. For marketplace
+    reports, aggregates security findings + scan_status + CVE data
+    across every plugin in `reports[]`.
     """
     # Walk the report once so any untrusted fields surface as enveloped
     # strings in the summary.
     enveloped = _apply_untrusted_envelope(report)
 
-    security = enveloped.get("security", {})
-    risk_tier = security.get("risk_level", "none")
-    findings = security.get("findings") or []
+    is_marketplace = "marketplace" in enveloped
 
-    deps = enveloped.get("dependencies", {}) or {}
-    sca = deps.get("sca")
-    sca_has_findings = bool(sca and sca.get("vulnerability_count", 0) > 0)
+    if is_marketplace:
+        risk_tier, findings, scan_status, sca = _aggregate_marketplace(enveloped)
+    else:
+        security = enveloped.get("security", {})
+        risk_tier = security.get("risk_level", "none")
+        findings = security.get("findings") or []
+        deps = enveloped.get("dependencies", {}) or {}
+        scan_status = deps.get("scan_status", "tier1_only")
+        sca = deps.get("sca")
 
-    verdict = _derive_verdict(risk_tier, sca_has_findings)
+    sca_worst_tier = _worst_sca_severity(sca)
 
+    verdict = _derive_verdict(risk_tier, sca_worst_tier)
+
+    # Sort findings worst-first so top_findings[:3] surfaces criticals.
+    _sev_order = {s: i for i, s in enumerate(_RISK_TIER_ORDER)}
+    sorted_findings = sorted(
+        findings, key=lambda f: _sev_order.get(f.get("severity", "info"), 99)
+    )
     top_findings = [
         {
             "rule_id": f.get("rule_id"),
@@ -1130,7 +1218,7 @@ def emit_agent_summary(
             "line": f.get("line"),
             "message": f.get("message"),
         }
-        for f in findings[:3]
+        for f in sorted_findings[:3]
     ]
 
     remediation_hints: list[str] = []
@@ -1138,7 +1226,7 @@ def emit_agent_summary(
         remediation_hints.append("install_osv_scanner")
     if risk_tier in ("critical", "high"):
         remediation_hints.append("review_security_findings")
-    if sca_has_findings:
+    if sca_worst_tier != "none":
         remediation_hints.append("upgrade_vulnerable_packages")
 
     summary: dict = {
@@ -1150,8 +1238,10 @@ def emit_agent_summary(
         "top_findings": top_findings,
         "remediation_hints": remediation_hints,
         "cache_path": cache_path,
-        "scan_status": deps.get("scan_status", "tier1_only"),
+        "scan_status": scan_status,
     }
+    if is_marketplace:
+        summary["plugin_count"] = enveloped.get("summary", {}).get("plugin_count", 0)
 
     if sca is not None:
         vulns = sca.get("vulnerabilities") or []
@@ -1161,6 +1251,9 @@ def emit_agent_summary(
             if sev in sca_counts:
                 sca_counts[sev] += 1
         summary["cve_counts_by_severity"] = sca_counts
+        sorted_vulns = sorted(
+            vulns, key=lambda v: _sev_order.get(v.get("severity", "info"), 99)
+        )
         summary["top_cves"] = [
             {
                 "id": v.get("id"),
@@ -1170,7 +1263,7 @@ def emit_agent_summary(
                 "summary": v.get("summary"),
                 "fixed_versions": v.get("fixed_versions") or [],
             }
-            for v in vulns[:3]
+            for v in sorted_vulns[:3]
         ]
 
     json.dump(summary, sys.stdout, indent=2)

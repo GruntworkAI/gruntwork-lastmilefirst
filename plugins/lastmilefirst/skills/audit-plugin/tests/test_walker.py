@@ -256,6 +256,62 @@ class TestWalkerMissingKeys:
         assert out["dependencies"]["packages"] == []
 
 
+class TestWalkerMarketplaceShape:
+    """Marketplace report shape: plugin data lives under `reports[]`.
+
+    Regression test from real-world smoke on trailofbits/skills-curated —
+    the initial UNTRUSTED_FIELDS_V0_1 only listed single-plugin paths,
+    so marketplace-nested fields rendered raw.
+    """
+
+    def test_reports_plugin_name_enveloped(self):
+        report = {
+            "schema_version": "0.1",
+            "marketplace": {"source": "s", "path": "/tmp/x"},
+            "reports": [
+                {"plugin": {"name": "first-plugin", "path": ".", "source": "s"}},
+                {"plugin": {"name": "second-plugin", "path": ".", "source": "s"}},
+            ],
+            "summary": {"plugin_count": 2, "risk_level_counts": {}, "patterns": {}},
+            "meta": {},
+            "untrusted_fields": [],
+        }
+        out = audit_plugin._apply_untrusted_envelope(report)
+        # BOTH plugin names must be enveloped by the wrapper's pinned list.
+        assert out["reports"][0]["plugin"]["name"] == _env("first-plugin")
+        assert out["reports"][1]["plugin"]["name"] == _env("second-plugin")
+
+    def test_reports_nested_cve_fields_enveloped(self):
+        report = {
+            "schema_version": "0.1",
+            "marketplace": {"source": "s", "path": "/tmp/x"},
+            "reports": [
+                {
+                    "plugin": {"name": "p", "path": ".", "source": "s"},
+                    "dependencies": {
+                        "sca": {
+                            "vulnerabilities": [
+                                {"id": "CVE-NESTED",
+                                 "summary": "nested vuln",
+                                 "affected_package": "pkg",
+                                 "fixed_versions": ["1.0"]}
+                            ]
+                        }
+                    },
+                }
+            ],
+            "summary": {"plugin_count": 1, "risk_level_counts": {}, "patterns": {}},
+            "meta": {},
+            "untrusted_fields": [],
+        }
+        out = audit_plugin._apply_untrusted_envelope(report)
+        sca = out["reports"][0]["dependencies"]["sca"]
+        assert sca["vulnerabilities"][0]["id"] == _env("CVE-NESTED")
+        assert sca["vulnerabilities"][0]["summary"] == _env("nested vuln")
+        assert sca["vulnerabilities"][0]["affected_package"] == _env("pkg")
+        assert sca["vulnerabilities"][0]["fixed_versions"][0] == _env("1.0")
+
+
 class TestWalkerFullPinnedList:
     def test_full_v0_1_list_runs_without_error(self):
         """Sanity: the full wrapper list walks a realistic report without crashing."""

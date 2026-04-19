@@ -222,6 +222,158 @@ class TestSCAInSummary:
         assert "install_osv_scanner" in summary["remediation_hints"]
 
 
+class TestMarketplaceAggregation:
+    """Regression tests from real-world smoke on trailofbits/skills-curated.
+
+    Marketplace reports don't have top-level `security` or `dependencies`;
+    the data lives under `reports[]`. A naive implementation reads top-level
+    and emits safe/none for every marketplace, which is wrong when any
+    nested plugin has findings.
+    """
+
+    def _build_marketplace(
+        self,
+        plugin_severities: list[str],
+        vuln_severities: list[str] | None = None,
+    ) -> dict:
+        reports = []
+        for i, sev in enumerate(plugin_severities):
+            r: dict = {
+                "schema_version": "0.1",
+                "plugin": {"name": f"plugin-{i}", "path": ".", "source": "s"},
+                "inventory": {"counts": {k: 0 for k in (
+                    "agents", "commands", "skills", "hooks", "mcp_servers",
+                    "personas", "templates", "unknown")},
+                    "totals": {"files": 0, "lines": 0}},
+                "security": {
+                    "risk_level": sev,
+                    "finding_count": 1 if sev != "none" else 0,
+                    "findings": (
+                        [{"rule_id": f"r{i}", "severity": sev,
+                          "file": f"f{i}", "line": 1, "message": f"m{i}"}]
+                        if sev != "none" else []
+                    ),
+                },
+                "footprint": {"baseline_tokens_approx_cl100k": 0, "on_demand_max": 0,
+                              "primary_driver": "none", "efficiency_rating": "excellent",
+                              "per_component": {}},
+                "architecture": {"pattern": "hybrid", "efficiency_notes": [], "recommendations": []},
+                "dependencies": {"scan_status": "tier1_only", "manifests": [], "lockfiles": [],
+                                 "unscanned_manifests": [], "ecosystems": [], "package_count": 0,
+                                 "packages": [], "sca": None},
+                "analysis_scope": ["static"],
+                "untrusted_fields": list(audit_plugin.UNTRUSTED_FIELDS_V0_1),
+                "meta": {"griffith_version": "0.1.0", "griffith_hardening_version": "1",
+                         "analyzed_at": "2026-04-18T00:00:00Z", "source_type": "path"},
+            }
+            reports.append(r)
+        return {
+            "schema_version": "0.1",
+            "marketplace": {"source": "s", "path": "/tmp/x"},
+            "reports": reports,
+            "summary": {"plugin_count": len(reports), "risk_level_counts": {},
+                        "patterns": {}},
+            "meta": {"griffith_version": "0.1.0", "griffith_hardening_version": "1",
+                     "analyzed_at": "2026-04-18T00:00:00Z", "source_type": "path"},
+        }
+
+    def test_marketplace_all_clean_verdict_safe(self):
+        mp = self._build_marketplace(["none", "none", "none"])
+        summary = _build_summary(mp)
+        assert summary["verdict"] == "safe"
+        assert summary["risk_tier"] == "none"
+
+    def test_marketplace_with_info_finding_not_none(self):
+        """The bug this test catches: marketplace with info findings
+        previously returned risk_tier=none because emit_agent_summary
+        read top-level report['security'] which doesn't exist for
+        marketplace shape."""
+        mp = self._build_marketplace(["none", "info", "none"])
+        summary = _build_summary(mp)
+        assert summary["risk_tier"] == "info"
+        assert summary["counts_by_severity"]["info"] == 1
+
+    def test_marketplace_worst_tier_wins(self):
+        mp = self._build_marketplace(["low", "critical", "medium"])
+        summary = _build_summary(mp)
+        assert summary["risk_tier"] == "critical"
+        assert summary["verdict"] == "block"
+
+    def test_marketplace_plugin_count_in_summary(self):
+        mp = self._build_marketplace(["none", "none"])
+        summary = _build_summary(mp)
+        assert summary["plugin_count"] == 2
+
+    def test_marketplace_top_findings_aggregated_worst_first(self):
+        mp = self._build_marketplace(["low", "critical", "high", "medium"])
+        summary = _build_summary(mp)
+        # Sorted worst-first; we expect critical then high then medium
+        # (low falls out because we only take top 3).
+        severities = [f["severity"] for f in summary["top_findings"]]
+        assert severities == ["critical", "high", "medium"]
+
+
+class TestVerdictFromCVEs:
+    """Regression from real-world smoke on compound-engineering 2.67.0 —
+    2 critical Pillow CVEs initially surfaced as verdict="review" because
+    _derive_verdict only considered security-finding severity.
+    """
+
+    def _build_with_cve_severity(self, cve_severity: str) -> dict:
+        return {
+            "schema_version": "0.1",
+            "plugin": {"name": "p", "path": ".", "source": "s"},
+            "inventory": {"counts": {k: 0 for k in (
+                "agents", "commands", "skills", "hooks", "mcp_servers",
+                "personas", "templates", "unknown")},
+                "totals": {"files": 0, "lines": 0}},
+            "security": {"risk_level": "none", "finding_count": 0, "findings": []},
+            "footprint": {"baseline_tokens_approx_cl100k": 0, "on_demand_max": 0,
+                          "primary_driver": "none", "efficiency_rating": "excellent",
+                          "per_component": {}},
+            "architecture": {"pattern": "hybrid", "efficiency_notes": [], "recommendations": []},
+            "dependencies": {
+                "scan_status": "ok",
+                "manifests": [{"path": "req.txt", "is_symlink": False, "size_skipped": False}],
+                "lockfiles": [], "unscanned_manifests": [],
+                "ecosystems": ["PyPI"], "package_count": 1,
+                "packages": [{"ecosystem": "PyPI", "name": "pkg", "constraint": "1.0",
+                              "kind": "runtime", "manifest": "req.txt"}],
+                "sca": {
+                    "osv_scanner_version": "2.3.5",
+                    "vulnerability_count": 1,
+                    "vulnerabilities": [{
+                        "id": "CVE-1",
+                        "severity": cve_severity,
+                        "severity_raw": "9.3",
+                        "summary": "bad",
+                        "affected_package": "pkg",
+                        "fixed_versions": ["2.0"],
+                    }],
+                    "note": None, "error": None,
+                },
+            },
+            "analysis_scope": ["static"],
+            "untrusted_fields": list(audit_plugin.UNTRUSTED_FIELDS_V0_1),
+            "meta": {"griffith_version": "0.1.0", "griffith_hardening_version": "1",
+                     "analyzed_at": "2026-04-18T00:00:00Z", "source_type": "path"},
+        }
+
+    def test_critical_cve_forces_block(self):
+        """The Pillow-in-compound-engineering case. Security layer clean,
+        CVE layer critical — verdict must be `block`."""
+        summary = _build_summary(self._build_with_cve_severity("critical"))
+        assert summary["verdict"] == "block"
+
+    def test_high_cve_forces_block(self):
+        summary = _build_summary(self._build_with_cve_severity("high"))
+        assert summary["verdict"] == "block"
+
+    def test_medium_cve_forces_review(self):
+        summary = _build_summary(self._build_with_cve_severity("medium"))
+        assert summary["verdict"] == "review"
+
+
 class TestCachePath:
     def test_cache_path_in_summary_when_provided(self, load_fixture, tmp_path):
         cache = str(tmp_path / "audit.json")
