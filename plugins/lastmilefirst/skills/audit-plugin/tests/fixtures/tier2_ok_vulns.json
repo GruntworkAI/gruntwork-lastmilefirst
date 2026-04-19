@@ -1,0 +1,62 @@
+{
+  "schema_version": "0.1",
+  "plugin": {"name": "vulnerable", "path": ".", "source": "synthetic"},
+  "inventory": {
+    "counts": {"agents": 1, "commands": 0, "skills": 0, "hooks": 0,
+               "mcp_servers": 0, "personas": 0, "templates": 0, "unknown": 0},
+    "totals": {"files": 1, "lines": 6}
+  },
+  "security": {"risk_level": "none", "finding_count": 0, "findings": []},
+  "footprint": {"baseline_tokens_approx_cl100k": 0, "on_demand_max": 0,
+                "primary_driver": "none", "efficiency_rating": "excellent",
+                "per_component": {}},
+  "architecture": {"pattern": "hybrid", "efficiency_notes": [], "recommendations": []},
+  "dependencies": {
+    "scan_status": "ok",
+    "manifests": [{"path": "requirements.txt", "is_symlink": false, "size_skipped": false}],
+    "lockfiles": [],
+    "unscanned_manifests": [],
+    "ecosystems": ["PyPI"],
+    "package_count": 1,
+    "packages": [
+      {"ecosystem": "PyPI", "name": "requests", "constraint": ">=2.25.0",
+       "kind": "runtime", "manifest": "requirements.txt"}
+    ],
+    "sca": {
+      "osv_scanner_version": "2.3.5",
+      "vulnerability_count": 4,
+      "vulnerabilities": [
+        {"id": "GHSA-9wx4-h78v-vm56", "severity": "medium", "severity_raw": "5.6",
+         "summary": "requests Session object does not verify requests after making first request with verify=False",
+         "affected_package": "requests", "fixed_versions": ["2.32.0"]},
+        {"id": "GHSA-9hjg-9r4m-mvj7", "severity": "medium", "severity_raw": "5.3",
+         "summary": "Requests vulnerable to .netrc credentials leak via malicious URLs",
+         "affected_package": "requests", "fixed_versions": ["2.32.4"]},
+        {"id": "GHSA-gc5v-m9x4-r6x2", "severity": "medium", "severity_raw": "4.3",
+         "summary": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
+         "affected_package": "requests", "fixed_versions": ["2.33.0"]},
+        {"id": "PYSEC-2023-74", "severity": "medium", "severity_raw": "6.1",
+         "summary": "requests urllib3 CRLF cookie issue",
+         "affected_package": "requests", "fixed_versions": ["2.31.0"]}
+      ],
+      "note": null, "error": null
+    }
+  },
+  "analysis_scope": ["static"],
+  "untrusted_fields": [
+    "plugin.name", "security.findings[].file",
+    "architecture.efficiency_notes[]", "architecture.recommendations[]",
+    "dependencies.manifests[].path", "dependencies.lockfiles[].path",
+    "dependencies.unscanned_manifests[]",
+    "dependencies.packages[].ecosystem", "dependencies.packages[].name",
+    "dependencies.packages[].constraint", "dependencies.packages[].manifest",
+    "dependencies.sca.vulnerabilities[].id",
+    "dependencies.sca.vulnerabilities[].severity_raw",
+    "dependencies.sca.vulnerabilities[].summary",
+    "dependencies.sca.vulnerabilities[].affected_package",
+    "dependencies.sca.vulnerabilities[].fixed_versions[]",
+    "dependencies.sca.error"
+  ],
+  "meta": {"griffith_version": "0.1.0", "griffith_hardening_version": "1",
+           "analyzed_at": "2026-04-18T00:00:00Z", "source_type": "path"}
+}

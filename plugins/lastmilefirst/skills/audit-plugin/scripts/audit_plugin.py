@@ -550,28 +550,104 @@ def check_unknown_top_level_keys(report: dict) -> None:
 # ============================================================================
 
 
-def run_griffith(griffith: Path, source: str, strict: bool) -> tuple[dict, int]:
-    """Invoke `griffith analyze <source> --json`; return (parsed_json, exit_code).
+class _GriffithResult:
+    """Internal holder for a griffith subprocess outcome."""
 
-    Unit 3 will extend this with --sca, timeouts, and the full exit-code
-    translation enum. For Unit 1, we preserve the draft behavior so no
-    regression lands before Unit 3.
+    __slots__ = ("report", "wrapper_exit_code")
+
+    def __init__(self, report: dict | None, wrapper_exit_code: int):
+        self.report = report
+        self.wrapper_exit_code = wrapper_exit_code
+
+
+def run_griffith(
+    griffith: Path,
+    source: str,
+    *,
+    strict: bool,
+    sca: bool,
+    timeout: int,
+) -> _GriffithResult:
+    """Invoke griffith with the full Unit 3 treatment.
+
+    Translates griffith exit codes into the wrapper's public enum and
+    emits a GRIFFITH_ERR sentinel on stderr for any non-success outcome.
+
+    Wrapper exit-code translation table:
+      griffith 0 + valid JSON        → wrapper 0 (report)
+      griffith 0 + invalid JSON      → wrapper 6 MALFORMED_OUTPUT
+      griffith 1                     → wrapper 1 GENERIC_FAILURE
+      griffith 2                     → wrapper 3 OSV_SCANNER_MISSING
+      griffith other non-zero        → wrapper 1 GENERIC_FAILURE
+      TimeoutExpired                 → wrapper 5 TIMEOUT
     """
     cmd = [str(griffith), "analyze", source, "--json"]
     if strict:
         cmd.append("--strict")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"griffith analyze failed (exit {result.returncode}):", file=sys.stderr)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
-        return {}, result.returncode
+    if sca:
+        cmd.append("--sca")
+
     try:
-        return json.loads(result.stdout), 0
-    except json.JSONDecodeError as e:
-        print(f"griffith returned invalid JSON: {e}", file=sys.stderr)
-        print(f"stdout (first 500 chars):\n{result.stdout[:500]}", file=sys.stderr)
-        return {}, 1
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        _emit_griffith_err(
+            "TIMEOUT", "subprocess",
+            f"griffith exceeded {timeout}s wall-clock; "
+            f"set LMF_GRIFFITH_TIMEOUT_SEC to override",
+        )
+        print(
+            f"griffith analyze timed out after {timeout}s.",
+            file=sys.stderr,
+        )
+        return _GriffithResult(None, 5)
+
+    # Griffith exit 0 → parse stdout as JSON.
+    if result.returncode == 0:
+        try:
+            return _GriffithResult(json.loads(result.stdout), 0)
+        except json.JSONDecodeError as e:
+            _emit_griffith_err(
+                "MALFORMED_OUTPUT", "subprocess",
+                "griffith exited 0 but stdout was not valid JSON; "
+                "possible binary tampering / version drift",
+            )
+            print(f"griffith returned invalid JSON: {e}", file=sys.stderr)
+            # Envelope the stdout fragment so hostile content doesn't leak.
+            fragment = result.stdout[:500] if result.stdout else "(empty)"
+            print(f"stdout (first 500 chars): {_envelope(fragment)}", file=sys.stderr)
+            return _GriffithResult(None, 6)
+
+    # Griffith exit 2 → osv-scanner missing (on --sca path).
+    if result.returncode == 2:
+        _emit_griffith_err(
+            "OSV_SCANNER_MISSING", "dependency",
+            "install osv-scanner (brew install osv-scanner) or pass --no-sca",
+        )
+        print(
+            "griffith requires osv-scanner for --sca. Install guidance follows:",
+            file=sys.stderr,
+        )
+        # Griffith's install pitch is known-good text; pass through unmodified.
+        if result.stderr:
+            print(result.stderr, file=sys.stderr, end="")
+        return _GriffithResult(None, 3)
+
+    # Any other non-zero → generic failure.
+    _emit_griffith_err(
+        "GENERIC_FAILURE", "subprocess",
+        f"griffith exited {result.returncode}; see stderr above",
+    )
+    print(
+        f"griffith analyze failed (exit {result.returncode}):",
+        file=sys.stderr,
+    )
+    # Envelope stderr passthrough (may contain plugin-controlled strings).
+    if result.stderr:
+        for line in result.stderr.rstrip("\n").split("\n"):
+            print(_envelope(line), file=sys.stderr)
+    return _GriffithResult(None, 1)
 
 
 # ============================================================================
@@ -863,6 +939,99 @@ def _render_dependencies(deps: dict) -> None:
             print(f"- *…and {len(unscanned) - 5} more*")
         print()
 
+    # Tier 2: SCA / CVE subsection — only when present.
+    sca = deps.get("sca")
+    if sca is not None:
+        _render_sca(sca, deps.get("scan_status"))
+
+
+# Caps for rendered CVE summary strings (after envelope).
+_CVE_SUMMARY_CAP = 120
+_CVE_FIXED_VERSIONS_SHOWN = 3
+
+
+def _render_sca(sca: dict, scan_status: str | None) -> None:
+    """Render the Tier 2 SCA subsection.
+
+    State machine driven by `scan_status`:
+      - ok + vulns      → severity-grouped table
+      - ok + note       → note rendered verbatim (Griffith-authored, trusted)
+      - ok + clean      → "No known vulnerabilities"
+      - sca_requested_and_failed / sca_requested_and_timed_out → warning
+      - sca_malformed_output → tampering / drift framing
+    """
+    version = sca.get("osv_scanner_version", "unknown")
+    print(
+        f"### CVE scan  \n"
+        f"*osv-scanner {version} · scan_status: `{scan_status}`*\n"
+    )
+
+    if scan_status in ("sca_requested_and_failed", "sca_requested_and_timed_out"):
+        err = sca.get("error") or "(no error detail)"
+        # err has been enveloped by the walker (it's in untrusted_fields).
+        print(f"⚠️ **CVE scan failed.** {err}\n")
+        return
+
+    if scan_status == "sca_malformed_output":
+        err = sca.get("error") or "(no error detail)"
+        print(
+            "⚠️ **CVE scan output malformed — possible tampering, version "
+            "drift, or format change in osv-scanner.** This is a distinct "
+            "signal from a generic scan failure; check osv-scanner version "
+            f"and try `GRIFFITH_OSV_SCANNER` override. {err}\n"
+        )
+        return
+
+    # scan_status == "ok" (the common success branch)
+    note = sca.get("note")
+    if note:
+        # Note is Griffith-authored (not in untrusted_fields) — render verbatim.
+        print(f"_{note}_\n")
+        return
+
+    vulns = sca.get("vulnerabilities") or []
+    if not vulns:
+        print("✅ No known vulnerabilities.\n")
+        return
+
+    # Group by severity.
+    by_sev: dict[str, list[dict]] = {}
+    for v in vulns:
+        by_sev.setdefault(v.get("severity", "info"), []).append(v)
+
+    count = sca.get("vulnerability_count", len(vulns))
+    print(f"**{count} vulnerability(ies)** across affected packages.\n")
+
+    for sev in ("critical", "high", "medium", "low", "info"):
+        group = by_sev.get(sev, [])
+        if not group:
+            continue
+        badge = {
+            "critical": "🔴 **CRITICAL**",
+            "high": "🟠 **HIGH**",
+            "medium": "🟡 MEDIUM",
+            "low": "🔵 LOW",
+            "info": "⚪ INFO",
+        }[sev]
+        print(f"#### {badge} ({len(group)})\n")
+        print("| Package | ID | CVSS | Summary | Fixed in |")
+        print("|---------|----|------|---------|----------|")
+        for v in group:
+            pkg = v.get("affected_package", "")
+            vid = v.get("id", "")
+            cvss = v.get("severity_raw", "")
+            summary = v.get("summary", "")
+            fixed = v.get("fixed_versions") or []
+            fixed_shown = fixed[:_CVE_FIXED_VERSIONS_SHOWN]
+            fixed_extra = len(fixed) - len(fixed_shown)
+            fixed_display = ", ".join(fixed_shown)
+            if fixed_extra > 0:
+                fixed_display += f", +{fixed_extra}"
+            print(
+                f"| {pkg} | {vid} | {cvss} | {summary} | {fixed_display} |"
+            )
+        print()
+
 
 def _render_findings_detail(findings: list[dict], cap_per_severity: int = 10) -> None:
     """Show findings grouped by severity, with per-group cap.
@@ -903,6 +1072,181 @@ def _dict_to_inline(d: dict) -> str:
 
 
 # ============================================================================
+# Agent-summary output mode (machine-parseable for Claude branching)
+# ============================================================================
+
+
+# Verdict mapping based on highest-severity findings.
+# "block" when critical or high; "review" when medium; "safe" otherwise.
+def _derive_verdict(risk_tier: str, sca_has_findings: bool) -> str:
+    if risk_tier in ("critical", "high"):
+        return "block"
+    if risk_tier == "medium" or sca_has_findings:
+        return "review"
+    return "safe"
+
+
+def _counts_by_severity(findings: list) -> dict:
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    for f in findings:
+        sev = f.get("severity", "info")
+        if sev in counts:
+            counts[sev] += 1
+    return counts
+
+
+def emit_agent_summary(
+    report: dict,
+    *,
+    wrapper_exit_code: int = 0,
+    cache_path: str | None = None,
+) -> None:
+    """Write a compact JSON summary to stdout for Claude to parse.
+
+    The summary is built from the ALREADY-ENVELOPED report (caller's
+    responsibility to run _apply_untrusted_envelope first when needed,
+    though the agent-summary typically surfaces values that are either
+    already enveloped in the input report or are trusted enums).
+    """
+    # Walk the report once so any untrusted fields surface as enveloped
+    # strings in the summary.
+    enveloped = _apply_untrusted_envelope(report)
+
+    security = enveloped.get("security", {})
+    risk_tier = security.get("risk_level", "none")
+    findings = security.get("findings") or []
+
+    deps = enveloped.get("dependencies", {}) or {}
+    sca = deps.get("sca")
+    sca_has_findings = bool(sca and sca.get("vulnerability_count", 0) > 0)
+
+    verdict = _derive_verdict(risk_tier, sca_has_findings)
+
+    top_findings = [
+        {
+            "rule_id": f.get("rule_id"),
+            "severity": f.get("severity"),
+            "file": f.get("file"),
+            "line": f.get("line"),
+            "message": f.get("message"),
+        }
+        for f in findings[:3]
+    ]
+
+    remediation_hints: list[str] = []
+    if wrapper_exit_code == 3:
+        remediation_hints.append("install_osv_scanner")
+    if risk_tier in ("critical", "high"):
+        remediation_hints.append("review_security_findings")
+    if sca_has_findings:
+        remediation_hints.append("upgrade_vulnerable_packages")
+
+    summary: dict = {
+        "schema_version": enveloped.get("schema_version", ""),
+        "wrapper_exit_code": wrapper_exit_code,
+        "verdict": verdict,
+        "risk_tier": risk_tier,
+        "counts_by_severity": _counts_by_severity(findings),
+        "top_findings": top_findings,
+        "remediation_hints": remediation_hints,
+        "cache_path": cache_path,
+        "scan_status": deps.get("scan_status", "tier1_only"),
+    }
+
+    if sca is not None:
+        vulns = sca.get("vulnerabilities") or []
+        sca_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for v in vulns:
+            sev = v.get("severity", "info")
+            if sev in sca_counts:
+                sca_counts[sev] += 1
+        summary["cve_counts_by_severity"] = sca_counts
+        summary["top_cves"] = [
+            {
+                "id": v.get("id"),
+                "severity": v.get("severity"),
+                "severity_raw": v.get("severity_raw"),
+                "affected_package": v.get("affected_package"),
+                "summary": v.get("summary"),
+                "fixed_versions": v.get("fixed_versions") or [],
+            }
+            for v in vulns[:3]
+        ]
+
+    json.dump(summary, sys.stdout, indent=2)
+    print()
+
+
+# ============================================================================
+# Cache helpers (persist the raw report so Claude follow-ups skip re-invocation)
+# ============================================================================
+
+
+import hashlib  # noqa: E402
+import tempfile  # noqa: E402
+
+
+def _cache_key_for_source(source: str) -> str:
+    """Deterministic cache key for a source string."""
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+
+
+def _default_cache_path(source: str) -> Path:
+    """`$TMPDIR/griffith-audit-<16hex>.json`."""
+    tmp = Path(os.environ.get("TMPDIR", tempfile.gettempdir()))
+    return tmp / f"griffith-audit-{_cache_key_for_source(source)}.json"
+
+
+def _write_cache(path: Path, report: dict) -> None:
+    """Atomic write: temp file + rename. Ensures no partial file on crash."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_str = tempfile.mkstemp(
+        prefix=path.stem + ".", suffix=".tmp", dir=str(path.parent)
+    )
+    tmp_path = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(report, f, indent=2)
+        tmp_path.replace(path)
+    except Exception:
+        # On any failure, clean up the temp file.
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+
+
+def _read_cache(path: Path) -> dict | None:
+    """Read a cached report. Returns None on missing or invalid-JSON."""
+    if not path.exists():
+        return None
+    try:
+        with path.open() as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+# ============================================================================
+# Subprocess timeouts
+# ============================================================================
+
+
+_DEFAULT_TIMEOUT = 60
+_SCA_TIMEOUT = 180
+
+
+def _resolve_timeout(sca_enabled: bool) -> int:
+    """Pick the subprocess timeout. `LMF_GRIFFITH_TIMEOUT_SEC` overrides."""
+    override = os.environ.get("LMF_GRIFFITH_TIMEOUT_SEC", "").strip()
+    if override:
+        try:
+            return int(override)
+        except ValueError:
+            pass
+    return _SCA_TIMEOUT if sca_enabled else _DEFAULT_TIMEOUT
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -924,20 +1268,73 @@ def _print_install_instructions() -> None:
     )
 
 
+def _detect_default_output_mode() -> str:
+    """Auto-detect whether Claude Code is invoking us.
+
+    When `CLAUDECODE=1` is set (Claude Code's standard env), default to
+    agent-summary on stdout so Claude gets a structured JSON surface
+    instead of markdown it would have to scrape.
+    """
+    if os.environ.get("CLAUDECODE") == "1":
+        return "agent-summary"
+    return "markdown"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Audit a Claude Code plugin via Griffith.",
     )
     parser.add_argument("source", help="Plugin source: URL, owner/repo, or local path")
     parser.add_argument(
-        "--strict", action="store_true", help="Enable broader security rules"
+        "--strict", action="store_true",
+        help="Enable broader security rules",
     )
+
+    # --sca / --no-sca — default ON; Claude is the primary consumer, so
+    # CVE data should be available without Claude having to know to ask.
+    sca_group = parser.add_mutually_exclusive_group()
+    sca_group.add_argument(
+        "--sca", dest="sca", action="store_true", default=True,
+        help="Run Tier 2 CVE scan via griffith --sca (default ON)",
+    )
+    sca_group.add_argument(
+        "--no-sca", dest="sca", action="store_false",
+        help="Disable Tier 2 CVE scan (faster; Tier 1 listing only)",
+    )
+
+    # Output modes — mutually exclusive. Auto-default via CLAUDECODE env.
+    default_mode = _detect_default_output_mode()
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument(
+        "--markdown", dest="output_mode", action="store_const", const="markdown",
+        help="Human-readable markdown (default unless CLAUDECODE=1)",
+    )
+    output_group.add_argument(
+        "--agent-summary", dest="output_mode", action="store_const", const="agent-summary",
+        help="Compact JSON summary for Claude branching (default when CLAUDECODE=1)",
+    )
+    output_group.add_argument(
+        "--json", dest="output_mode", action="store_const", const="json",
+        help="Raw Griffith JSON pass-through for tooling (not enveloped)",
+    )
+    parser.set_defaults(output_mode=default_mode)
+
+    # Persistence — default cache; --save-json overrides; --no-save disables.
+    save_group = parser.add_mutually_exclusive_group()
+    save_group.add_argument(
+        "--save-json", dest="save_json_path", metavar="PATH",
+        help="Write the raw report to PATH (overrides default cache)",
+    )
+    save_group.add_argument(
+        "--no-save", dest="no_save", action="store_true",
+        help="Skip the default result cache",
+    )
+
     parser.add_argument(
-        "--json",
-        dest="as_json",
-        action="store_true",
-        help="Emit raw Griffith JSON instead of rendered markdown",
+        "--timeout", type=int, metavar="SEC",
+        help="Subprocess wall-clock timeout (overrides default and env)",
     )
+
     args = parser.parse_args()
 
     griffith = find_griffith()
@@ -950,27 +1347,56 @@ def main() -> int:
         _print_install_instructions()
         return 1
 
-    report, exit_code = run_griffith(griffith, args.source, args.strict)
-    if exit_code != 0:
-        _emit_griffith_err(
-            "GENERIC_FAILURE",
-            "subprocess",
-            "see stderr from griffith above",
-        )
-        return exit_code
+    # Resolve timeout: --timeout > LMF_GRIFFITH_TIMEOUT_SEC > default.
+    if args.timeout is not None:
+        timeout = args.timeout
+    else:
+        timeout = _resolve_timeout(args.sca)
+
+    result = run_griffith(
+        griffith, args.source,
+        strict=args.strict, sca=args.sca, timeout=timeout,
+    )
+    if result.report is None:
+        # Subprocess failure — return the translated exit code.
+        return result.wrapper_exit_code
+
+    report = result.report
 
     # Schema handshake: soft-fail; still render best-effort.
     check_schema_version(report)
     check_unknown_top_level_keys(report)
 
-    if args.as_json:
-        # Raw pass-through. The --json path does NOT envelope — it emits
-        # the Griffith report verbatim for tooling consumption. SKILL.md
-        # warns against feeding this directly into another LLM context.
+    # Persistence: write the raw (pre-envelope) report to cache.
+    cache_path: str | None = None
+    if args.save_json_path:
+        target = Path(args.save_json_path)
+        _write_cache(target, report)
+        cache_path = str(target.resolve())
+    elif not args.no_save:
+        target = _default_cache_path(args.source)
+        try:
+            _write_cache(target, report)
+            cache_path = str(target.resolve())
+        except OSError as e:
+            # Cache write failure is non-fatal; just skip it.
+            print(
+                f"audit_plugin: warning: could not write cache to {target}: {e}",
+                file=sys.stderr,
+            )
+
+    # Render according to selected mode.
+    if args.output_mode == "json":
+        # Raw pass-through — NOT enveloped. Documented hazard.
         json.dump(report, sys.stdout, indent=2)
         print()
         return 0
 
+    if args.output_mode == "agent-summary":
+        emit_agent_summary(report, wrapper_exit_code=0, cache_path=cache_path)
+        return 0
+
+    # Default: markdown.
     if "marketplace" in report:
         render_marketplace(report)
     else:

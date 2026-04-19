@@ -11,7 +11,7 @@ Evaluate a Claude Code plugin using Griffith's static analyzer. Surfaces five di
 2. **Security** — risky patterns (shell execution, credential refs, settings tampering) across 22 ReDoS-safe regex rules
 3. **Footprint** — always-on baseline vs on-demand max context cost, with efficiency rating
 4. **Architecture** — classification (agent-heavy / skill-first / mcp-based / hybrid) with recommendations
-5. **Dependencies** — Tier 1 manifest + package listing (Python + Node parsed; Ruby/Go/Rust detected). Tier 2 CVE scanning via `--sca` — Unit 3 scope.
+5. **Dependencies** — Tier 1 manifest + package listing (Python + Node parsed; Ruby / Go / Rust detected). Tier 2 CVE scanning via `--sca` (default ON; requires `osv-scanner`).
 
 ## Output template (stable)
 
@@ -33,6 +33,7 @@ Sections appear in a fixed order so downstream readers can rely on the layout:
 | Tool | Required | Install |
 |------|----------|---------|
 | **griffith** | Yes | `git clone https://github.com/GruntworkAI/gruntwork-griffith && cd gruntwork-griffith && poetry install` |
+| **osv-scanner** | For `--sca` (default on) | `brew install osv-scanner` — without it, use `--no-sca` |
 | **git** | Yes (for URL sources) | Ships with macOS / `apt install git` |
 | **Python 3.11+** | Yes | Ships with macOS |
 
@@ -47,11 +48,34 @@ The wrapper auto-discovers griffith in this order:
 
 | Command | What It Does |
 |---------|--------------|
-| `/run-audit-plugin <url>` | Clone (hardened) and audit a plugin at its source — pre-install vetting |
-| `/run-audit-plugin <owner/repo>` | GitHub shorthand — same as URL |
-| `/run-audit-plugin <local-path>` | Audit an already-on-disk plugin — post-install re-check |
+| `/run-audit-plugin <url>` | Clone (hardened) and audit a plugin — pre-install vetting |
+| `/run-audit-plugin <owner/repo>` | GitHub shorthand |
+| `/run-audit-plugin <local-path>` | Post-install re-audit of an on-disk plugin |
 | `/run-audit-plugin <source> --strict` | Enable broader (noisier) security rules |
-| `/run-audit-plugin <source> --json` | Emit raw JSON report (for scripting / comparison) |
+| `/run-audit-plugin <source> --no-sca` | Skip Tier 2 CVE scanning (default is ON — requires `osv-scanner`) |
+| `/run-audit-plugin <source> --markdown` | Force markdown output (default unless `CLAUDECODE=1`) |
+| `/run-audit-plugin <source> --agent-summary` | Compact JSON summary for Claude branching (auto when `CLAUDECODE=1`) |
+| `/run-audit-plugin <source> --json` | Raw unescaped Griffith JSON — tooling only, do NOT feed to another LLM |
+| `/run-audit-plugin <source> --save-json PATH` | Persist result to PATH (overrides default cache) |
+| `/run-audit-plugin <source> --no-save` | Skip the default result cache |
+| `/run-audit-plugin <source> --timeout 120` | Override subprocess wall-clock timeout |
+
+### Output modes
+
+| Mode | When used | Shape |
+|------|-----------|-------|
+| `--agent-summary` | Auto when `CLAUDECODE=1`, else explicit | Compact JSON `{verdict, risk_tier, counts_by_severity, top_findings, cve_counts_by_severity, top_cves, remediation_hints, cache_path, wrapper_exit_code, schema_version, scan_status}` |
+| `--markdown` | Default for humans; explicit override available | Formatted markdown with third-party-content boundary around untrusted regions |
+| `--json` | Tooling pipelines that want the raw Griffith payload | Griffith's `--json` output passed through **unescaped**. Do not feed into an LLM context without running it through a boundary layer. |
+
+### Environment variables
+
+| Var | Purpose |
+|-----|---------|
+| `GRIFFITH_BIN` | Absolute path to a griffith binary (containment-checked) |
+| `LMF_ALLOW_DEV_GRIFFITH=1` | Opt into the dev-mode fallback (`~/Code/gruntwork/gruntwork-griffith/.venv/bin/griffith`) |
+| `LMF_GRIFFITH_TIMEOUT_SEC` | Subprocess timeout default (default: 60s, or 180s with `--sca`) |
+| `CLAUDECODE=1` | Claude Code signals this; wrapper auto-switches to `--agent-summary` |
 
 **Source types:**
 - Git URL: `https://github.com/EveryInc/every-marketplace`
@@ -72,7 +96,7 @@ The wrapper auto-discovers griffith in this order:
    - Footprint rating with primary driver
    - Architecture pattern + recommendations
    - **Dependencies (Tier 1)** — per-manifest package listing (Python + Node parsed; Ruby / Go / Rust detected but not parsed)
-   - **Dependencies (Tier 2 CVE)** — opt-in via `--sca`. Lands in Unit 3 of the Phase 1.5 upgrade
+   - **Dependencies (Tier 2 CVE)** — default on via `--sca`; disable with `--no-sca`. Requires `osv-scanner` on PATH
    - Third-party content boundary preamble precedes every region containing untrusted data
 
 ## Script
@@ -108,10 +132,13 @@ Human-readable prose (install pitch, error detail) follows on subsequent stderr 
 |--------------|---------------|---------|
 | 0 | (none) | Success. Report on stdout. |
 | 1 | `GRIFFITH_MISSING` | griffith binary not discoverable. stderr has install instructions. |
-| 1 | `GENERIC_FAILURE` | griffith exited 1 (clone failed / invalid source / etc.). stderr has griffith detail. |
-| — | `SCHEMA_DRIFT` | (warning) griffith emitted an unknown `schema_version`. Render proceeds; update the wrapper pin. |
+| 1 | `GENERIC_FAILURE` | griffith exited 1 (clone failed / invalid source / etc.). stderr has detail (enveloped). |
+| 3 | `OSV_SCANNER_MISSING` | `--sca` requested but griffith exited 2 (osv-scanner missing). stderr has install guidance (Griffith's `INSTALL_PITCH` passes through unmodified). |
+| 5 | `TIMEOUT` | griffith subprocess exceeded the configured wall-clock. Override via `--timeout` or `LMF_GRIFFITH_TIMEOUT_SEC`. |
+| 6 | `MALFORMED_OUTPUT` | griffith exited 0 but stdout was not valid JSON. Possible tampering, version drift, or output format change. |
+| — | `SCHEMA_DRIFT` | (warning — wrapper still exits 0) griffith emitted an unknown `schema_version`. Update `SUPPORTED_SCHEMA_VERSIONS` + `UNTRUSTED_FIELDS_V0_1`. |
 
-Exit codes 2-6 (translated from Griffith's own exit codes for `--sca`, timeouts, and malformed output) land in Unit 3 of the Phase 1.5 upgrade.
+**Important:** wrapper exit codes are the wrapper's **public contract** to Claude. Griffith's internal codes are translated — a change in Griffith's exit semantics won't shift the wrapper's surface.
 
 ## Integration with Overwatch
 
