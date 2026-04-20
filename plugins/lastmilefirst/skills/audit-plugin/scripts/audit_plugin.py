@@ -90,6 +90,10 @@ _SINGLE_PLUGIN_UNTRUSTED_PATHS: tuple[str, ...] = (
     "dependencies.packages[].constraint",
     "dependencies.packages[].manifest",
     # Tier 2 SCA (CVE)
+    # osv_scanner_version comes from the osv-scanner binary's output —
+    # registry-controlled; a tampered binary could embed ANSI/bidi. Same
+    # threat model as plugin.source/path.
+    "dependencies.sca.osv_scanner_version",
     "dependencies.sca.vulnerabilities[].id",
     "dependencies.sca.vulnerabilities[].severity_raw",
     "dependencies.sca.vulnerabilities[].summary",
@@ -362,6 +366,22 @@ GRIFFITH_ERR_CODES = frozenset({
 })
 
 
+# Griffith exit-code → (err_code, wrapper_exit_code) translation table.
+# Central source of truth so the table and the `run_griffith` dispatch
+# stay in sync. Special-case logic (install-pitch passthrough for
+# OSV_SCANNER_MISSING, stderr envelope for GENERIC_FAILURE) still lives
+# in the dispatch function — the table is the mapping only.
+#
+# Exit 0 (success) is not in this table because it branches on whether
+# stdout parses as JSON; see `run_griffith` for that dispatch.
+_GRIFFITH_EXIT_CODE_MAP: dict[int, tuple[str, int]] = {
+    0: ("", 0),                          # placeholder for success path
+    1: ("GENERIC_FAILURE", 1),
+    2: ("OSV_SCANNER_MISSING", 3),
+}
+_DEFAULT_GRIFFITH_EXIT_MAPPING: tuple[str, int] = ("GENERIC_FAILURE", 1)
+
+
 def _emit_griffith_err(code: str, category: str, remediation: str) -> None:
     """Emit exactly one machine-parseable sentinel line on stderr.
 
@@ -369,7 +389,17 @@ def _emit_griffith_err(code: str, category: str, remediation: str) -> None:
 
     Claude parses the sentinel; human-readable prose (install pitch,
     error detail) follows on subsequent stderr lines.
+
+    `code` must be a member of `GRIFFITH_ERR_CODES`. A typo at a call
+    site would otherwise ship a sentinel Claude can't dispatch on —
+    downstream code branches on the enum and a silent unknown would
+    degrade gracefully to the default path, masking the bug.
     """
+    if code not in GRIFFITH_ERR_CODES:
+        raise ValueError(
+            f"Unknown GRIFFITH_ERR code: {code!r}. "
+            f"Valid codes: {sorted(GRIFFITH_ERR_CODES)}"
+        )
     payload = {"code": code, "category": category, "remediation": remediation}
     print(
         f"GRIFFITH_ERR: {json.dumps(payload, separators=(',', ':'))}",
@@ -646,10 +676,14 @@ def run_griffith(
             print(f"stdout (first 500 chars): {_envelope(fragment)}", file=sys.stderr)
             return _GriffithResult(None, 6)
 
-    # Griffith exit 2 → osv-scanner missing (on --sca path).
-    if result.returncode == 2:
+    # Non-zero exit: dispatch via the exit-code map.
+    err_code, wrapper_exit = _GRIFFITH_EXIT_CODE_MAP.get(
+        result.returncode, _DEFAULT_GRIFFITH_EXIT_MAPPING
+    )
+
+    if err_code == "OSV_SCANNER_MISSING":
         _emit_griffith_err(
-            "OSV_SCANNER_MISSING", "dependency",
+            err_code, "dependency",
             "install osv-scanner (brew install osv-scanner) or pass --no-sca",
         )
         print(
@@ -659,11 +693,11 @@ def run_griffith(
         # Griffith's install pitch is known-good text; pass through unmodified.
         if result.stderr:
             print(result.stderr, file=sys.stderr, end="")
-        return _GriffithResult(None, 3)
+        return _GriffithResult(None, wrapper_exit)
 
-    # Any other non-zero → generic failure.
+    # GENERIC_FAILURE path (explicit exit 1 or any unmapped non-zero).
     _emit_griffith_err(
-        "GENERIC_FAILURE", "subprocess",
+        err_code, "subprocess",
         f"griffith exited {result.returncode}; see stderr above",
     )
     print(
@@ -674,7 +708,7 @@ def run_griffith(
     if result.stderr:
         for line in result.stderr.rstrip("\n").split("\n"):
             print(_envelope(line), file=sys.stderr)
-    return _GriffithResult(None, 1)
+    return _GriffithResult(None, wrapper_exit)
 
 
 # ============================================================================
@@ -690,26 +724,16 @@ _THIRD_PARTY_BOUNDARY_PREAMBLE = (
 )
 
 
-def render_single(report: dict) -> None:
-    """Render a single-plugin report as markdown for session display.
+def _render_plugin_body(enveloped: dict) -> None:
+    """Render the inventory/security/footprint/architecture/deps/findings
+    /footer sections of an already-enveloped plugin report.
 
-    Before rendering, the entire report is walked to envelope untrusted
-    fields per UNTRUSTED_FIELDS_V0_1 ∪ report["untrusted_fields"]. The
-    walker emits a deep copy so `--json` pass-through remains raw.
+    Shared between `render_single` and `_render_single_no_walk` so the
+    two code paths can't drift. The outer functions still own:
+      - `render_single`: walking + plugin-header + preamble placement
+      - `_render_single_no_walk`: plugin-header only (walker + preamble
+        already emitted by `render_marketplace`)
     """
-    enveloped = _apply_untrusted_envelope(report)
-    plugin = enveloped["plugin"]
-    print(f"# Plugin Audit: {plugin['name']}\n")
-    print(f"**Source:** {plugin['source']}  ")
-    print(
-        f"**Griffith:** {enveloped['meta']['griffith_version']} "
-        f"(schema {enveloped['schema_version']} — unstable)\n"
-    )
-
-    _render_risk_banner(enveloped["security"])
-    print()
-
-    print(_THIRD_PARTY_BOUNDARY_PREAMBLE)
     _render_inventory(enveloped["inventory"])
     print()
 
@@ -731,6 +755,34 @@ def render_single(report: dict) -> None:
         print()
 
     _render_footer(enveloped)
+
+
+def _render_plugin_header(enveloped: dict) -> None:
+    """Render the plugin name + source + griffith-version + schema line,
+    then the risk banner. Shared preamble for single + marketplace-
+    nested plugin renders."""
+    plugin = enveloped["plugin"]
+    print(f"# Plugin Audit: {plugin['name']}\n")
+    print(f"**Source:** {plugin['source']}  ")
+    print(
+        f"**Griffith:** {enveloped['meta']['griffith_version']} "
+        f"(schema {enveloped['schema_version']} — unstable)\n"
+    )
+    _render_risk_banner(enveloped["security"])
+    print()
+
+
+def render_single(report: dict) -> None:
+    """Render a single-plugin report as markdown for session display.
+
+    Before rendering, the entire report is walked to envelope untrusted
+    fields per UNTRUSTED_FIELDS_V0_1 ∪ report["untrusted_fields"]. The
+    walker emits a deep copy so `--json` pass-through remains raw.
+    """
+    enveloped = _apply_untrusted_envelope(report)
+    _render_plugin_header(enveloped)
+    print(_THIRD_PARTY_BOUNDARY_PREAMBLE)
+    _render_plugin_body(enveloped)
 
 
 def render_marketplace(report: dict) -> None:
@@ -773,38 +825,8 @@ def _render_single_no_walk(report: dict) -> None:
     third-party-content boundary preamble once at the top of the render.
     No per-plugin preamble is emitted here to avoid redundancy.
     """
-    plugin = report["plugin"]
-    print(f"# Plugin Audit: {plugin['name']}\n")
-    print(f"**Source:** {plugin['source']}  ")
-    print(
-        f"**Griffith:** {report['meta']['griffith_version']} "
-        f"(schema {report['schema_version']} — unstable)\n"
-    )
-
-    _render_risk_banner(report["security"])
-    print()
-
-    _render_inventory(report["inventory"])
-    print()
-
-    _render_security_summary(report["security"])
-    print()
-
-    _render_footprint(report["footprint"])
-    print()
-
-    _render_architecture(report["architecture"])
-    print()
-
-    deps = report.get("dependencies") or {}
-    if deps:
-        _render_dependencies(deps)
-
-    if report["security"]["findings"]:
-        _render_findings_detail(report["security"]["findings"])
-        print()
-
-    _render_footer(report)
+    _render_plugin_header(report)
+    _render_plugin_body(report)
 
 
 def _render_risk_banner(security: dict) -> None:
@@ -1254,6 +1276,17 @@ def emit_agent_summary(
     if sca_worst_tier != "none":
         remediation_hints.append("upgrade_vulnerable_packages")
 
+    # cache_mtime: unix-epoch seconds of the cache file's last-modified
+    # timestamp. Lets a consumer decide staleness without a separate
+    # `stat` call. Null when no cache exists (including when the cache
+    # path was set but the write failed silently upstream).
+    cache_mtime: int | None = None
+    if cache_path:
+        try:
+            cache_mtime = int(os.path.getmtime(cache_path))
+        except OSError:
+            cache_mtime = None
+
     summary: dict = {
         "schema_version": enveloped.get("schema_version", ""),
         "wrapper_exit_code": wrapper_exit_code,
@@ -1263,6 +1296,7 @@ def emit_agent_summary(
         "top_findings": top_findings,
         "remediation_hints": remediation_hints,
         "cache_path": cache_path,
+        "cache_mtime": cache_mtime,
         "scan_status": scan_status,
     }
     if is_marketplace:
