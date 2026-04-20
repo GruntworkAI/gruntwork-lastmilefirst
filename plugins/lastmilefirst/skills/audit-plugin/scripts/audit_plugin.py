@@ -71,6 +71,13 @@ EXPECTED_MARKETPLACE_KEYS_V0_1 = frozenset({
 # pinned list still contains it.
 _SINGLE_PLUGIN_UNTRUSTED_PATHS: tuple[str, ...] = (
     "plugin.name",
+    # plugin.source is registry/URL-controlled; plugin.path is filesystem-
+    # controlled. Both are attacker-influenced (a malicious plugin name or
+    # a cloned repo under an attacker-chosen path can embed ANSI, bidi
+    # overrides, or envelope-breaking characters). Envelope both so
+    # rendering never pipes raw values into Claude's session.
+    "plugin.source",
+    "plugin.path",
     "security.findings[].file",
     "architecture.efficiency_notes[]",
     "architecture.recommendations[]",
@@ -99,6 +106,12 @@ _SINGLE_PLUGIN_UNTRUSTED_PATHS: tuple[str, ...] = (
 # trailofbits/skills-curated on 2026-04-19.
 _MARKETPLACE_UNTRUSTED_PATHS: tuple[str, ...] = tuple(
     f"reports[].{p}" for p in _SINGLE_PLUGIN_UNTRUSTED_PATHS
+) + (
+    # Top-level marketplace source/path — same threat model as plugin
+    # source/path, one level up. A marketplace URL or local clone path
+    # is attacker-influenced and must not render raw.
+    "marketplace.source",
+    "marketplace.path",
 )
 
 UNTRUSTED_FIELDS_V0_1: tuple[str, ...] = (
@@ -721,10 +734,18 @@ def render_single(report: dict) -> None:
 
 
 def render_marketplace(report: dict) -> None:
-    """Render a marketplace report: summary table + one section per plugin."""
+    """Render a marketplace report: summary table + one section per plugin.
+
+    Preamble placement: emitted once at the top before any enveloped
+    value is printed. The marketplace header renders `market['source']`
+    (which is enveloped per UNTRUSTED_FIELDS_V0_1) — so the boundary
+    must be established first. Per-plugin sections below rely on this
+    single preamble rather than re-emitting it per plugin.
+    """
     enveloped = _apply_untrusted_envelope(report)
     market = enveloped["marketplace"]
     summary = enveloped["summary"]
+    print(_THIRD_PARTY_BOUNDARY_PREAMBLE)
     print(f"# Marketplace Audit: {market['source']}\n")
     print(f"**{summary['plugin_count']} plugin(s) analyzed.**  \n")
 
@@ -746,7 +767,12 @@ def render_marketplace(report: dict) -> None:
 
 
 def _render_single_no_walk(report: dict) -> None:
-    """Render a pre-walked single-plugin report."""
+    """Render a pre-walked single-plugin report.
+
+    Called only from `render_marketplace`, which has already emitted the
+    third-party-content boundary preamble once at the top of the render.
+    No per-plugin preamble is emitted here to avoid redundancy.
+    """
     plugin = report["plugin"]
     print(f"# Plugin Audit: {plugin['name']}\n")
     print(f"**Source:** {plugin['source']}  ")
@@ -758,7 +784,6 @@ def _render_single_no_walk(report: dict) -> None:
     _render_risk_banner(report["security"])
     print()
 
-    print(_THIRD_PARTY_BOUNDARY_PREAMBLE)
     _render_inventory(report["inventory"])
     print()
 
