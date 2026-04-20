@@ -1,0 +1,50 @@
+{
+  "schema_version": "0.1",
+  "plugin": {"name": "malformed-scan", "path": ".", "source": "synthetic"},
+  "inventory": {
+    "counts": {"agents": 0, "commands": 0, "skills": 1, "hooks": 0,
+               "mcp_servers": 0, "personas": 0, "templates": 0, "unknown": 0},
+    "totals": {"files": 1, "lines": 10}
+  },
+  "security": {"risk_level": "none", "finding_count": 0, "findings": []},
+  "footprint": {"baseline_tokens_approx_cl100k": 0, "on_demand_max": 0,
+                "primary_driver": "none", "efficiency_rating": "excellent",
+                "per_component": {}},
+  "architecture": {"pattern": "hybrid", "efficiency_notes": [], "recommendations": []},
+  "dependencies": {
+    "scan_status": "sca_malformed_output",
+    "manifests": [{"path": "requirements.txt", "is_symlink": false, "size_skipped": false}],
+    "lockfiles": [],
+    "unscanned_manifests": [],
+    "ecosystems": ["PyPI"],
+    "package_count": 1,
+    "packages": [
+      {"ecosystem": "PyPI", "name": "requests", "constraint": ">=2.25",
+       "kind": "runtime", "manifest": "requirements.txt"}
+    ],
+    "sca": {
+      "osv_scanner_version": "2.3.5",
+      "vulnerability_count": 0,
+      "vulnerabilities": [],
+      "note": null,
+      "error": "osv-scanner exited successfully but stdout was not valid JSON. Possible binary tampering, version mismatch, or output format drift."
+    }
+  },
+  "analysis_scope": ["static"],
+  "untrusted_fields": [
+    "plugin.name", "security.findings[].file",
+    "architecture.efficiency_notes[]", "architecture.recommendations[]",
+    "dependencies.manifests[].path", "dependencies.lockfiles[].path",
+    "dependencies.unscanned_manifests[]",
+    "dependencies.packages[].ecosystem", "dependencies.packages[].name",
+    "dependencies.packages[].constraint", "dependencies.packages[].manifest",
+    "dependencies.sca.vulnerabilities[].id",
+    "dependencies.sca.vulnerabilities[].severity_raw",
+    "dependencies.sca.vulnerabilities[].summary",
+    "dependencies.sca.vulnerabilities[].affected_package",
+    "dependencies.sca.vulnerabilities[].fixed_versions[]",
+    "dependencies.sca.error"
+  ],
+  "meta": {"griffith_version": "0.1.0", "griffith_hardening_version": "1",
+           "analyzed_at": "2026-04-18T00:00:00Z", "source_type": "path"}
+}
