@@ -1,0 +1,45 @@
+{
+  "schema_version": "0.1",
+  "plugin": {"name": "bad-toml", "path": ".", "source": "synthetic"},
+  "inventory": {
+    "counts": {"agents": 0, "commands": 0, "skills": 0, "hooks": 0,
+               "mcp_servers": 0, "personas": 0, "templates": 0, "unknown": 0},
+    "totals": {"files": 1, "lines": 5}
+  },
+  "security": {"risk_level": "info", "finding_count": 1,
+               "findings": [{"rule_id": "bad-manifest", "severity": "info",
+                             "file": "pyproject.toml", "line": 0,
+                             "message": "Could not parse manifest"}]},
+  "footprint": {"baseline_tokens_approx_cl100k": 0, "on_demand_max": 0,
+                "primary_driver": "none", "efficiency_rating": "excellent",
+                "per_component": {}},
+  "architecture": {"pattern": "hybrid", "efficiency_notes": [], "recommendations": []},
+  "dependencies": {
+    "scan_status": "tier1_only",
+    "manifests": [
+      {"path": "pyproject.toml", "is_symlink": false, "size_skipped": false}
+    ],
+    "lockfiles": [],
+    "unscanned_manifests": ["pyproject.toml"],
+    "ecosystems": [],
+    "package_count": 0,
+    "packages": [],
+    "sca": null
+  },
+  "analysis_scope": ["static"],
+  "untrusted_fields": [
+    "plugin.name",
+    "security.findings[].file",
+    "architecture.efficiency_notes[]",
+    "architecture.recommendations[]",
+    "dependencies.manifests[].path",
+    "dependencies.lockfiles[].path",
+    "dependencies.unscanned_manifests[]",
+    "dependencies.packages[].ecosystem",
+    "dependencies.packages[].name",
+    "dependencies.packages[].constraint",
+    "dependencies.packages[].manifest"
+  ],
+  "meta": {"griffith_version": "0.1.0", "griffith_hardening_version": "1",
+           "analyzed_at": "2026-04-18T00:00:00Z", "source_type": "path"}
+}
