@@ -162,22 +162,66 @@ def write_merged_config(extra_rules: Optional[List[Dict[str, Any]]] = None) -> P
         for rule in extra_rules:
             rules.append(rule)
 
-    # Build TOML content manually (no toml writer dependency)
+    # Build TOML content manually (no toml writer dependency).
+    #
+    # TOML quoting choice: literal strings ('''...''') everywhere strings are
+    # serialized. Basic strings (""") interpret backslash escapes — that's
+    # wrong for regex (\d/\s/\+ either hard-error or silently mangle).
+    #
+    # Ordering invariant: scalar/list keys are emitted before any sub-tables
+    # (e.g. [rules.allowlist]). TOML requires keys to belong unambiguously to
+    # the most recently opened table — any scalar after a sub-table header
+    # would silently bind to the wrong table.
+    def fmt_string(value: str) -> str:
+        return f"'''{value}'''"
+
+    def fmt_list(values: List[Any]) -> str:
+        parts = []
+        for v in values:
+            if isinstance(v, str):
+                parts.append(fmt_string(v))
+            elif isinstance(v, bool):
+                parts.append("true" if v else "false")
+            elif isinstance(v, (int, float)):
+                parts.append(str(v))
+            # Unknown element types skipped — defensive, not currently exercised.
+        return "[" + ", ".join(parts) + "]"
+
     lines = ['title = "lastmilefirst merged secret formats"', ""]
     for rule in rules:
         lines.append("[[rules]]")
+        sub_tables: List[tuple] = []  # (key, dict_value) emitted after scalars
+
         for key, value in rule.items():
             if key.startswith("_"):
                 continue  # Skip internal metadata
             if isinstance(value, str):
-                lines.append(f'{key} = """{value}"""')
+                lines.append(f"{key} = {fmt_string(value)}")
+            elif isinstance(value, bool):
+                lines.append(f"{key} = {'true' if value else 'false'}")
+            elif isinstance(value, (int, float)):
+                lines.append(f"{key} = {value}")
             elif isinstance(value, list):
-                items = ", ".join(f'"{v}"' for v in value)
-                lines.append(f"{key} = [{items}]")
+                lines.append(f"{key} = {fmt_list(value)}")
             elif isinstance(value, dict):
-                # Handle nested tables like [rules.allowlist]
-                lines.append(f"[rules.{key}]")  # Wrong for arrays, handle separately
-            # Skip other types for now
+                sub_tables.append((key, value))
+            # Unknown types skipped — defensive, not currently exercised.
+
+        # Sub-tables must follow all scalars/lists for the parent rule, or TOML
+        # parses subsequent scalars as belonging to the sub-table.
+        for sub_key, sub_dict in sub_tables:
+            lines.append(f"[rules.{sub_key}]")
+            for inner_key, inner_value in sub_dict.items():
+                if isinstance(inner_value, str):
+                    lines.append(f"{inner_key} = {fmt_string(inner_value)}")
+                elif isinstance(inner_value, bool):
+                    lines.append(f"{inner_key} = {'true' if inner_value else 'false'}")
+                elif isinstance(inner_value, (int, float)):
+                    lines.append(f"{inner_key} = {inner_value}")
+                elif isinstance(inner_value, list):
+                    lines.append(f"{inner_key} = {fmt_list(inner_value)}")
+                # Nested-nested dicts not currently exercised; skipped.
+
         lines.append("")
 
     # Write to temp file

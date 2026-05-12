@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Validates `schema_version` before rendering; warns on unknown versions
   - Renders risk-level banner, inventory table, severity breakdown, footprint + efficiency rating, architecture pattern + recommendations, and findings detail grouped by severity (cap 10 per group)
 
+## [0.14.1] - 2026-05-12
+
+### Fixed
+- **`scan-secrets` pre-commit hook silently no-op'd for any rule containing regex escapes** — three reinforcing bugs combined so the hook printed "No secrets detected in staged changes" while gitleaks had aborted during config load. The pre-commit secret scan provided no real defense for an unknown period.
+  - `format_loader.py` now serializes string values as TOML literal strings (`'''...'''`) instead of basic strings (`"""..."""`); basic strings interpret backslash sequences, which either hard-errored on `\+` or silently mangled `\s`/`\w` in regex values.
+  - `format_loader.py` now serializes dict-value sub-tables (e.g. `[rules.allowlist]`) with their contents, emitted after the parent rule's scalars/lists (per TOML ordering invariant). Previously the dict's contents were dropped entirely, so three shipped rules (`lmf-hardcoded-password`, `lmf-bearer-token-hardcoded`, `lmf-jwt-secret`) lost their test-path allowlists.
+  - `scanner.py` `scan_staged` and `scan_repo` now fail-closed when the requested `--report-path` file doesn't exist after gitleaks runs. Gitleaks uses exit code 1 ambiguously for both "leaks found" and "config load failure"; report-file existence is the reliable signal that the scan actually completed.
+  - Smoke-tested end-to-end: good config + fixture `oc_p1_*` token → caught (exit 1); deliberately malformed config → fail-closed with stderr surfaced (exit 1).
+
+### Changed
+- Aligned version drift across `plugin.json` (was 0.14.0), `marketplace.json` (was 0.11.1), and `README.md` (was 0.10.1) — all now `0.14.1`.
+
 ## [0.13.0] - 2026-03-24
 
 ### Added
