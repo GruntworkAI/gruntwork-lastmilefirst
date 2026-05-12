@@ -204,21 +204,26 @@ def scan_repo(
             cwd=cwd,
         )
 
-        # Read findings
-        findings = []
+        # Fail-closed on gitleaks abort. Exit codes alone are ambiguous (gitleaks
+        # uses 1 for both "leaks found" and "config load failure"). The reliable
+        # signal: if we requested --report-path and the file doesn't exist, the
+        # scan never completed. Treating no-report as no-findings would silently
+        # hide config errors.
         report_path = Path(report_file)
-        if report_path.exists():
-            findings = _parse_findings(
-                report_path.read_text(encoding="utf-8"), is_public
+        if not report_path.exists():
+            return 1, (
+                f"gitleaks aborted before producing a report (exit {code}). "
+                f"Scan did not complete.\nstderr:\n{stderr or '(none)'}"
             )
-            report_path.unlink(missing_ok=True)
+
+        findings = _parse_findings(
+            report_path.read_text(encoding="utf-8"), is_public
+        )
+        report_path.unlink(missing_ok=True)
 
         # Build report
         lines = _public_repo_banner(visibility)
         lines.append(_format_findings(findings))
-
-        if stderr and code > 1:
-            lines.append(f"\nErrors:\n{stderr}")
 
         return (1 if findings else 0), "\n".join(lines)
     finally:
@@ -254,13 +259,24 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             cwd=cwd,
         )
 
-        findings = []
+        # Fail-closed on gitleaks abort. Gitleaks exit code 1 means either
+        # "leaks found" or "config load failure" — ambiguous. The reliable
+        # signal that the scan actually ran: the requested --report-path file
+        # exists. If it doesn't, treat as a hard failure and block the commit.
         report_path = Path(report_file)
-        if report_path.exists():
-            findings = _parse_findings(
-                report_path.read_text(encoding="utf-8"), is_public
+        if not report_path.exists():
+            return 1, (
+                f"gitleaks aborted before producing a report (exit {code}). "
+                f"Pre-commit scan did not complete.\n"
+                f"stderr:\n{stderr or '(none)'}\n\n"
+                f"Commit blocked. If this is a config issue, run "
+                f"/run-scan-secrets --list-formats to inspect rules."
             )
-            report_path.unlink(missing_ok=True)
+
+        findings = _parse_findings(
+            report_path.read_text(encoding="utf-8"), is_public
+        )
+        report_path.unlink(missing_ok=True)
 
         lines = []
         if is_public:
