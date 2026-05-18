@@ -1,8 +1,21 @@
 # Bug: `scan-secrets --all` doesn't update per-project `last_secret_scan` state
 
-**Status:** OPEN
-**Priority:** medium (causes Overwatch to under-report scan coverage)
+**Status:** RESOLVED in v0.14.2 (2026-05-17)
+**Priority:** medium
 **Created:** 2026-05-17
+**Resolved:** 2026-05-17
+
+## Resolution
+
+`scanner.scan_workspace()` now imports `update_scoped_state` from `overwatch` and calls it for each scanned repo using key `f"{repo.parent.name}/{repo.name}"` — matching the key shape `session_start.py` reads from state. Update runs regardless of findings (a clean scan still resets the freshness clock). Best-effort: if the import or update fails, the scan still completes.
+
+Smoke-tested 2026-05-17: after a `--all` run, `session_start.py --full` "Never scanned" list went from 18 entries to 1 — and that 1 is `splash`, which isn't a git repo and didn't get scanned (correct behavior).
+
+**Related sub-issue (`--full` double-print) was a misdiagnosis.** Verified by separating streams: stdout has 93 lines, stderr has 90 lines, the only diff is the stdout-only DIRECTIVE block. The script intentionally writes alerts to both streams (stdout for Claude context, stderr for the user's terminal); the "double print" I observed was from running with `2>&1` which merges the streams. Closing the double-print sub-issue as not-a-bug.
+
+---
+
+## Original report (preserved below for context)
 
 ## Summary
 
