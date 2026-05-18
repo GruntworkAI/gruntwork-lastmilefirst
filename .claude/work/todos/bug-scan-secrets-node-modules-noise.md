@@ -1,8 +1,32 @@
 # Bug: scan-secrets produces thousands of `node_modules/` findings
 
-**Status:** OPEN
+**Status:** RESOLVED in v0.14.2 (2026-05-17) — partial impact, see notes
 **Priority:** high (makes scan output unreadable)
 **Created:** 2026-05-17
+**Resolved:** 2026-05-17
+
+## Resolution
+
+Added a `GLOBAL_ALLOWLIST_PATHS` list to `format_loader.py` and injected it as a top-level `[allowlist] paths = [...]` block in every merged gitleaks config. Patterns are anchored with `(^|/)` to avoid matching e.g. `redistribute/` for `dist/`.
+
+Excluded paths:
+- `node_modules/`, `.venv/`, `venv/`, `vendor/`, `dist/`, `build/`, `.next/`, `.terraform/`, `target/` — common vendor / build / cache dirs
+- The plugin's own `data/*.toml` files — see `bug-scan-secrets-self-match-on-format-file.md`
+
+**Impact correction (smoke-tested 2026-05-17):** the original bug overstated the scope of the win for the big-count repos. The actual landscape post-fix:
+
+| Repo | Before | After | Why |
+|---|---|---|---|
+| unstacker | 26 | **clean** | All was node_modules — fix worked perfectly |
+| website | 779 | 779 | Real committed `terraform.tfstate`, NOT node_modules |
+| promptasaurus | 3,974 | 3,974 | Real committed env files + tfstate |
+| remail | 6,194 | 6,194 | Real committed `.env.{DEV,STG,PRD,LCL}` + tfstate (per earlier remail audit) |
+
+So: the fix correctly suppresses vendor/build noise, but the dominant counts in the workspace are actual committed secrets and tfstate, not noise. Those need to be removed from the repos themselves — not a plugin fix.
+
+---
+
+## Original report (preserved below for context)
 
 ## Summary
 

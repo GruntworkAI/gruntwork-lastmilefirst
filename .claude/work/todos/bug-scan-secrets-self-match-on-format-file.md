@@ -1,8 +1,23 @@
 # Bug: scan-secrets flags its own `common_secret_formats.toml` rule regexes
 
-**Status:** OPEN
-**Priority:** medium (only affects scanning the marketplace repo itself, but PUBLIC)
+**Status:** RESOLVED in v0.14.2 (2026-05-17)
+**Priority:** medium
 **Created:** 2026-05-17
+**Resolved:** 2026-05-17
+
+## Resolution
+
+Fixed alongside the vendor-noise bug — both inject through `format_loader.write_merged_config()`. The global allowlist now includes the plugin's own data path:
+
+```
+plugins/lastmilefirst/skills/scan-secrets/data/.*\.toml$
+```
+
+Smoke-tested 2026-05-17: marketplace scan dropped from 3 self-match findings → 2 remaining findings. The 2 remaining are in `.claude/work/todos/bug-scan-secrets-self-match-on-format-file.md` itself — the file documents the regex patterns as examples, so the rules legitimately match them. Considered allowlisting `.claude/work/.*\.md$` too but rejected: working artifacts in OTHER projects may contain real secrets that should be caught. Acceptable meta-noise.
+
+---
+
+## Original report (preserved below for context)
 
 ## Summary
 

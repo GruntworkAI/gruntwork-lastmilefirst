@@ -36,6 +36,31 @@ FORMAT_DIR = Path.home() / ".claude" / "lastmilefirst" / "secret-formats"
 COMMON_FILENAME = "common_secret_formats.toml"
 ORG_FILENAME = "org_secret_formats.toml"
 
+# Global allowlist injected into every merged config. Paths matched here are
+# excluded from rule scans regardless of which rules a user has loaded.
+# Two purposes:
+#   1. Vendor / build / cache directories that contain other people's code
+#      (node_modules, .venv, vendor, etc.) — findings there are noise the
+#      consumer cannot remediate
+#   2. The plugin's own data/*.toml files — without this, scanning the
+#      gruntwork-marketplace repo flags the rule regex patterns themselves
+#
+# Patterns are gitleaks-style regex matched against the full file path.
+# Anchored with `(^|/)` so e.g. `dist/` doesn't also match `redistribute/`.
+GLOBAL_ALLOWLIST_PATHS = [
+    r"(^|/)node_modules/",
+    r"(^|/)\.venv/",
+    r"(^|/)venv/",
+    r"(^|/)vendor/",
+    r"(^|/)dist/",
+    r"(^|/)build/",
+    r"(^|/)\.next/",
+    r"(^|/)\.terraform/",
+    r"(^|/)target/",
+    # Plugin's own format files — prevent self-match on regex pattern bodies
+    r"plugins/lastmilefirst/skills/scan-secrets/data/.*\.toml$",
+]
+
 ORG_TEMPLATE = """\
 # Organization-specific secret formats for Gitleaks
 # Add your org's custom secret patterns here.
@@ -188,6 +213,17 @@ def write_merged_config(extra_rules: Optional[List[Dict[str, Any]]] = None) -> P
         return "[" + ", ".join(parts) + "]"
 
     lines = ['title = "lastmilefirst merged secret formats"', ""]
+
+    # Global allowlist (vendor dirs + plugin's own data files). Top-level
+    # [allowlist] applies to every rule. Must come before [[rules]] arrays so
+    # subsequent scalar keys don't bind to the wrong table.
+    lines.append("[allowlist]")
+    lines.append(
+        f"description = {fmt_string('lastmilefirst global allowlist (vendor dirs + plugin data files)')}"
+    )
+    lines.append(f"paths = {fmt_list(GLOBAL_ALLOWLIST_PATHS)}")
+    lines.append("")
+
     for rule in rules:
         lines.append("[[rules]]")
         sub_tables: List[tuple] = []  # (key, dict_value) emitted after scalars
