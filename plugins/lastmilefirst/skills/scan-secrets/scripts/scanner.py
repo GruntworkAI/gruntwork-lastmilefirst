@@ -296,6 +296,11 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     """
     Walk workspace finding git repos and scan each.
     Returns (exit_code, combined_report).
+
+    Per-project state: each scanned repo's last_secret_scan timestamp is
+    updated regardless of findings. Without this, Overwatch reports every
+    just-scanned project as "Never scanned for secrets" because --all
+    previously only touched a single global timestamp.
     """
     err = _check_gitleaks()
     if err:
@@ -319,8 +324,22 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     if not repos:
         return 0, f"No git repos found in {ws}"
 
+    # Lazy-import the per-project state updater. Soft-failure: if the
+    # overwatch module can't be loaded, we still complete the scan.
+    update_scoped_state = None
+    try:
+        hooks_scripts = (
+            Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
+        )
+        sys.path.insert(0, str(hooks_scripts))
+        from overwatch import update_scoped_state as _uss  # type: ignore
+        update_scoped_state = _uss
+    except (ImportError, Exception):
+        pass
+
     lines = [f"Scanning {len(repos)} repos in {ws}...\n"]
     total_findings = 0
+    now = int(time.time())
 
     for repo in repos:
         exit_code, report = scan_repo(repo)
@@ -331,6 +350,15 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
             lines.append(f"  {repo_name}: FINDINGS DETECTED")
             lines.append(report)
             total_findings += 1
+
+        # Record per-project scan timestamp so Overwatch can see this repo
+        # was scanned. Key shape matches what session_start.py reads from
+        # state["projects"][f"{org}/{project_dir.name}"].
+        if update_scoped_state is not None:
+            try:
+                update_scoped_state("projects", repo_name, "last_secret_scan", now)
+            except Exception:
+                pass  # Per-project update is best-effort; don't fail the scan
 
     lines.append(f"\nScanned {len(repos)} repos. {total_findings} with findings.")
     return (1 if total_findings else 0), "\n".join(lines)
