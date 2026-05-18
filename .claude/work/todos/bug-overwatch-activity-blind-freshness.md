@@ -1,8 +1,24 @@
 # Bug: Overwatch freshness checks ignore project activity
 
-**Status:** OPEN
+**Status:** RESOLVED in v0.14.2 (2026-05-17)
 **Priority:** medium
 **Created:** 2026-05-17
+**Resolved:** 2026-05-17
+
+## Resolution
+
+Added `_get_last_commit_ts(repo_path)` to `session_start.py` and gated all three per-project freshness checks (review, secret scan, organize) on it:
+
+- "Never X" alerts: now fire only when the repo has at least one commit (`has_commits = last_commit > 0`). Empty / placeholder dirs like `splash/` (no git) are silent.
+- "Stale X" alerts: now fire only when `last_commit > last_action_ts` (something changed since the last action). Dormant repos with no activity since their last scan/review/organize no longer perpetually alert.
+
+Trade-off: one `git log -1 --format=%ct` call per project on every session start (~3ms × 23 projects ≈ 70ms). Acceptable for now; can cache `last_commit_ts` in state later if it becomes a hot path.
+
+**Smoke-tested 2026-05-17:** workspace summary went from `22/23 need review | 22/23 need secret scan` to `21/23 need review` (secret-scan line disappeared because activity gate suppressed all post-`--all` repos). `splash` (no commits) dropped out of "never" lists.
+
+---
+
+## Original report (preserved below for context)
 
 ## Summary
 
