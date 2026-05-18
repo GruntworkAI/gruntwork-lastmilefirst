@@ -394,10 +394,39 @@ def check_org_infrastructure(config: Dict) -> List[str]:
     return alerts
 
 
+def _get_last_commit_ts(repo_path: Path) -> int:
+    """
+    Return Unix timestamp of the latest commit in repo_path, or 0 if the
+    directory isn't a git repo, has no commits, or git is unavailable.
+
+    Used to gate freshness alerts on actual project activity — repos
+    without commits since their last scan/review/organize should not
+    perpetually fire "stale" alerts just because time has passed.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "log", "-1", "--format=%ct"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return int(result.stdout.strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+        pass
+    return 0
+
+
 def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
     """
     Scan all projects across all orgs for health metrics.
     Returns compact summary (session start) or full per-project detail (--full).
+
+    Freshness alerts (stale_*) are gated on project activity: a repo with
+    no commits since its last action is not flagged, even after the time
+    threshold passes. "Never" alerts still fire when the repo has any
+    commit history, so first-time scans/reviews of active repos surface.
+    Empty / placeholder repos with no commits are silent.
     """
     workspace = Path(config.get("workspace", ""))
     if not workspace.is_dir():
@@ -448,25 +477,34 @@ def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
                     except (OSError, IOError):
                         pass
 
+            # Activity gate: a "never X" or "stale X" alert is only useful
+            # if the project has any commit history (something changed) AND
+            # — for stale — there's been activity since the last action.
+            last_commit = _get_last_commit_ts(project_dir)
+            has_commits = last_commit > 0
+
             # Check review freshness
             last_review = project_state.get("last_review", 0)
             if last_review == 0:
-                never_reviewed.append(project_label)
-            elif (now - last_review) // 86400 >= 7:
+                if has_commits:
+                    never_reviewed.append(project_label)
+            elif (now - last_review) // 86400 >= 7 and last_commit > last_review:
                 stale_reviewed.append(project_label)
 
             # Check secret scan freshness
             last_scan = project_state.get("last_secret_scan", 0)
             if last_scan == 0:
-                never_scanned.append(project_label)
-            elif (now - last_scan) // 86400 >= 7:
+                if has_commits:
+                    never_scanned.append(project_label)
+            elif (now - last_scan) // 86400 >= 7 and last_commit > last_scan:
                 stale_scanned.append(project_label)
 
             # Check organize freshness
             last_organize = project_state.get("last_organize", 0)
             if last_organize == 0:
-                never_organized.append(project_label)
-            elif (now - last_organize) // 86400 >= 14:
+                if has_commits:
+                    never_organized.append(project_label)
+            elif (now - last_organize) // 86400 >= 14 and last_commit > last_organize:
                 stale_organized.append(project_label)
 
     if total == 0:
