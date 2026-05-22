@@ -225,7 +225,7 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 
 ## Public Expert Agents
 
-The plugin includes 13 AI expert personas you can consult when you need specialized knowledge. These are **public experts** - built into the plugin and available to everyone.
+The plugin includes 14 AI expert personas you can consult when you need specialized knowledge. These are **public experts** - built into the plugin and available to everyone.
 
 ### When to Use Experts
 
@@ -260,6 +260,7 @@ Specialists who extend the team's capabilities:
 | **Quinn** | QA Strategist | Test strategy, TDD, acceptance criteria. Quality advocate. |
 | **Reese** | Technology Researcher | Evaluation, comparison, feasibility studies. Evidence-based recommendations. |
 | **Otto** | DevOps Engineer | CI/CD, GitHub Actions, deployment automation. Pipeline specialist. |
+| **Ripley** | Reviewer & Anti-Slop Specialist | README/CLAUDE.md/docs/PRD/prompt clarity, signal density, anti-slop review. Cuts filler without flattening voice. "Every sentence must pay RENT." |
 
 ### Using Experts
 

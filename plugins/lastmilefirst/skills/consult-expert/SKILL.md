@@ -25,6 +25,7 @@ Get specialized guidance from the Gruntwork AI team - expert personas with deep 
 | **Max the MCP Engineer** | `max` | MCP protocol, IDE integration, workflow automation, agentic systems |
 | **Paloma the Python Sorceress** | `paloma` | Python development, full-stack, code quality, testing, FastAPI |
 | **Shannon the Claude Code Expert** | `shannon` | Claude Code optimization, context management, skills, hooks, configuration |
+| **Ripley the Rent Collector** | `ripley` | Editorial quality, signal density, anti-slop review, voice-preserving rewrite, README/CLAUDE.md/docs/PRD/prompt cleanup |
 
 ## How to Respond
 
@@ -46,6 +47,7 @@ File mapping:
 - max → max-mcp-engineer.md
 - paloma → paloma-python-sorceress.md
 - shannon → shannon-claude-code-expert.md
+- ripley → ripley-rent-collector.md
 
 ### Adopting the Persona
 
@@ -97,6 +99,7 @@ User: /run-consult-expert paloma "Review this Python function for code quality"
 - **MCP/tooling/automation** → Max
 - **Python/backend code** → Paloma
 - **Claude Code usage** → Shannon
+- **Editorial quality / AI slop / writing clarity** → Ripley
 
 ## Multi-Expert Consultation
 

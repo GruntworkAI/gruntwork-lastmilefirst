@@ -14,6 +14,8 @@ Reviews CLAUDE.md files at all hierarchy levels (user, org, project) against exp
 - After creating CLAUDE.md from template to fill in gaps
 - When Claude seems to miss project context (may indicate missing sections)
 
+**Boundary with `review-signal` (Ripley):** `review-claude` decides *what belongs* in CLAUDE.md and *where* (placement, hierarchy, completeness). `review-signal` reviews *how* the prose is written (signal density, anti-slop, voice). Run `review-claude` first to fix structure, then Ripley to tighten the language inside it.
+
 ## Conversational Triggers
 
 **Claude should proactively offer review-claude when:**
