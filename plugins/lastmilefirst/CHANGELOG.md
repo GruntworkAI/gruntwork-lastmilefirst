@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-21
+
 ### Added
-- **`audit-plugin` skill and `/run-audit-plugin` command** — wrapper around [Griffith](https://github.com/GruntworkAI/gruntwork-griffith) for plugin evaluation. Shells out to `griffith analyze <source> --json`, parses the result, and renders a markdown summary in the Claude session.
+
+#### Three new Key Hire experts (roster grows 13 → 16)
+
+- **Ripley the Rent Collector** (`ripley`) — Reviewer and Anti-Slop Specialist. Editorial quality, signal density, voice-preserving rewrite. Reviews README/CLAUDE.md/docs/PRD/prompt/AI-output for low-signal writing using the RENT framework (Relevance, Evidence, Newness, Traction). New skill `review-signal`, agent `consult-ripley`, command `/run-review-signal`. Fills the previously-uncovered gap between Shannon (context placement), Reese (source validation), and per-domain review skills.
+
+- **McBain the Senior Partner (TMT)** (`mcbain`) — Pre-delivery review of TMT (tech/media/telecom) engagement materials. Reads decks/primers/reference files as a set; flags cross-artifact drift, version-discipline defects, sector-credibility tells (wrong FCC docket numbers, ARPU charts mixing service and equipment revenue, "5G" labels on LTE-A data, etc.), and engagement-shape gaps. New skill `review-deliverable`, agent `consult-mcbain`, command `/run-review-deliverable`. Sector-narrow by design; redirects non-TMT engagements to sector-appropriate experts.
+
+- **Pam F the PMF Guru** (`pam`) — Product-market-fit discipline distilled from the YC seed-stage canon (Michael Seibel's pitch guide and product talk). Direct, blunt, allergic to founder-speak. Scores Frequency × Intensity × Willingness to Pay on a 1–4 scale; returns Real-PMF / Possible-PMF / No-PMF-yet verdict with one concrete actionable next step. New skill `review-pmf`, agent `consult-pam`, command `/run-review-pmf`.
+
+#### Designed pairings
+
+- **Ripley ↔ `review-claude`**: Ripley reads the prose; `review-claude` decides what belongs and where. Run `review-claude` first for structure, then Ripley for language.
+- **McBain ↔ Pam F**: Same artifact, two reads. McBain reads how the board/counterparty sees it; Pam reads how the market sees it. Often opposite verdicts — the disagreement is the value.
+
+#### `audit-plugin` skill and `/run-audit-plugin` command
+Wrapper around [Griffith](https://github.com/GruntworkAI/gruntwork-griffith) for plugin evaluation. Shells out to `griffith analyze <source> --json`, parses the result, and renders a markdown summary in the Claude session.
   - Accepts git URLs, `owner/repo` GitHub shorthand, and local paths — supports both pre-install vetting and post-install re-audit
   - `--strict` flag passes through to enable broader (noisier) security rules
   - `--json` flag emits raw Griffith JSON for scripting / comparison

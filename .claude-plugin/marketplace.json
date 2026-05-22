@@ -12,7 +12,7 @@
     {
       "name": "lastmilefirst",
       "description": "Last Mile First methodology plugin: PARC workflow, AI expert agents, org-level operatives and stack-wisdom, Claude configuration management, and workspace organization.",
-      "version": "0.14.2",
+      "version": "0.15.0",
       "author": {
         "name": "Michael Fisher",
         "url": "https://github.com/GruntworkAI"
