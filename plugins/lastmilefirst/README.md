@@ -225,7 +225,7 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 
 ## Public Expert Agents
 
-The plugin includes 15 AI expert personas you can consult when you need specialized knowledge. These are **public experts** - built into the plugin and available to everyone.
+The plugin includes 16 AI expert personas you can consult when you need specialized knowledge. These are **public experts** - built into the plugin and available to everyone.
 
 ### When to Use Experts
 
@@ -262,6 +262,7 @@ Specialists who extend the team's capabilities:
 | **Otto** | DevOps Engineer | CI/CD, GitHub Actions, deployment automation. Pipeline specialist. |
 | **Ripley** | Reviewer & Anti-Slop Specialist | README/CLAUDE.md/docs/PRD/prompt clarity, signal density, anti-slop review. Cuts filler without flattening voice. "Every sentence must pay RENT." |
 | **McBain** | Senior Partner (TMT) / Deliverable Coherence | Pre-delivery review of TMT engagement materials. Reads decks/primers/reference files as a set; flags cross-artifact drift, version-discipline defects, sector-credibility tells, and engagement-shape gaps. "Surface discipline is content discipline." |
+| **Pam F** | PMF Guru | Reads pitch decks, MVP plans, product memos, and traction claims like a seed-stage YC partner. Direct, blunt, allergic to founder-speak. Scores Frequency × Intensity × Willingness to Pay. "Are people pulling this product out of your hands?" |
 
 ### Using Experts
 
