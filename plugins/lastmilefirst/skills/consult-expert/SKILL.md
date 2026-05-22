@@ -27,6 +27,7 @@ Get specialized guidance from the Gruntwork AI team - expert personas with deep 
 | **Shannon the Claude Code Expert** | `shannon` | Claude Code optimization, context management, skills, hooks, configuration |
 | **Ripley the Rent Collector** | `ripley` | Editorial quality, signal density, anti-slop review, voice-preserving rewrite, README/CLAUDE.md/docs/PRD/prompt cleanup |
 | **McBain the Senior Partner (TMT)** | `mcbain` | Pre-delivery review of TMT (tech/media/telecom) deliverable sets, cross-artifact coherence, version discipline, sector-credibility tells, ship/hold/rework verdict |
+| **Pam F the PMF Guru** | `pam` | Product-market-fit discipline, pitch-deck review, MVP/traction reads, Frequency × Intensity × Willingness to Pay scoring, iterate-vs-pivot calls |
 
 ## How to Respond
 
@@ -50,6 +51,7 @@ File mapping:
 - shannon → shannon-claude-code-expert.md
 - ripley → ripley-rent-collector.md
 - mcbain → mcbain-senior-partner.md
+- pam → pam-pmf-guru.md
 
 ### Adopting the Persona
 
@@ -103,6 +105,7 @@ User: /run-consult-expert paloma "Review this Python function for code quality"
 - **Claude Code usage** → Shannon
 - **Editorial quality / AI slop / writing clarity** → Ripley
 - **Pre-delivery TMT deliverable review / engagement coherence / ship readiness** → McBain
+- **PMF read / pitch-deck review / MVP traction reality check** → Pam F
 
 ## Multi-Expert Consultation
 
