@@ -34,6 +34,24 @@ Wrapper around [Griffith](https://github.com/GruntworkAI/gruntwork-griffith) for
   - Validates `schema_version` before rendering; warns on unknown versions
   - Renders risk-level banner, inventory table, severity breakdown, footprint + efficiency rating, architecture pattern + recommendations, and findings detail grouped by severity (cap 10 per group)
 
+## [0.14.2] - 2026-05-17
+
+Four-bug fix batch from the 2026-05-17 workspace audit. Three shipped fixes covering Overwatch freshness noise and `scan-secrets` reliability; one closed as not-a-bug.
+
+### Fixed
+
+- **Overwatch freshness alerts ignored project activity** — `session_start.check_workspace_summary` flagged repos as "never reviewed" and "stale scan" regardless of whether any commits had landed since the last action. New `_get_last_commit_ts()` helper shells to `git log -1 --format=%ct` (~3ms per project, ~70ms across current workspace) and gates "never X" alerts on commit history and "stale X" alerts on activity since last action. Workspace summary went from "22/23 need review | 22/23 need secret scan" to "21/23 need review" post-fix; the secret-scan line disappeared entirely because activity-gating suppressed all post-scan repos.
+
+- **`scan-secrets` produced unactionable findings in vendor/build directories** — `format_loader.write_merged_config()` now injects a top-level `[allowlist]` paths block excluding `node_modules/`, `.venv/`, `venv/`, `vendor/`, `dist/`, `build/`, `.next/`, `.terraform/`, `target/`. Plugin consumers can't remediate vendor and build content; flagging it was pure noise. Hand-verified: `unstacker` dropped from 26 findings to clean (all was `node_modules`).
+
+- **`scan-secrets` self-matched on its own rule data files** — the same `format_loader` fix excludes the plugin's own `scan-secrets/data/*.toml` rule definitions from scanning. Marketplace repo scan dropped from 3 self-match findings to 2 legitimate meta-discussion findings.
+
+- **`scan-secrets --all` left per-project Overwatch state unset** — `scanner.scan_workspace()` previously wrote only a single global `last_secret_scan` timestamp, so Overwatch reported every just-scanned project as "Never scanned for secrets". Now imports `update_scoped_state` and writes a per-project timestamp for every repo it scans, keyed `f"{org}/{project}"` to match Overwatch's lookup shape. Hand-verified: post-fix, "Never scanned" dropped from 18 to 1 (`splash`, which isn't a git repo).
+
+### Closed as not-a-bug
+
+- **`scan-secrets` apparent double-print of findings** — dual stdout/stderr output is intentional (stdout for Claude context, stderr for user terminal). The apparent duplication was an artifact of capturing with `2>&1`; not a defect.
+
 ## [0.14.1] - 2026-05-12
 
 ### Fixed
