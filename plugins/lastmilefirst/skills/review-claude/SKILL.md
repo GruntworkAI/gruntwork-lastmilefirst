@@ -129,13 +129,13 @@ After completing the review, update Overwatch state for each level reviewed:
 
 ```bash
 # Project-level CLAUDE.md
-python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude
 
 # Org-level CLAUDE.md
-python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope org
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope org
 
 # User-level CLAUDE.md
-python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope global
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope global
 ```
 
 Run whichever levels were actually reviewed in the session.

@@ -207,7 +207,7 @@ python3 ${SKILL_ROOT}/scripts/organize_project.py --yes
 After completing organization, update the project's Overwatch state:
 
 ```bash
-python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py organize
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py organize
 ```
 
 ## Implementation Notes

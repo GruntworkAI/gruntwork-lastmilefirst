@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-13
+
+### Changed
+
+- **Marketplace renamed** `gruntwork-marketplace` → `gruntwork-lastmilefirst`, adopting the one-purpose-driven-marketplace-per-plugin model. The GitHub repo was renamed (old URL redirects), the marketplace `name` field and plugin key (`lastmilefirst@gruntwork-lastmilefirst`) changed, and all hardcoded cache/runtime paths in the plugin's scripts, skills, and commands now resolve under `gruntwork-lastmilefirst`. Rename only — no feature or behavior changes.
+  - **Action required:** re-add the marketplace once (`/plugin marketplace remove gruntwork-marketplace` → `/plugin marketplace add GruntworkAI/gruntwork-lastmilefirst` → `/plugin install lastmilefirst@gruntwork-lastmilefirst`). See `RELEASE-NOTES-0.16.0.md`.
+
 ## [0.15.0] - 2026-05-21
 
 ### Added

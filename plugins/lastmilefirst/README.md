@@ -157,10 +157,10 @@ Run these commands inside a Claude Code session:
 ```bash
 # 1. Add the Gruntwork marketplace (one time, interactive)
 /plugin marketplace add
-# When prompted, enter: GruntworkAI/gruntwork-marketplace
+# When prompted, enter: GruntworkAI/gruntwork-lastmilefirst
 
 # 2. Install the plugin
-/plugin install lastmilefirst@gruntwork-marketplace
+/plugin install lastmilefirst@gruntwork-lastmilefirst
 
 # 3. Verify installation
 /plugin list
@@ -170,16 +170,16 @@ Run these commands inside a Claude Code session:
 
 ```bash
 # Refresh marketplace first (fetches latest versions)
-/plugin marketplace update gruntwork-marketplace
+/plugin marketplace update gruntwork-lastmilefirst
 
 # Then update the plugin
-/plugin update lastmilefirst@gruntwork-marketplace
+/plugin update lastmilefirst@gruntwork-lastmilefirst
 ```
 
 ### Local Development
 
 ```bash
-claude --plugin-dir /path/to/gruntwork-marketplace/plugins/lastmilefirst
+claude --plugin-dir /path/to/gruntwork-lastmilefirst/plugins/lastmilefirst
 ```
 
 ## Platform Requirements

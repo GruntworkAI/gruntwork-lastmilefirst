@@ -159,7 +159,7 @@ class ConfluenceAdapter(KnowledgeAdapter):
 
 ## Contributing an Adapter
 
-1. **Fork** the gruntwork-marketplace repository
+1. **Fork** the gruntwork-lastmilefirst repository
 2. **Create** your adapter in `plugins/lastmilefirst/adapters/[backend]-adapter/`
 3. **Implement** the `KnowledgeAdapter` interface
 4. **Test** with a real backend instance
@@ -185,4 +185,4 @@ class ConfluenceAdapter(KnowledgeAdapter):
 | Google Docs | Medium | Seeking contributor |
 | Obsidian | Low | Seeking contributor |
 
-**Interested in contributing?** Open an issue on the gruntwork-marketplace repo.
+**Interested in contributing?** Open an issue on the gruntwork-lastmilefirst repo.

@@ -33,7 +33,7 @@ Do NOT just display this documentation - execute the script and show the output 
 Installed Plugins
 ────────────────────────────────────────────────────────────
 
-lastmilefirst@gruntwork-marketplace  v0.9.4
+lastmilefirst@gruntwork-lastmilefirst  v0.9.4
   AI expert agents, CLAUDE.md management, project organization
   Skills: 13 | Commands: 15
 
@@ -76,7 +76,7 @@ compound-engineering@every-marketplace  v2.28.0
 {
   "plugins": [
     {
-      "key": "lastmilefirst@gruntwork-marketplace",
+      "key": "lastmilefirst@gruntwork-lastmilefirst",
       "name": "lastmilefirst",
       "version": "0.9.4",
       "description": "...",

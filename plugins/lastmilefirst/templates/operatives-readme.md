@@ -62,4 +62,4 @@ You are [Name], a specialist in [domain]...
 
 This repository is shared across all {{ORG_NAME}} projects. Changes here affect all projects in the org.
 
-Managed by the [lastmilefirst](https://github.com/GruntworkAI/gruntwork-marketplace) plugin.
+Managed by the [lastmilefirst](https://github.com/GruntworkAI/gruntwork-lastmilefirst) plugin.
