@@ -145,7 +145,7 @@ Present prioritized action list and offer to execute:
 After completing the review, update the project's Overwatch state:
 
 ```bash
-python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py review
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review
 ```
 
 ## Notes

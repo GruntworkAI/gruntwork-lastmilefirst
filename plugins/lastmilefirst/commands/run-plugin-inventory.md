@@ -8,7 +8,7 @@ Display installed Claude Code plugins with versions, component counts, and usage
 
 ```bash
 # Find latest version and run
-PLUGIN_DIR=$(ls -d ~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/ 2>/dev/null | sort -V | tail -1)
+PLUGIN_DIR=$(ls -d ~/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst/*/ 2>/dev/null | sort -V | tail -1)
 python3 "${PLUGIN_DIR}skills/plugin-inventory/scripts/inventory.py" [any args]
 ```
 

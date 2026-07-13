@@ -43,7 +43,7 @@ ORG_FILENAME = "org_secret_formats.toml"
 #      (node_modules, .venv, vendor, etc.) — findings there are noise the
 #      consumer cannot remediate
 #   2. The plugin's own data/*.toml files — without this, scanning the
-#      gruntwork-marketplace repo flags the rule regex patterns themselves
+#      gruntwork-lastmilefirst repo flags the rule regex patterns themselves
 #
 # Patterns are gitleaks-style regex matched against the full file path.
 # Anchored with `(^|/)` so e.g. `dist/` doesn't also match `redistribute/`.

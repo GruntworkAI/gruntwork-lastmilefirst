@@ -92,4 +92,4 @@ How to avoid this in the future.
 
 This repository is shared across all {{ORG_NAME}} projects. Wisdom here benefits everyone in the org.
 
-Managed by the [lastmilefirst](https://github.com/GruntworkAI/gruntwork-marketplace) plugin.
+Managed by the [lastmilefirst](https://github.com/GruntworkAI/gruntwork-lastmilefirst) plugin.
