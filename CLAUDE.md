@@ -1,6 +1,6 @@
-# Gruntwork Marketplace
+# Gruntwork LastMileFirst
 
-Claude Code plugin marketplace for Gruntwork development workflows.
+Purpose-driven Claude Code marketplace for the `lastmilefirst` plugin (PARC workflow, AI expert agents, workspace organization, Claude configuration management).
 
 
 ## Archetype: Usable
@@ -33,7 +33,7 @@ git commit -m "chore(<plugin-name>): Bump version to X.Y.Z"
 ## Repository Structure
 
 ```
-gruntwork-marketplace/
+gruntwork-lastmilefirst/
 ├── .claude-plugin/
 │   └── marketplace.json    # INDEX FILE - lists all plugins with versions
 ├── plugins/

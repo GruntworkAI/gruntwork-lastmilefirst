@@ -286,7 +286,7 @@ This means you'll be reminded at session start if your current org is missing in
 After completing org organization, update the org's Overwatch state:
 
 ```bash
-python3 ~/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/hooks/scripts/update_state.py organize --scope org
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py organize --scope org
 ```
 
 ## Related Skills

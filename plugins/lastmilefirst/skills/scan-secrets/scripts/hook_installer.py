@@ -28,8 +28,8 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")"
 
 # Find the scan-secrets CLI
 CLI_CANDIDATES=(
-    "$HOME/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst"/*/skills/scan-secrets/scripts/scan_secrets.py
-    "$HOME/.claude/plugins/marketplaces/gruntwork-marketplace/plugins/lastmilefirst/skills/scan-secrets/scripts/scan_secrets.py"
+    "$HOME/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst"/*/skills/scan-secrets/scripts/scan_secrets.py
+    "$HOME/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/skills/scan-secrets/scripts/scan_secrets.py"
 )
 
 CLI_PATH=""

@@ -51,13 +51,13 @@ When you run these commands, overwatch records the timestamp:
 
 ```bash
 # After running review
-~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/hooks/scripts/update-state.sh review
+~/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst/*/hooks/scripts/update-state.sh review
 
 # After organizing
-~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/hooks/scripts/update-state.sh organize
+~/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst/*/hooks/scripts/update-state.sh organize
 
 # Check current state
-~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/hooks/scripts/update-state.sh status
+~/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst/*/hooks/scripts/update-state.sh status
 ```
 
 ## Behavior
@@ -135,7 +135,7 @@ This check ensures the user's CLAUDE.md has an up-to-date expert consultation se
 1. **Section exists**: Look for "AI Expert Consultation" or "Expert Consultation" in user CLAUDE.md
 2. **All experts listed**: Compare against current personas in plugin:
    ```bash
-   ls ~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/personas/*.md | xargs -I{} basename {} .md
+   ls ~/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst/*/personas/*.md | xargs -I{} basename {} .md
    ```
 3. **All operatives listed**: Check for any operatives not mentioned:
    ```bash
@@ -159,7 +159,7 @@ This check ensures the user's CLAUDE.md has an up-to-date expert consultation se
 Run this to see current vs documented:
 ```bash
 # Current experts
-ls ~/.claude/plugins/cache/gruntwork-marketplace/lastmilefirst/*/personas/*.md 2>/dev/null | xargs -I{} basename {} .md | sort
+ls ~/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst/*/personas/*.md 2>/dev/null | xargs -I{} basename {} .md | sort
 
 # Current operatives
 ls ~/.claude/operatives/*.md .claude/operatives/*.md 2>/dev/null | xargs -I{} basename {} .md | sort
