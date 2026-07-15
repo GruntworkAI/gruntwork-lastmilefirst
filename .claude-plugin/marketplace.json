@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Marketplace for the lastmilefirst plugin: PARC workflow, AI expert agents, org-level operatives and stack-wisdom, Claude configuration management, and workspace organization.",
-    "version": "1.0.0"
+    "version": "0.16.0"
   },
   "plugins": [
     {
