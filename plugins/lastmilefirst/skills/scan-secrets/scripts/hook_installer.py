@@ -24,20 +24,17 @@ HOOK_SCRIPT = """\
 # Installed by: /run-scan-secrets --install-hooks
 # Remove with:  /run-scan-secrets --uninstall-hooks
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")"
-
-# Find the scan-secrets CLI
-CLI_CANDIDATES=(
-    "$HOME/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst"/*/skills/scan-secrets/scripts/scan_secrets.py
-    "$HOME/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/skills/scan-secrets/scripts/scan_secrets.py"
-)
-
+# Find the scan-secrets CLI. The marketplace name and version are globbed rather
+# than hard-coded so a marketplace rename (e.g. gruntwork-marketplace ->
+# gruntwork-lastmilefirst) or a version bump can't silently disarm the hook. The
+# marketplace glob is constrained to the gruntwork-* namespace so an unrelated or
+# hostile marketplace can't supply the scan_secrets.py this hook executes.
+# Glob expands sorted, so the last existing match wins -> newest installed version.
 CLI_PATH=""
-for candidate in "${CLI_CANDIDATES[@]}"; do
-    if [ -f "$candidate" ]; then
-        CLI_PATH="$candidate"
-        break
-    fi
+for candidate in \
+    "$HOME/.claude/plugins/cache"/gruntwork-*/lastmilefirst/*/skills/scan-secrets/scripts/scan_secrets.py \
+    "$HOME/.claude/plugins/marketplaces"/gruntwork-*/plugins/lastmilefirst/skills/scan-secrets/scripts/scan_secrets.py; do
+    [ -f "$candidate" ] && CLI_PATH="$candidate"
 done
 
 if [ -z "$CLI_PATH" ]; then

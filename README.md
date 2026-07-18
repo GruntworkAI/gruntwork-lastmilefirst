@@ -43,7 +43,7 @@ To get the latest plugin versions:
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [lastmilefirst](plugins/lastmilefirst/) | 0.16.0 | PARC workflow, AI expert agents, org-level operatives, stack-wisdom, and stack-knowledge |
+| [lastmilefirst](plugins/lastmilefirst/) | 0.16.1 | PARC workflow, AI expert agents, org-level operatives, stack-wisdom, and stack-knowledge |
 
 ## About
 
