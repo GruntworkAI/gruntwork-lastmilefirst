@@ -23,7 +23,7 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Uncommitted changes | Every session | Any uncommitted files |
 | Project review | Every session | 7+ days since `/run-review-project` |
 | Project organize | Every session | 14+ days since `/run-organize-project` |
-| Plugin updates | Weekly | 7+ days since last check |
+| Plugin updates | Daily (network) | Upstream marketplace-manifest version > installed |
 | Stale todos | Every session | Any todos older than 14 days |
 | Secret scan freshness | Every session | Never scanned or 7+ days since `/run-scan-secrets` |
 | Repo visibility | Every session | Current repo is PUBLIC |
@@ -31,6 +31,26 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Expert roster sync | Every session | User CLAUDE.md missing experts or operatives |
 | Org infrastructure | Every session | Missing org.json, operatives, or wisdom repo |
 | Workspace summary | Every session | Cross-project health (archetypes, reviews, scans) |
+
+### Plugin update check (network)
+
+Overwatch reads the version `/plugin update` would actually resolve — the
+upstream `marketplace.json` on the repo's default branch (falling back to the
+plugin's own `plugin.json`) — and alerts when it exceeds what's installed. This
+sidesteps Claude Code's unreliable local marketplace-cache refresh.
+
+- **Hot path is zero-network.** Alerts surface from a cached result; the network
+  refresh runs **at most once per 24h** and its findings appear on a later
+  session. Offline / proxy-blocked / unreachable → silent skip.
+- **Consumable only.** Because it reads the same version `/plugin update` uses, a
+  flagged update is always installable — the alert self-clears once you update.
+- **Coverage is honest, not universal.** Covered: github-sourced marketplaces
+  whose plugin version is discoverable in-repo (inline `plugins[].version`, or an
+  in-repo `source` path with a versioned `plugin.json`). Silently skipped (the
+  local cached-manifest diff still applies): non-github sources, external/dict
+  `source` entries, plugins with no in-repo version, and private/unreachable repos.
+- If `/plugin update` reports success but the version stays stale (a known Claude
+  Code cache bug), reinstall: `claude plugin uninstall <p>@<mp> && claude plugin install <p>@<mp>`.
 
 ## How It Works
 
@@ -45,7 +65,9 @@ When you run these commands, overwatch records the timestamp:
 - `/run-review-project` → updates `last_review`
 - `/run-organize-project` → updates `last_organize`
 - `/run-scan-secrets` → updates `last_secret_scan`
-- `claude /plugin update` → updates `last_plugin_check`
+
+`last_plugin_check` is managed by the network plugin-update check itself (written
+once per 24h before it fetches), not by `/plugin update`.
 
 ## Manual State Update
 

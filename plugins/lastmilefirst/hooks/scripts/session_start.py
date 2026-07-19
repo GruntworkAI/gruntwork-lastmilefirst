@@ -27,8 +27,15 @@ from overwatch import (
     get_tmp_dir,
     get_lock_file,
     file_lock,
-    version_compare,
     _load_organize_config,
+    get_plugin_update_cache,
+    is_plugin_check_due,
+    record_check_started,
+    write_plugin_update_results,
+    resolve_github_repo,
+    _load_known_marketplaces,
+    fetch_upstream_version,
+    is_newer,
 )
 
 # Import archetype detection from organize-claude
@@ -95,60 +102,120 @@ def check_organize_status(state: Dict, project_label: Optional[str] = None) -> O
     return None
 
 
+def _read_installed_plugins(plugins_dir) -> Dict[str, str]:
+    """Return {"<name>@<marketplace>": installed_version} from installed_plugins.json."""
+    installed: Dict[str, str] = {}
+    installed_file = plugins_dir / "installed_plugins.json"
+    if not installed_file.exists():
+        return installed
+    try:
+        with open(installed_file, encoding='utf-8') as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError, OSError):
+        return installed
+    for plugin_id, installs in data.get("plugins", {}).items():
+        if not (isinstance(installs, list) and installs and "@" in plugin_id):
+            continue
+        first = installs[0]
+        if not isinstance(first, dict):
+            continue
+        ver = first.get("version", "")
+        if isinstance(ver, str) and ver:
+            installed[plugin_id] = ver
+    return installed
+
+
+def _refresh_plugin_update_cache(plugins_dir, installed: Dict[str, str], now: int,
+                                 budget: float = 5.0, per_timeout: float = 2.0) -> None:
+    """Bounded-inline network refresh: read the upstream marketplace-manifest
+    version for each installed github-sourced plugin and cache the ones with a
+    newer consumable release, for a later session to surface. The throttle
+    timestamp is written first so it advances even if the refresh is cut short.
+    """
+    record_check_started(now)
+    known = _load_known_marketplaces(plugins_dir)
+    deadline = time.monotonic() + budget
+    results: Dict[str, str] = {}
+    for plugin_id, ver in installed.items():
+        if time.monotonic() >= deadline:
+            break
+        name, marketplace = plugin_id.split("@", 1)
+        repo = resolve_github_repo(marketplace, known)
+        if not repo:
+            continue
+        upstream = fetch_upstream_version(repo, name, deadline, per_timeout=per_timeout)
+        if upstream and is_newer(ver, upstream):
+            results[plugin_id] = upstream
+    write_plugin_update_results(results, now)
+
+
 def check_plugin_updates() -> List[str]:
-    """Check for available plugin updates."""
+    """Surface consumable plugin updates.
+
+    Hot path is zero-network: emits from the cached network result (re-verified
+    against the current installed version) plus the local cached-manifest diff.
+    At most once per 24h it kicks off a bounded-inline network refresh whose
+    results surface on a later session. Never raises -- any failure (including a
+    corrupt local JSON file) degrades to fewer/no alerts so session start is
+    unaffected.
+    """
+    try:
+        return _check_plugin_updates()
+    except Exception:
+        return []
+
+
+def _check_plugin_updates() -> List[str]:
     plugins_dir = get_plugins_dir()
     if not plugins_dir:
         return []
 
-    installed_file = plugins_dir / "installed_plugins.json"
+    installed = _read_installed_plugins(plugins_dir)
+    if not installed:
+        return []
+
+    lines: List[str] = []
+    seen = set()
+
+    # (1) Network-sourced cache, re-verified against the CURRENT installed
+    # version so it self-clears the moment the user updates (KTD5).
+    state = load_state()
+    cache = get_plugin_update_cache(state)
+    for plugin_id, ver in installed.items():
+        entry = cache.get(plugin_id)
+        if isinstance(entry, dict):
+            available = entry.get("available", "")
+            if available and is_newer(ver, available):
+                lines.append(f"   {plugin_id}: {ver} -> {available}")
+                seen.add(plugin_id)
+
+    # (2) Local cached-manifest diff -- secondary signal, deduped (R8).
     marketplaces_dir = plugins_dir / "marketplaces"
+    if marketplaces_dir.exists():
+        for plugin_id, ver in installed.items():
+            if plugin_id in seen:
+                continue
+            name, marketplace = plugin_id.split("@", 1)
+            mp_json = (marketplaces_dir / marketplace / "plugins" / name /
+                       ".claude-plugin" / "plugin.json")
+            try:
+                with open(mp_json, encoding='utf-8') as f:
+                    available = json.load(f).get("version", "")
+            except (json.JSONDecodeError, IOError, OSError):
+                continue
+            if available and is_newer(ver, available):
+                lines.append(f"   {plugin_id}: {ver} -> {available}")
+                seen.add(plugin_id)
 
-    if not installed_file.exists() or not marketplaces_dir.exists():
-        return []
-
-    try:
-        with open(installed_file, encoding='utf-8') as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return []
-
-    updates = []
-    plugins = data.get("plugins", {})
-
-    for plugin_id, installs in plugins.items():
-        if not installs:
-            continue
-
-        installed = installs[0].get("version", "")
-        if not installed:
-            continue
-
-        parts = plugin_id.split("@")
-        if len(parts) != 2:
-            continue
-
-        plugin_name, marketplace = parts
-
-        marketplace_json = (
-            marketplaces_dir / marketplace / "plugins" / plugin_name /
-            ".claude-plugin" / "plugin.json"
-        )
-
-        if not marketplace_json.exists():
-            continue
-
+    # (3) At most once/24h, refresh the network cache for a later session.
+    now = int(time.time())
+    if is_plugin_check_due(state, now):
         try:
-            with open(marketplace_json, encoding='utf-8') as f:
-                mp_data = json.load(f)
-            available = mp_data.get("version", "")
-        except (json.JSONDecodeError, IOError):
-            continue
+            _refresh_plugin_update_cache(plugins_dir, installed, now)
+        except Exception:
+            pass  # a refresh failure must never break session start
 
-        if available and version_compare(installed, available) < 0:
-            updates.append(f"   {plugin_name}@{marketplace}: {installed} -> {available}")
-
-    return updates
+    return lines
 
 
 def check_usage_stats() -> List[str]:
@@ -698,6 +765,8 @@ def main() -> None:
         alerts.append("ACTION REQUIRED: Plugin updates available. Update before starting work:")
         alerts.extend(plugin_updates)
         alerts.append("   Run: claude plugin update <plugin>@<marketplace>")
+        alerts.append("   If it still reports the old version (known cache bug), reinstall:")
+        alerts.append("   claude plugin uninstall <plugin>@<marketplace> && claude plugin install <plugin>@<marketplace>")
 
     # Check 5: Usage stats
     usage_stats = check_usage_stats()
