@@ -413,6 +413,8 @@ def _validate_source_path(source: Any) -> Optional[str]:
     s = source.strip()
     if s.startswith("./"):
         s = s[2:]
+    if s.startswith("/"):
+        return None  # absolute path -- reject rather than silently relativize
     s = s.strip("/")
     if s in ("", "."):
         return ""  # repo root
