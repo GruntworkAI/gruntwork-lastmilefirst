@@ -6,7 +6,11 @@ Provides file locking, state management, and shared functionality.
 State format (v2):
 {
   "version": 2,
-  "global": {"last_plugin_check": 0, "last_review_claude": 0},
+  "global": {
+    "last_plugin_check": 0,      # unix ts of the last network plugin-update check
+    "last_review_claude": 0,
+    "plugin_update_cache": {}    # {"<name>@<marketplace>": {"available": "x.y.z", "checked_at": ts}}
+  },
   "orgs": {"gruntwork": {"last_organize": 0, "last_review_claude": 0}},
   "projects": {"gruntwork/gruntwork-leamo": {"last_review": 0, ...}}
 }
@@ -14,8 +18,12 @@ State format (v2):
 
 import json
 import os
+import re
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
@@ -95,14 +103,20 @@ def file_lock(lock_path: Path):
 # ---------------------------------------------------------------------------
 
 def _ensure_v2(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Migrate v1 flat state to v2 nested structure in-place. Idempotent."""
+    """Migrate v1 flat state to v2 nested structure in-place. Idempotent.
+
+    Also forward-fills newer v2 fields (e.g. plugin_update_cache) so a state
+    file written by an older version gains them on load without a version bump.
+    """
     if state.get("version") == 2:
+        state.setdefault("global", {}).setdefault("plugin_update_cache", {})
         return state
 
     state["version"] = 2
     state["global"] = {
         "last_plugin_check": state.pop("last_plugin_check", 0),
         "last_review_claude": 0,
+        "plugin_update_cache": {},
     }
     # Discard old global timestamps -- they were never scoped to a project
     state.pop("last_review", None)
@@ -115,7 +129,7 @@ def _ensure_v2(state: Dict[str, Any]) -> Dict[str, Any]:
 
 _V2_DEFAULT: Dict[str, Any] = {
     "version": 2,
-    "global": {"last_plugin_check": 0, "last_review_claude": 0},
+    "global": {"last_plugin_check": 0, "last_review_claude": 0, "plugin_update_cache": {}},
     "orgs": {},
     "projects": {},
 }
@@ -295,8 +309,10 @@ def version_compare(v1: str, v2: str) -> int:
     Compare two version strings.
     Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
 
-    Note: Non-numeric components (e.g., 'beta', 'rc1') are ignored.
-    '1.2.3-beta' is treated as '1.2.3'.
+    Note: only fully-numeric components are compared; a component with a
+    non-numeric suffix is DROPPED entirely, so '1.2.3-beta' normalizes to
+    [1, 2] (not [1, 2, 3]). Callers that must not mis-rank pre-releases should
+    filter them with is_pre_release() BEFORE calling this.
     """
     def normalize(v: str) -> List[int]:
         # Extract only numeric components, ignore suffixes like -beta, -rc1
@@ -316,6 +332,225 @@ def version_compare(v1: str, v2: str) -> int:
         if p1 > p2:
             return 1
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Network plugin-update check (upstream marketplace manifest)
+#
+# Reads the version /plugin update would resolve -- the upstream marketplace
+# manifest on the repo's default branch -- and compares it to what's installed.
+# All network egress is pinned to raw.githubusercontent.com; nothing fetched is
+# executed. Every failure degrades to None/skip so a session start never breaks.
+# ---------------------------------------------------------------------------
+
+_RAW_HOST = "raw.githubusercontent.com"
+_MAX_FETCH_BYTES = 1_000_000
+_DEFAULT_BRANCHES = ("main", "master")
+# owner/repo, two segments, conservative charset -- excludes '@', '..', '%',
+# whitespace, extra slashes, leading '-'/'.'
+_GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
+_SOURCE_PATH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
+# --- U3: version selection + pre-release guard ---------------------------
+
+def is_pre_release(version: str) -> bool:
+    """True if any dotted component is not purely numeric (e.g. '0.17.1-rc1')."""
+    if not isinstance(version, str) or not version:
+        return True
+    return any(not part.isdigit() for part in version.split("."))
+
+
+def is_newer(installed: str, upstream: str) -> bool:
+    """True if `upstream` is a strictly-newer stable release than `installed`.
+
+    Pre-release upstreams are never considered newer (version_compare drops
+    their suffix and would mis-rank them). Versions here are plain semver with
+    no leading 'v' (manifest/plugin.json values, not git tags).
+    """
+    if not installed or not upstream:
+        return False
+    if is_pre_release(upstream):
+        return False
+    return version_compare(installed, upstream) < 0
+
+
+# --- U1: marketplace repo + source-path resolution -----------------------
+
+def _load_known_marketplaces(plugins_dir: Path) -> Dict[str, Any]:
+    """Load ~/.claude/plugins/known_marketplaces.json, or {} on any error."""
+    try:
+        with open(plugins_dir / "known_marketplaces.json", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, IOError, OSError):
+        return {}
+
+
+def resolve_github_repo(marketplace: str, known: Dict[str, Any]) -> Optional[str]:
+    """Return the validated 'owner/repo' for a github-sourced marketplace, else None."""
+    entry = known.get(marketplace)
+    if not isinstance(entry, dict):
+        return None
+    source = entry.get("source")
+    if not isinstance(source, dict) or source.get("source") != "github":
+        return None
+    repo = source.get("repo")
+    if not isinstance(repo, str) or not _GITHUB_REPO_RE.match(repo):
+        return None
+    return repo
+
+
+def _validate_source_path(source: Any) -> Optional[str]:
+    """Return a safe in-repo path for a plugin `source`, or None to skip.
+
+    Only string sources are supported (dict/external sources -> None). Rejects
+    '%' (encoded traversal), '..' segments, and anything outside the allowlist.
+    '.'/'./' collapse to '' (repo root).
+    """
+    if not isinstance(source, str) or "%" in source:
+        return None
+    s = source.strip()
+    if s.startswith("./"):
+        s = s[2:]
+    s = s.strip("/")
+    if s in ("", "."):
+        return ""  # repo root
+    if any(seg == ".." for seg in s.split("/")) or not _SOURCE_PATH_RE.match(s):
+        return None
+    return s
+
+
+# --- U2: upstream version fetcher (stubbable HTTP boundary) ---------------
+
+class _PinnedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse any redirect whose target host is not exactly raw.githubusercontent.com."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlsplit(newurl).hostname != _RAW_HOST:
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+# Built once: pinned redirects + empty ProxyHandler (ignore *_proxy env for
+# deterministic, security-scoped egress). No cookie/auth handlers are added.
+_OPENER = urllib.request.build_opener(
+    _PinnedRedirectHandler,
+    urllib.request.ProxyHandler({}),
+)
+
+
+def _http_get_json(url: str, timeout: float) -> Optional[Any]:
+    """GET `url` (must be https://raw.githubusercontent.com/...) and parse JSON.
+
+    Returns the parsed object, or None on any failure. Reads at most
+    _MAX_FETCH_BYTES (bounded before consuming the body; Content-Length is not
+    trusted). This is the ONLY function that touches the network -- tests stub it.
+    """
+    if not url.startswith("https://" + _RAW_HOST + "/"):
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "lastmilefirst-overwatch"})
+        with _OPENER.open(req, timeout=timeout) as resp:
+            if getattr(resp, "status", 200) not in (200, None):
+                return None
+            body = resp.read(_MAX_FETCH_BYTES + 1)
+        if len(body) > _MAX_FETCH_BYTES:
+            return None
+        return json.loads(body.decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _find_plugin_entry(manifest: Any, plugin_name: str) -> Optional[Dict[str, Any]]:
+    """Find the plugins[] entry matching plugin_name in a marketplace manifest."""
+    if not isinstance(manifest, dict):
+        return None
+    for p in manifest.get("plugins", []):
+        if isinstance(p, dict) and p.get("name") == plugin_name:
+            return p
+    return None
+
+
+def _plugin_json_url(repo: str, branch: str, source_path: str) -> str:
+    """Build the raw URL for a plugin's plugin.json ('' source_path = repo root)."""
+    prefix = f"{source_path}/" if source_path else ""
+    return f"https://{_RAW_HOST}/{repo}/{branch}/{prefix}.claude-plugin/plugin.json"
+
+
+def fetch_upstream_version(
+    repo: str,
+    plugin_name: str,
+    deadline: float,
+    per_timeout: float = 2.0,
+) -> Optional[str]:
+    """Return the upstream manifest version for plugin_name in repo, or None.
+
+    Two-level: inline plugins[].version, else the plugin's own plugin.json at a
+    validated in-repo string source. Tries default branches (main, master) until
+    a manifest is found. Respects `deadline` (time.monotonic()) as a hard stop.
+    """
+    for branch in _DEFAULT_BRANCHES:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        manifest = _http_get_json(
+            f"https://{_RAW_HOST}/{repo}/{branch}/.claude-plugin/marketplace.json",
+            timeout=min(remaining, per_timeout),
+        )
+        if manifest is None:
+            continue  # branch 404 or fetch failure -- try the next candidate
+        entry = _find_plugin_entry(manifest, plugin_name)
+        if entry is None:
+            return None  # plugin not listed upstream -- skip
+        version = entry.get("version")
+        if isinstance(version, str) and version:
+            return version
+        source_path = _validate_source_path(entry.get("source"))
+        if source_path is None:
+            return None  # dict/external/unsafe source -- skip
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        plugin_json = _http_get_json(
+            _plugin_json_url(repo, branch, source_path),
+            timeout=min(remaining, per_timeout),
+        )
+        if not isinstance(plugin_json, dict):
+            return None
+        v = plugin_json.get("version")
+        return v if isinstance(v, str) and v else None
+    return None
+
+
+# --- U4: throttle + result cache -----------------------------------------
+
+def is_plugin_check_due(state: Dict[str, Any], now: int, interval: int = 86400) -> bool:
+    """True if the network plugin check hasn't run within `interval` seconds."""
+    last = state.get("global", {}).get("last_plugin_check", 0) or 0
+    return (now - last) > interval
+
+
+def record_check_started(now: int) -> None:
+    """Advance last_plugin_check BEFORE fetching, so the throttle holds even if
+    the refresh is interrupted (R3)."""
+    update_state_field("last_plugin_check", now)
+
+
+def get_plugin_update_cache(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the cached {id: {available, checked_at}} map from state."""
+    cache = state.get("global", {}).get("plugin_update_cache", {})
+    return cache if isinstance(cache, dict) else {}
+
+
+def write_plugin_update_results(results: Dict[str, str], now: int) -> None:
+    """Persist a fresh cache from `results` ({id: available}).
+
+    Writing wholesale from the current installed set (the caller's `results`)
+    naturally prunes entries for uninstalled plugins (R8/KTD5).
+    """
+    cache = {pid: {"available": ver, "checked_at": now} for pid, ver in results.items()}
+    update_state_field("plugin_update_cache", cache)
 
 
 if __name__ == "__main__":
