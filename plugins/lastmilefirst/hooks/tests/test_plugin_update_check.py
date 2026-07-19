@@ -251,3 +251,58 @@ class TestCheckPluginUpdates:
         overwatch.record_check_started(int(_t.time()))  # not due -> no network path
         out = session_start.check_plugin_updates()
         assert out == ["   lastmilefirst@gruntwork-marketplace: 0.16.0 -> 0.16.1"]
+
+    def test_malformed_installed_never_crashes(self, plugins_dir, tmp_state, monkeypatch):
+        # non-dict install record + numeric version must not crash the hook
+        (plugins_dir / "installed_plugins.json").write_text(json.dumps({
+            "plugins": {
+                "bad@m": ["1.0.0"],             # install record is a str, not a dict
+                "num@m": [{"version": 0.16}],   # version is a number, not a str
+            }
+        }))
+        monkeypatch.setattr(overwatch, "_http_get_json", _http_stub({}))
+        assert session_start.check_plugin_updates() == []
+
+    def test_local_diff_ignores_prerelease(self, plugins_dir, tmp_state, monkeypatch):
+        # a locally-cached pre-release manifest must not raise a false alert
+        mp = (plugins_dir / "marketplaces" / "gruntwork-marketplace" / "plugins" /
+              "lastmilefirst" / ".claude-plugin")
+        mp.mkdir(parents=True)
+        (mp / "plugin.json").write_text(json.dumps({"version": "0.17.1-rc1"}))
+        import time as _t
+        overwatch.record_check_started(int(_t.time()))  # not due -> local path only
+        assert session_start.check_plugin_updates() == []
+
+
+class _FakeResp:
+    def __init__(self, body, status=200):
+        self._body, self.status = body, status
+
+    def read(self, n):
+        return self._body[:n]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class TestHttpPrimitive:
+    def test_valid_json(self, monkeypatch):
+        monkeypatch.setattr(overwatch._OPENER, "open",
+                            lambda req, timeout: _FakeResp(b'{"version":"1.0.0"}'))
+        assert overwatch._http_get_json(
+            "https://raw.githubusercontent.com/a/b/main/x", 1) == {"version": "1.0.0"}
+
+    def test_bounded_read_rejected(self, monkeypatch):
+        big = b'{"x":1}' + b" " * (overwatch._MAX_FETCH_BYTES + 10)
+        monkeypatch.setattr(overwatch._OPENER, "open", lambda req, timeout: _FakeResp(big))
+        assert overwatch._http_get_json(
+            "https://raw.githubusercontent.com/a/b/main/x", 1) is None
+
+    def test_non_200_rejected(self, monkeypatch):
+        monkeypatch.setattr(overwatch._OPENER, "open",
+                            lambda req, timeout: _FakeResp(b"{}", status=500))
+        assert overwatch._http_get_json(
+            "https://raw.githubusercontent.com/a/b/main/x", 1) is None

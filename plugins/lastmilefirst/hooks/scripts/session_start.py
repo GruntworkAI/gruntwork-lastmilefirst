@@ -27,7 +27,6 @@ from overwatch import (
     get_tmp_dir,
     get_lock_file,
     file_lock,
-    version_compare,
     _load_organize_config,
     get_plugin_update_cache,
     is_plugin_check_due,
@@ -115,10 +114,14 @@ def _read_installed_plugins(plugins_dir) -> Dict[str, str]:
     except (json.JSONDecodeError, IOError, OSError):
         return installed
     for plugin_id, installs in data.get("plugins", {}).items():
-        if isinstance(installs, list) and installs and "@" in plugin_id:
-            ver = installs[0].get("version", "")
-            if ver:
-                installed[plugin_id] = ver
+        if not (isinstance(installs, list) and installs and "@" in plugin_id):
+            continue
+        first = installs[0]
+        if not isinstance(first, dict):
+            continue
+        ver = first.get("version", "")
+        if isinstance(ver, str) and ver:
+            installed[plugin_id] = ver
     return installed
 
 
@@ -152,9 +155,17 @@ def check_plugin_updates() -> List[str]:
     Hot path is zero-network: emits from the cached network result (re-verified
     against the current installed version) plus the local cached-manifest diff.
     At most once per 24h it kicks off a bounded-inline network refresh whose
-    results surface on a later session. Never raises -- any failure degrades to
-    fewer/no alerts so session start is unaffected.
+    results surface on a later session. Never raises -- any failure (including a
+    corrupt local JSON file) degrades to fewer/no alerts so session start is
+    unaffected.
     """
+    try:
+        return _check_plugin_updates()
+    except Exception:
+        return []
+
+
+def _check_plugin_updates() -> List[str]:
     plugins_dir = get_plugins_dir()
     if not plugins_dir:
         return []
@@ -192,7 +203,7 @@ def check_plugin_updates() -> List[str]:
                     available = json.load(f).get("version", "")
             except (json.JSONDecodeError, IOError, OSError):
                 continue
-            if available and version_compare(ver, available) < 0:
+            if available and is_newer(ver, available):
                 lines.append(f"   {plugin_id}: {ver} -> {available}")
                 seen.add(plugin_id)
 
