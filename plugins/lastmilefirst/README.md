@@ -162,7 +162,10 @@ Run these commands inside a Claude Code session:
 # 2. Install the plugin
 /plugin install lastmilefirst@gruntwork-lastmilefirst
 
-# 3. Verify installation
+# 3. Activate in the current session
+/reload-plugins
+
+# 4. Verify installation
 /plugin list
 ```
 
@@ -174,6 +177,31 @@ Run these commands inside a Claude Code session:
 
 # Then update the plugin
 /plugin update lastmilefirst@gruntwork-lastmilefirst
+
+# Activate the new version in the current session
+/reload-plugins
+```
+
+### Migrating from the old marketplace name (one time)
+
+If you installed before **v0.16.0**, your marketplace is still registered as
+`gruntwork-marketplace` (the old name). A plain `/plugin update` will **not**
+work after the rename—removing the old marketplace orphans the plugin, so you
+must re-install rather than update:
+
+```bash
+/plugin marketplace remove gruntwork-marketplace
+/plugin marketplace add GruntworkAI/gruntwork-lastmilefirst
+/plugin install lastmilefirst@gruntwork-lastmilefirst   # install, NOT update
+/run-scan-secrets --install-hooks                       # refresh the pre-commit hook
+/reload-plugins                                          # activate in this session
+```
+
+**Optional cleanup:** delete the now-orphaned old cache directory so the
+secret-scan pre-commit hook can't fall back to a stale version:
+
+```bash
+rm -rf ~/.claude/plugins/cache/gruntwork-marketplace
 ```
 
 ### Local Development
