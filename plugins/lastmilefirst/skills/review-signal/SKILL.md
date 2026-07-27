@@ -19,6 +19,7 @@ Use this skill when:
 ## When *Not* to Use
 
 Use other skills when the main problem is elsewhere:
+- **`/run-review-voice`**: The text is clean but reads like AI wrote it — the problem is machine-authored *voice* (uniform rhythm, recycled phrasing, no human friction), not low signal. Note: signal-tightening can *cause* that flatness, so the two are partly adversarial. For a reconciled pass over both, use `Task: consult-ripley`.
 - **`/run-review-docs`**: Docs folder structure, staleness, missing docs, misplaced content
 - **`/run-review-project`**: Cross-cutting project hygiene across docs and work artifacts
 - **`/run-review-claude`**: CLAUDE.md hierarchy, context placement, and token-efficiency decisions
@@ -96,7 +97,7 @@ This skill can work on:
 Optional inputs:
 - **audience**: who the text is for
 - **job**: explain, recommend, summarize, compare, persuade, etc.
-- **mode**: critique-only, rewrite-only, or critique+rewrite
+- **mode**: critique (default), rewrite (on authorization), or LFG (one-shot critique+rewrite)
 - **aggressiveness**: light, standard, ruthless
 - **voice constraint**: preserve current voice, simplify, harden, soften, executive, etc.
 
@@ -194,21 +195,23 @@ X/16 — short interpretation
 
 ## Operating Modes
 
-### Critique-Only
-Use when the user wants feedback but not a rewrite.
-Return:
+Gated by default: diagnose first, rewrite only once the user says go. A rewrite changes the
+author's words, so confirm the diagnosis before touching the prose.
+
+### Critique (default)
+Diagnose and score, no rewrite. Then stop and wait for authorization. Return:
 - Job
 - Verdict
 - Signal / Slop Score
 - Biggest Leaks
 - Notes
 
-### Rewrite-Only
-Use when the user wants the improved version fast.
-Keep diagnosis brief and lead with the rewrite.
+### Rewrite
+Produce the tightened version, after the user authorizes it.
 
-### Critique + Rewrite
-Default mode when the user wants both diagnosis and improvement.
+### LFG (one-shot)
+Critique + rewrite in a single pass, no gate, when the user wants speed. Named mode
+(`LFG` / "just do it"). Lead with the rewrite, keep the diagnosis brief.
 
 ## Style Rules for Your Response
 
@@ -232,6 +235,7 @@ After the review, offer appropriate next steps:
 
 ## Integration with Other lastmilefirst Components
 
+- **`/run-review-voice`**: Use when the text reads machine-authored rather than low-signal. The two lenses conflict — tightening removes the human friction voice review protects — so reconcile them deliberately, or let `consult-ripley`'s dual mode adjudicate.
 - **`/run-review-docs`**: Use when the problem is document set health, duplication, or missing docs
 - **`/run-review-project`**: Use when the problem spans docs and work artifacts
 - **`/run-review-claude`**: Use when the problem is context hierarchy or placement
@@ -241,7 +245,7 @@ After the review, offer appropriate next steps:
 
 ## Notes
 
-- Non-destructive by default: critique first unless the user explicitly asks for rewrite-only
+- Non-destructive by default: critique first, rewrite only on authorization (use LFG for one-shot)
 - Best for targeted artifacts, not entire repos at once
 - Especially useful after AI drafting and before final delivery
 - The goal is not just brevity; it is earned language
