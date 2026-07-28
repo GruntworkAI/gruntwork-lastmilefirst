@@ -172,6 +172,7 @@ Cover gaps in gitleaks defaults:
 - High-entropy env var values
 - Committed .env files
 - Terraform tfvars with secret-like values
+- Committed Terraform state files (flagged once per file, not per line)
 - Hardcoded password assignments
 - Bearer token headers in code
 - Webhook URLs (Slack, Discord)
