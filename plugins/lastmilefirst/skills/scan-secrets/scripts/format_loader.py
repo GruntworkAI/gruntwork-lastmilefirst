@@ -214,6 +214,16 @@ def write_merged_config(extra_rules: Optional[List[Dict[str, Any]]] = None) -> P
 
     lines = ['title = "lastmilefirst merged secret formats"', ""]
 
+    # Load gitleaks' built-in default rules in ADDITION to our custom formats.
+    # Without [extend]/useDefault, passing --config makes gitleaks use ONLY the
+    # rules below, so standard secrets (AWS keys, GitHub PATs, Stripe/Google keys,
+    # etc.) would go completely undetected. useDefault merges the upstream default
+    # ruleset; our lmf-* rules are additive and our IDs are namespaced so they
+    # cannot collide with default rule IDs.
+    lines.append("[extend]")
+    lines.append("useDefault = true")
+    lines.append("")
+
     # Global allowlist (vendor dirs + plugin's own data files). Top-level
     # [allowlist] applies to every rule. Must come before [[rules]] arrays so
     # subsequent scalar keys don't bind to the wrong table.

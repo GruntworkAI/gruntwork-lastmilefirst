@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -29,8 +30,35 @@ SEVERITY_BUMP = {
 }
 
 
+# The 'git' subcommand (which replaced the deprecated 'detect'/'protect') was
+# introduced in gitleaks v8.19.0. An older binary fails with a confusing
+# "unknown command" error, so we detect it up front and surface an actionable one.
+MIN_GITLEAKS_VERSION = (8, 19, 0)
+
+_GITLEAKS_MISSING_MSG = (
+    "gitleaks is not installed.\n"
+    "Install: brew install gitleaks  (macOS)\n"
+    "         or see https://github.com/gitleaks/gitleaks#installing"
+)
+
+
+def _parse_gitleaks_version(output: str) -> Optional[Tuple[int, int, int]]:
+    """Extract a (major, minor, patch) tuple from `gitleaks version` output."""
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", output)
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3) or 0))
+
+
 def _check_gitleaks() -> Optional[str]:
-    """Check if gitleaks is installed. Returns error message or None."""
+    """
+    Check gitleaks is installed and new enough. Returns an error message or None.
+
+    Fail-closed by design: callers treat a returned message as a hard stop
+    (blocked commit / errored scan), the same as missing gitleaks. "Too old to
+    run the 'git' subcommand" is the same category as "not installed" — the
+    scanner cannot run — so it blocks rather than warns.
+    """
     try:
         result = subprocess.run(
             ["gitleaks", "version"],
@@ -38,17 +66,29 @@ def _check_gitleaks() -> Optional[str]:
             text=True,
             timeout=5,
         )
-        if result.returncode == 0:
-            return None
-    except FileNotFoundError:
-        pass
-    except subprocess.TimeoutExpired:
-        pass
-    return (
-        "gitleaks is not installed.\n"
-        "Install: brew install gitleaks  (macOS)\n"
-        "         or see https://github.com/gitleaks/gitleaks#installing"
-    )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return _GITLEAKS_MISSING_MSG
+
+    if result.returncode != 0:
+        return _GITLEAKS_MISSING_MSG
+
+    version = _parse_gitleaks_version(f"{result.stdout} {result.stderr}")
+    if version is None:
+        # Ran cleanly but the version string didn't parse — most likely a future
+        # format change on a newer (thus new-enough) binary. Don't brick the scan
+        # on a parse miss; the report-file fail-closed check still catches a
+        # genuinely broken binary.
+        return None
+    if version < MIN_GITLEAKS_VERSION:
+        need = ".".join(str(n) for n in MIN_GITLEAKS_VERSION)
+        have = ".".join(str(n) for n in version)
+        return (
+            f"gitleaks {have} is too old. This scanner uses the 'git' subcommand, "
+            f"which requires gitleaks {need} or later.\n"
+            f"Upgrade: brew upgrade gitleaks  (macOS)\n"
+            f"         or see https://github.com/gitleaks/gitleaks#installing"
+        )
+    return None
 
 
 def check_repo_visibility(repo_path: Optional[Path] = None) -> Optional[str]:
@@ -199,7 +239,7 @@ def scan_repo(
         report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-report-")
 
         code, stdout, stderr = _run_gitleaks(
-            ["detect", "--report-format", "json", "--report-path", report_file],
+            ["git", "--report-format", "json", "--report-path", report_file],
             config_path=config_path,
             cwd=cwd,
         )
@@ -250,7 +290,8 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
 
         code, stdout, stderr = _run_gitleaks(
             [
-                "protect",
+                "git",
+                "--pre-commit",
                 "--staged",
                 "--report-format", "json",
                 "--report-path", report_file,
