@@ -11,7 +11,7 @@ Detect secrets and credentials in git repositories before they become incidents.
 
 | Tool | Required | Install |
 |------|----------|---------|
-| **gitleaks** | Yes | `brew install gitleaks` |
+| **gitleaks** | Yes (v8.19.0+) | `brew install gitleaks` |
 | **gh CLI** | For audit/visibility | `brew install gh && gh auth login` |
 | **Python 3.9+** | Yes | Ships with macOS |
 
@@ -38,13 +38,13 @@ gitleaks version && gh auth status && python3 --version
 
 ### Default: Scan Current Repo
 
-Scans full git history of the current repository using gitleaks with merged custom format rules.
+Scans full git history of the current repository using gitleaks' built-in default rules plus merged custom format rules.
 
 **Steps:**
 1. Check repo visibility (public/private) via `gh repo view`
 2. If PUBLIC: show warning banner, bump all finding severities
-3. Load merged format config (common + org rules)
-4. Run `gitleaks detect` with `--redact` on full history
+3. Load merged config: gitleaks default rules (`useDefault`) + custom rules (common + org)
+4. Run `gitleaks git` with `--redact` on full history
 5. Display findings sorted by severity
 6. Update overwatch `last_secret_scan` timestamp
 
@@ -92,7 +92,7 @@ Installs a global pre-commit hook that scans staged changes before every commit.
 
 **How it works:**
 - Sets `git config --global core.hooksPath` to `~/.claude/lastmilefirst/git-hooks/`
-- Hook calls `scan_secrets.py --pre-commit` which runs `gitleaks protect --staged`
+- Hook calls `scan_secrets.py --pre-commit` which runs `gitleaks git --pre-commit --staged`
 - If secrets found: blocks commit, shows findings
 - If repo is public: adds reminder line to every commit output
 - Detects and warns about existing `core.hooksPath` before overriding
@@ -162,6 +162,8 @@ Two-tier system for custom gitleaks rules:
 **Merge order:** Common loads first, then Org. Rules with the same `id` — org wins (last writer).
 
 **Format:** Native gitleaks TOML. No translation layer needed.
+
+**Coverage:** The merged config sets `[extend] useDefault = true`, so scans run gitleaks' full built-in ruleset (AWS keys, GitHub PATs, Stripe/Google keys, etc.) *in addition to* the custom formats below. The custom rules supplement the defaults — they do not replace them.
 
 ### Common Rules (Plugin-Shipped)
 
