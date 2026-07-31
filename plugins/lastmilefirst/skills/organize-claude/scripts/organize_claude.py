@@ -415,10 +415,20 @@ terraform workspace show  # Must match your target environment!
 (add commands)
 ```
 
-## Gotchas (Learned the Hard Way)
+## Dev Gotchas
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
+Traps for someone changing this repo. Lead with the symptom — it's what you'll be searching by when you hit this again.
+
+| Issue | Symptom | Cause / fix |
+|-------|---------|-------------|
+| | | |
+
+## Deployment Gotchas
+
+Traps for someone deploying or running it. Lead with the symptom — it's what you'll be searching by when you hit this again.
+
+| Issue | Symptom | Cause / fix |
+|-------|---------|-------------|
 | | | |
 
 ---

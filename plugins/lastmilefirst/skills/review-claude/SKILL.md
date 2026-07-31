@@ -97,13 +97,46 @@ Project-level reviews are archetype-aware. The review detects `## Archetype: X` 
 
 | Archetype | Checked Sections |
 |-----------|-----------------|
-| **Deployable** | Dev Environment, Infrastructure, Cloud Details, Terraform Workspaces, Deployment, Gotchas, Testing |
-| **Usable** | Dev Environment, Installation, Configuration, Testing, Publishing, Gotchas |
+| **Deployable** | Dev Environment, Infrastructure, Cloud Details, Terraform Workspaces, Deployment, Dev Gotchas, Deployment Gotchas, Testing |
+| **Usable** | Dev Environment, Installation, Configuration, Testing, Publishing, Dev Gotchas, Usage Gotchas |
 | **Referenceable** | Content Structure, How to Update, Gotchas |
 | **Experimental** | Quick Commands |
 | **No archetype** | Section checks skipped; finding reported to add archetype |
 
 Projects without an archetype get a "no archetype declared" finding instead of being checked against the full Deployable template. This avoids false positives for non-deployable projects.
+
+## How Section Matching Works
+
+**A section counts as present when a real heading contains its name.** Matching runs against
+extracted ATX headings, not the raw file — so `## Testing` inside a fenced code block, in prose, or
+in a scaffolded file's `required_sections:` frontmatter does **not** count. (Before 0.21.0 the check
+was `section_header in content` over the whole file, which counted all three.)
+
+Matching is deliberately lenient about the heading's exact wording. All of these satisfy their
+section without any configuration:
+
+| Heading in your file | Satisfies |
+|----------------------|-----------|
+| `### Deployment` | `## Deployment` (level is not significant) |
+| `## Deployment Instructions` | `## Deployment` |
+| `## Testing Strategy` | `## Testing` |
+| `## Core Philosophy: Compound Engineering` | `## Core Philosophy` |
+| `## Gotchas (Learned the Hard Way)` | a Gotchas section |
+
+A short alias list covers genuine **renames**, where the canonical word is absent entirely —
+`## Common Pitfalls to Avoid` satisfies a Gotchas section via `Pitfalls`, and `## Common Commands`
+satisfies `## Quick Commands` via `Commands`. Alias matches are reported distinctly:
+
+```
+Gotchas → via "common pitfalls to avoid" ✓
+```
+
+That distinction matters: the section is documented, but under a name the convention does not use.
+The summary counts these separately as `Files passing only via alias`.
+
+**What this check does not do:** it does not read section bodies. A heading with an empty or
+placeholder body counts as present. The report says "no heading found for" rather than "missing"
+precisely because heading presence is all it measures.
 
 ## Expected Sections
 

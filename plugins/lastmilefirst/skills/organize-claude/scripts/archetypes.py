@@ -30,7 +30,8 @@ ARCHETYPE_SECTIONS: dict[str, list[tuple[str, str]]] = {
         ("### Cloud Details", "AWS/GCP region and account table"),
         ("### Terraform Workspaces", "Workspace to environment mapping"),
         ("## Deployment", "Deploy commands and verification"),
-        ("## Gotchas", "Learned-the-hard-way issues table"),
+        ("## Dev Gotchas", "Traps for someone changing this repo"),
+        ("## Deployment Gotchas", "Traps for someone deploying or running it"),
         ("## Testing", "Test commands"),
     ],
     "usable": [
@@ -39,7 +40,8 @@ ARCHETYPE_SECTIONS: dict[str, list[tuple[str, str]]] = {
         ("## Configuration", "Settings, env vars, config files"),
         ("## Testing", "Test commands"),
         ("## Publishing", "How to release or publish new versions"),
-        ("## Gotchas", "Learned-the-hard-way issues table"),
+        ("## Dev Gotchas", "Traps for someone changing this repo"),
+        ("## Usage Gotchas", "Traps for someone installing or invoking it"),
     ],
     "referenceable": [
         ("## Content Structure", "How content is organized"),
@@ -50,6 +52,35 @@ ARCHETYPE_SECTIONS: dict[str, list[tuple[str, str]]] = {
         ("## Quick Commands", "Essential commands to get started"),
     ],
 }
+
+# Alternate heading names that satisfy a required section.
+#
+# Matching is substring-against-real-headings (see review_claude.extract_headings),
+# so a section is already satisfied by any heading CONTAINING its name —
+# `### Deployment` and `## Deployment Instructions` both satisfy `## Deployment`
+# without an entry here. Aliases are only for genuine RENAMES, where the
+# canonical word is absent from the heading entirely.
+#
+# Keep this list short. A wrong alias is the one failure no mechanism catches:
+# it produces an unmatched -> matched flip that looks exactly like an intended
+# win. Adjudicate every entry against the section's own description above before
+# adding it. (`Architecture` was rejected for `## Infrastructure` on this test —
+# Infrastructure means cloud provider/region/account, not code structure.)
+#
+# `Gotchas` aliases the split sections deliberately: it is the undivided form and
+# covers both audiences, so projects predating the split are not newly flagged.
+SECTION_ALIASES: dict[str, list[str]] = {
+    "## Gotchas": ["Pitfalls", "Known Issues", "Troubleshooting"],
+    "## Dev Gotchas": ["Gotchas", "Pitfalls", "Known Issues", "Troubleshooting"],
+    "## Deployment Gotchas": ["Gotchas", "Pitfalls", "Known Issues", "Troubleshooting"],
+    "## Usage Gotchas": ["Gotchas", "Pitfalls", "Known Issues", "Troubleshooting"],
+    "## Quick Commands": ["Commands"],
+}
+
+
+def get_aliases_for_section(section_header: str) -> list[str]:
+    """Alternate heading names that satisfy this required section."""
+    return SECTION_ALIASES.get(section_header, [])
 
 # Regex to detect archetype from CLAUDE.md content
 _ARCHETYPE_PATTERN = re.compile(
