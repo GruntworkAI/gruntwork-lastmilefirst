@@ -15,7 +15,7 @@ This skill captures **wisdom**, not knowledge. Know the difference:
 |---------------------|----------------------------------|
 | Patterns and practices | Facts and data |
 | Lessons learned | Documentation |
-| Gotchas and pitfalls | Reference material |
+| Gotchas that generalize across projects | Reference material |
 | "What we learned" | "What exists" |
 | Debugging insights | API specs, configs |
 | Prevention strategies | Client requirements |
@@ -23,6 +23,11 @@ This skill captures **wisdom**, not knowledge. Know the difference:
 **The test:**
 - "This will probably be helpful in a different project someday" → **Wisdom**
 - "This is specific to how this project/client works" → **Knowledge**
+
+**Gotchas are the exception — there are three destinations, not two.** A trap that only bites in
+one repo belongs in that project's CLAUDE.md (`## Dev Gotchas` / `## Deployment Gotchas` /
+`## Usage Gotchas`), not here and not in knowledge. Wisdom takes the gotchas that generalize. See
+the placement rule in the `organize-claude` skill.
 
 ## When to Add Wisdom
 

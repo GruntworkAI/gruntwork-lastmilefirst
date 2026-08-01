@@ -13,6 +13,7 @@ project's declared archetype (Deployable, Usable, Referenceable, Experimental).
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -33,12 +34,62 @@ from archetypes import (
     VALID_ARCHETYPES,
     ARCHETYPE_DESCRIPTIONS,
     detect_archetype,
+    get_aliases_for_section,
     get_sections_for_archetype,
     get_template_name_for_archetype,
     format_archetype_choices,
     infer_archetype,
     infer_archetype_from_content,
 )
+
+# Heading extraction. A section counts as present when a real ATX heading
+# contains its name — NOT when the name appears anywhere in the file. The old
+# whole-file substring test passed on prose, fenced code samples, and (worst)
+# the `- header: "## Testing"` lines in scaffolded files' YAML frontmatter, so a
+# freshly scaffolded empty project reported every section present.
+_FENCE = re.compile(r"^\s*(```|~~~)")
+_ATX = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
+
+
+def extract_headings(content: str) -> list[str]:
+    """Return casefolded ATX heading texts, skipping fenced code blocks."""
+    headings = []
+    in_fence = False
+    for line in content.splitlines():
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = _ATX.match(line)
+        if match:
+            headings.append(match.group(1).strip().casefold())
+    return headings
+
+
+def match_section(section_header: str, headings: list[str]) -> tuple[str, Optional[str]]:
+    """
+    Classify one required section against a file's headings.
+
+    Returns (state, matched_heading) where state is "present", "present_via_alias",
+    or "missing".
+
+    Matching is substring-against-headings — deliberately the same leniency the
+    tool had before, narrowed to real headings. That keeps every file that passes
+    today passing: `### Deployment`, `## Deployment Instructions`, and
+    `## Core Philosophy: Compound Engineering` all still satisfy their sections
+    without normalization rules, level rules, or colon handling.
+    """
+    name = section_header.lstrip("#").strip().casefold()
+    for heading in headings:
+        if name in heading:
+            return "present", heading
+    for alias in get_aliases_for_section(section_header):
+        alias_name = alias.casefold()
+        for heading in headings:
+            if alias_name in heading:
+                return "present_via_alias", heading
+    return "missing", None
 
 
 def load_config() -> Optional[dict]:
@@ -150,6 +201,7 @@ def review_claude_md(file_path: Path, expected_sections: list, level: str = "pro
     result = {
         "path": file_path,
         "present": [],
+        "present_via_alias": [],
         "missing": [],
         "archetype": None,
         "archetype_missing": False,
@@ -179,9 +231,13 @@ def review_claude_md(file_path: Path, expected_sections: list, level: str = "pro
         else:
             expected_sections = get_sections_for_archetype(archetype)
 
+    headings = extract_headings(content)
     for section_header, description in expected_sections:
-        if section_header in content:
+        state, matched = match_section(section_header, headings)
+        if state == "present":
             result["present"].append((section_header, description))
+        elif state == "present_via_alias":
+            result["present_via_alias"].append((section_header, description, matched))
         else:
             result["missing"].append((section_header, description))
 
@@ -198,6 +254,7 @@ def show_review_report(reviews: list[dict], level: str) -> list[dict]:
     for review in reviews:
         path = review["path"]
         present = review["present"]
+        via_alias = review.get("present_via_alias", [])
         missing = review["missing"]
         archetype = review.get("archetype")
         archetype_missing = review.get("archetype_missing", False)
@@ -227,14 +284,28 @@ def show_review_report(reviews: list[dict], level: str) -> list[dict]:
         elif missing:
             files_with_gaps.append(review)
             print(f"\n  {label}:")
-            print(f"    Present: {len(present)} sections")
-            print(f"    Missing: {len(missing)} sections")
+            print(f"    Found: {len(present) + len(via_alias)} sections")
+            _print_alias_hits(via_alias)
+            print(f"    No heading found for: {len(missing)} sections")
             for header, desc in missing:
                 print(f"      - {header} ({desc})")
+        elif via_alias:
+            # Every section resolved, but some only under a different name. This
+            # branch must still show the alias hits — otherwise reliance on
+            # aliases is invisible exactly where it is total.
+            print(f"\n  {label}: All sections found ✓")
+            _print_alias_hits(via_alias)
         else:
             print(f"\n  {label}: All sections present ✓")
 
     return files_with_gaps
+
+
+def _print_alias_hits(via_alias: list) -> None:
+    """Render sections that matched under a different heading name."""
+    for header, _desc, matched in via_alias:
+        name = header.lstrip("#").strip()
+        print(f'    {name} → via "{matched}" ✓')
 
 
 def generate_suggestions(review: dict, template_path: Path) -> str:
@@ -371,16 +442,20 @@ def main():
             print(format_archetype_choices())
             return
 
+        via_alias = review.get("present_via_alias", [])
+
         if not review["missing"]:
             archetype_label = f" ({archetype.capitalize()})" if archetype else ""
             print(f"\n✓ {file_path.name}{archetype_label} has all expected {level}-level sections.")
+            _print_alias_hits(via_alias)
             return
 
         archetype_label = f" [{archetype.capitalize()}]" if archetype else ""
         print(f"\nReviewing {file_path}{archetype_label}...")
         print(f"  Level: {level}")
-        print(f"  Present: {len(review['present'])} sections")
-        print(f"  Missing: {len(review['missing'])} sections")
+        print(f"  Found: {len(review['present']) + len(via_alias)} sections")
+        _print_alias_hits(via_alias)
+        print(f"  No heading found for: {len(review['missing'])} sections")
         for header, desc in review["missing"]:
             print(f"    - {header} ({desc})")
 
@@ -453,8 +528,17 @@ def main():
     print("\n" + "=" * 60)
     print("REVIEW SUMMARY")
     print("=" * 60)
+    total_alias_only = sum(
+        1
+        for level_reviews in all_reviews.values()
+        for review in level_reviews
+        if review.get("present_via_alias") and not review["missing"]
+    )
+
     print(f"  Files reviewed: {total_reviewed}")
-    print(f"  Files with gaps: {total_with_gaps}")
+    print(f"  Files with unmatched sections: {total_with_gaps}")
+    if total_alias_only:
+        print(f"  Files passing only via alias: {total_alias_only}")
 
     if all_reviews["project"]:
         total_projects = len(all_reviews["project"])
