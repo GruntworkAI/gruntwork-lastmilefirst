@@ -34,8 +34,10 @@ This is a reference resource, not a deployed service. No infrastructure, no depl
 
 ## Gotchas (Learned the Hard Way)
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
+Lead with the symptom — it's what you'll be searching by when you hit this again.
+
+| Issue | Symptom | Cause / fix |
+|-------|---------|-------------|
 | | | |
 
 ---

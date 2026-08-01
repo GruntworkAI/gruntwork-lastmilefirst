@@ -24,6 +24,11 @@ This skill captures **knowledge**, not wisdom. Know the difference:
 - "This is specific to how this project/client works" → **Knowledge**
 - "This will probably be helpful in a different project someday" → **Wisdom**
 
+**Gotchas are not knowledge.** Knowledge holds reference facts — how a thing works. A trap with a
+symptom and a fix goes to the project's CLAUDE.md when it is repo-specific, or to stack-wisdom when
+it generalizes. The project-specific test above does *not* route gotchas here. See the placement
+rule in the `organize-claude` skill.
+
 ## When to Add Knowledge
 
 Add knowledge when you encounter or create:

@@ -316,7 +316,8 @@ Every hard-won insight should make future work easier. Compounding is how you bu
 | Trigger | Compound Action |
 |---------|-----------------|
 | Debugging took 30+ minutes | Add to stack-wisdom |
-| Discovered a gotcha | Add to stack-wisdom |
+| Discovered a gotcha that generalizes | Add to stack-wisdom |
+| Discovered a repo-specific gotcha | Add to that project's CLAUDE.md Gotchas section |
 | Built domain expertise | Consider operative |
 | Found better pattern | Update existing wisdom |
 | Solved novel problem | Document approach |

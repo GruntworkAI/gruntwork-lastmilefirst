@@ -12,8 +12,10 @@ required_sections:
     description: "Workspace to environment mapping"
   - header: "## Deployment"
     description: "Deploy commands and verification"
-  - header: "## Gotchas"
-    description: "Learned-the-hard-way issues table"
+  - header: "## Dev Gotchas"
+    description: "Traps for someone changing this repo"
+  - header: "## Deployment Gotchas"
+    description: "Traps for someone deploying or running it"
   - header: "## Testing"
     description: "Test commands"
 ---
@@ -112,12 +114,22 @@ terraform apply -var-file=terraform.tfvars.{{ENV}}
 
 ---
 
-## Gotchas (Learned the Hard Way)
+## Dev Gotchas
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| {{GOTCHA_1_ISSUE}} | {{GOTCHA_1_CAUSE}} | {{GOTCHA_1_SOLUTION}} |
-| {{GOTCHA_2_ISSUE}} | {{GOTCHA_2_CAUSE}} | {{GOTCHA_2_SOLUTION}} |
+Traps for someone changing this repo. Lead with the symptom — it's what you'll be searching by when you hit this again.
+
+| Issue | Symptom | Cause / fix |
+|-------|---------|-------------|
+| {{GOTCHA_1_ISSUE}} | {{GOTCHA_1_SYMPTOM}} | {{GOTCHA_1_FIX}} |
+| {{GOTCHA_2_ISSUE}} | {{GOTCHA_2_SYMPTOM}} | {{GOTCHA_2_FIX}} |
+
+## Deployment Gotchas
+
+Traps for someone deploying or running it. Lead with the symptom — it's what you'll be searching by when you hit this again.
+
+| Issue | Symptom | Cause / fix |
+|-------|---------|-------------|
+| {{OPS_GOTCHA_1_ISSUE}} | {{OPS_GOTCHA_1_SYMPTOM}} | {{OPS_GOTCHA_1_FIX}} |
 
 ---
 

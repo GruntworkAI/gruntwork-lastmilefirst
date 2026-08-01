@@ -64,12 +64,58 @@ Every project CLAUDE.md should declare its archetype near the top. This controls
 
 | Archetype | When to Use | Key Sections |
 |-----------|-------------|-------------|
-| **Deployable** | You deploy it somewhere (AWS, Vercel, etc.) | Infrastructure, Cloud Details, Terraform Workspaces, Deployment, Testing |
-| **Usable** | You install/run/invoke it (gems, CLIs, plugins, SDKs) | Installation, Configuration, Publishing, Testing |
-| **Referenceable** | You read/consult it (knowledge archives, docs) | Content Structure, How to Update |
+| **Deployable** | You deploy it somewhere (AWS, Vercel, etc.) | Infrastructure, Cloud Details, Terraform Workspaces, Deployment, Testing, Dev Gotchas, Deployment Gotchas |
+| **Usable** | You install/run/invoke it (gems, CLIs, plugins, SDKs) | Installation, Configuration, Publishing, Testing, Dev Gotchas, Usage Gotchas |
+| **Referenceable** | You read/consult it (knowledge archives, docs) | Content Structure, How to Update, Gotchas |
 | **Experimental** | New project, shape TBD | Quick Commands (minimal) |
 
 Format in CLAUDE.md: `## Archetype: Deployable` (right after project description).
+
+### Gotchas: two sections, two audiences
+
+A trap that bites someone *changing* the repo and a trap that bites someone *deploying or using*
+it are different content for different readers. Deployable and Usable projects therefore carry two
+sections — the same split the workspace already makes between `docs/` (users and deployers) and
+`.claude/work/` (developers):
+
+| Section | Holds | Example |
+|---------|-------|---------|
+| `## Dev Gotchas` | traps for someone changing this repo | "Editing the plugin cache instead of source — changes vanish on the next update." |
+| `## Deployment Gotchas` *(Deployable)* | traps for someone deploying or running it | "Merging to main isn't a release; the consumer app resolves via GitHub tag." |
+| `## Usage Gotchas` *(Usable)* | traps for someone installing or invoking it | "`claude plugin update` leaves the old version loaded until `/reload-plugins`." |
+
+Referenceable projects keep a single `## Gotchas` — a knowledge archive is neither deployed nor
+invoked.
+
+**An existing undivided `## Gotchas` satisfies both halves**, so projects written before the split
+are not flagged. Split them when you next touch the file, not as a migration.
+
+**Lead each row with the symptom.** When you hit the trap again you will know what you are seeing,
+not what is causing it — so the symptom is what you will search by:
+
+```markdown
+| Issue | Symptom | Cause / fix |
+|-------|---------|-------------|
+```
+
+### Gotchas: CLAUDE.md, stack-wisdom, or stack-knowledge?
+
+Three destinations exist and they are easy to confuse:
+
+- **Project CLAUDE.md** — specific to *this* repo, and you need it in context while working here.
+  "Don't test against the Travel Agent calendar, it's wired to Flighty."
+- **stack-wisdom** — the lesson generalizes across projects. "osv-scanner 2.x needs `--no-ignore`
+  or it silently skips subdirectory lockfiles."
+- **stack-knowledge** — *not* a gotchas destination. Knowledge holds reference facts; a trap with a
+  symptom and a fix is wisdom or CLAUDE.md.
+- **Both** CLAUDE.md and wisdom is right when a repo-specific instance has a generalizable cause:
+  actionable form in CLAUDE.md, pattern in wisdom, linked.
+
+Test: *would this still be true in a different repo?* Yes → wisdom. No → CLAUDE.md.
+Then: *does it bite someone changing the repo, or someone running it?* → Dev vs Deployment/Usage.
+
+If a project's gotchas live in stack-wisdom, keep a one-line section pointing at the wisdom entry —
+the section stays required, and the pointer satisfies it.
 
 When scaffolding a new project, pass `--archetype` to get the right template:
 
