@@ -70,6 +70,10 @@ ARCHETYPE_SECTIONS: dict[str, list[tuple[str, str]]] = {
 # `Gotchas` aliases the split sections deliberately: it is the undivided form and
 # covers both audiences, so projects predating the split are not newly flagged.
 SECTION_ALIASES: dict[str, list[str]] = {
+    # "How to release or publish new versions" — a section named for the release
+    # mechanism documents exactly that. Two real files rely on this: this repo's
+    # `## CRITICAL: Version Bumping` and travel-skills' `## Releases & packaging`.
+    "## Publishing": ["Releases", "Release Process", "Version Bumping", "Cutting a release"],
     "## Gotchas": ["Pitfalls", "Known Issues", "Troubleshooting"],
     "## Dev Gotchas": ["Gotchas", "Pitfalls", "Known Issues", "Troubleshooting"],
     "## Deployment Gotchas": ["Gotchas", "Pitfalls", "Known Issues", "Troubleshooting"],

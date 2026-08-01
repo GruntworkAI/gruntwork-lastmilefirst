@@ -79,6 +79,16 @@ def test_alias_reports_the_matched_heading():
     assert matched == "common commands"
 
 
+@pytest.mark.parametrize(
+    "heading",
+    ["## CRITICAL: Version Bumping", "## Releases & packaging", "### Cutting a release"],
+)
+def test_publishing_resolves_through_release_vocabulary(heading):
+    """Real headings in this repo and travel-skills; both document how to release."""
+    content = f"# Project\n\n{heading}\n\nbody\n"
+    assert state("## Publishing", content) == "present_via_alias"
+
+
 def test_direct_match_wins_over_alias():
     content = "# Project\n\n## Gotchas\n\n## Troubleshooting\n"
     assert state("## Gotchas", content) == "present"
