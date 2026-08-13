@@ -213,6 +213,202 @@ def _format_findings(findings: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# --- Archive scanning -------------------------------------------------------
+#
+# gitleaks reads every file as text. A committed archive is therefore invisible
+# to it: the bytes are compressed, so no regex matches and the scan reports
+# clean. This is not hypothetical — a Terraform plan file (`tfplan`) is a zip
+# with a complete tfstate inside it, and two repos in this workspace carried one
+# holding live credentials that every scan passed over.
+#
+# The fix is to expand recognised archives to a temp directory and scan that,
+# attributing any finding back to the archive that contained it.
+
+_ARCHIVE_MAGIC = {
+    b"PK\x03\x04": "zip",
+    b"PK\x05\x06": "zip",       # empty archive
+    b"\x1f\x8b": "gzip",
+    b"BZh": "bzip2",
+    b"\xfd7zXZ": "xz",
+}
+
+# Guardrails: an archive bigger than this, or with more members than this, is
+# reported as unscannable rather than expanded. Better a visible "we did not
+# look inside this" than an unbounded extraction.
+_MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
+_MAX_ARCHIVE_MEMBERS = 2000
+
+
+def _sniff_archive(path: Path) -> Optional[str]:
+    """Return an archive kind from magic bytes, or None."""
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(8)
+    except OSError:
+        return None
+    for magic, kind in _ARCHIVE_MAGIC.items():
+        if head.startswith(magic):
+            return kind
+    return None
+
+
+def _candidate_files(cwd: Optional[str], staged_only: bool) -> List[str]:
+    """Git-tracked (or staged) file paths, relative to the repo root."""
+    args = (
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"]
+        if staged_only
+        else ["git", "ls-files"]
+    )
+    try:
+        out = subprocess.run(
+            args, capture_output=True, text=True, timeout=60, cwd=cwd
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+    if out.returncode != 0:
+        return []
+    return [p for p in out.stdout.splitlines() if p.strip()]
+
+
+def _extract_archive(path: Path, dest: Path) -> Tuple[bool, Optional[str]]:
+    """
+    Expand an archive into dest. Returns (extracted, reason_if_not).
+    Member paths are flattened defensively — nothing is written outside dest.
+    """
+    import tarfile
+    import zipfile
+
+    try:
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as zf:
+                names = zf.namelist()
+                if len(names) > _MAX_ARCHIVE_MEMBERS:
+                    return False, f"{len(names)} members exceeds cap"
+                for name in names:
+                    if name.endswith("/"):
+                        continue
+                    safe = dest / name.replace("..", "_").lstrip("/")
+                    safe.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(name) as src, safe.open("wb") as dst:
+                        dst.write(src.read())
+            return True, None
+
+        if tarfile.is_tarfile(path):
+            with tarfile.open(path) as tf:
+                members = tf.getmembers()
+                if len(members) > _MAX_ARCHIVE_MEMBERS:
+                    return False, f"{len(members)} members exceeds cap"
+                for m in members:
+                    if not m.isfile():
+                        continue
+                    src = tf.extractfile(m)
+                    if src is None:
+                        continue
+                    safe = dest / m.name.replace("..", "_").lstrip("/")
+                    safe.parent.mkdir(parents=True, exist_ok=True)
+                    with safe.open("wb") as dst:
+                        dst.write(src.read())
+            return True, None
+
+        # gzip/bzip2/xz single-stream: decompress to one file
+        import bz2
+        import gzip
+        import lzma
+
+        openers = {"gzip": gzip.open, "bzip2": bz2.open, "xz": lzma.open}
+        kind = _sniff_archive(path)
+        if kind in openers:
+            with openers[kind](path, "rb") as src:
+                (dest / f"{path.name}.decompressed").write_bytes(src.read())
+            return True, None
+    except Exception as exc:  # noqa: BLE001 - report, never abort the scan
+        return False, f"{type(exc).__name__}: {exc}"
+
+    return False, "unrecognised archive"
+
+
+def scan_archives(
+    repo_path: Optional[Path],
+    config_path: Optional[Path],
+    is_public: bool,
+    staged_only: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Find committed archives, expand them, and scan the contents.
+
+    Findings are attributed as `<archive> -> <member>` so the report names the
+    file that must actually be removed. An archive that cannot be expanded is
+    itself reported, because an unscannable committed binary is a finding.
+    """
+    import shutil
+    import tempfile
+
+    cwd = str(repo_path) if repo_path else None
+    root = Path(cwd) if cwd else Path.cwd()
+    results: List[Dict[str, Any]] = []
+
+    for rel in _candidate_files(cwd, staged_only):
+        path = root / rel
+        if not path.is_file():
+            continue
+        kind = _sniff_archive(path)
+        if kind is None:
+            continue
+
+        size = path.stat().st_size
+        if size > _MAX_ARCHIVE_BYTES:
+            results.append(
+                {
+                    "RuleID": "lmf-unscannable-archive",
+                    "Description": f"Committed {kind} archive too large to inspect",
+                    "File": rel,
+                    "StartLine": 0,
+                    "Severity": _bump_severity("LOW", is_public),
+                }
+            )
+            continue
+
+        tmp = Path(tempfile.mkdtemp(prefix="lmf-archive-"))
+        try:
+            extracted, reason = _extract_archive(path, tmp)
+            if not extracted:
+                results.append(
+                    {
+                        "RuleID": "lmf-unscannable-archive",
+                        "Description": f"Committed {kind} archive could not be inspected ({reason})",
+                        "File": rel,
+                        "StartLine": 0,
+                        "Severity": _bump_severity("LOW", is_public),
+                    }
+                )
+                continue
+
+            report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-archive-")
+            _run_gitleaks(
+                ["dir", str(tmp), "--report-format", "json", "--report-path", report_file],
+                config_path=config_path,
+            )
+            report = Path(report_file)
+            if not report.exists():
+                continue
+            inner = _parse_findings(report.read_text(encoding="utf-8"), is_public)
+            report.unlink(missing_ok=True)
+
+            for f in inner:
+                member = f.get("File", "?")
+                try:
+                    member = str(Path(member).relative_to(tmp))
+                except ValueError:
+                    member = Path(member).name
+                f["File"] = f"{rel} -> {member}"
+                f["_in_archive"] = True
+                results.append(f)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    return results
+
+
 def scan_repo(
     repo_path: Optional[Path] = None,
     report_format: str = "text",
@@ -260,6 +456,9 @@ def scan_repo(
             report_path.read_text(encoding="utf-8"), is_public
         )
         report_path.unlink(missing_ok=True)
+
+        # gitleaks cannot see inside archives, so scan them separately.
+        findings.extend(scan_archives(repo_path, config_path, is_public))
 
         # Build report
         lines = _public_repo_banner(visibility)
@@ -318,6 +517,11 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             report_path.read_text(encoding="utf-8"), is_public
         )
         report_path.unlink(missing_ok=True)
+
+        # Staged archives are invisible to gitleaks; expand and scan them too.
+        findings.extend(
+            scan_archives(repo_path, config_path, is_public, staged_only=True)
+        )
 
         lines = []
         if is_public:
