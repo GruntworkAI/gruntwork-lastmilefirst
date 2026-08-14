@@ -29,6 +29,35 @@ Claude Code reads `CLAUDE.md` files for project context. This plugin structures 
 
 **Why tiers?** Lower levels inherit from higher levels. No duplication, clear override path. Your teammate's workspace preferences don't pollute your projects; your shared org standards do.
 
+### Project Archetypes
+
+A generic CLAUDE.md checklist is wrong for most projects. A knowledge archive has no deploy step; a CLI has no Terraform workspaces. Asking every project for the same sections produces either noise or box-ticking.
+
+So a project declares what kind of thing it is, in its CLAUDE.md:
+
+```markdown
+## Archetype: Deployable
+```
+
+| Archetype | Means | Expects sections like |
+|-----------|-------|----------------------|
+| **Deployable** | You deploy it somewhere | Infrastructure, Deployment, Cloud Details, Terraform Workspaces, Deployment Gotchas |
+| **Usable** | You install, run, or invoke it — CLIs, plugins, SDKs, gems | Installation, Configuration, Publishing, Usage Gotchas |
+| **Referenceable** | You read and consult it — knowledge archives, wisdom repos | Content Structure, How to Update, Gotchas |
+| **Experimental** | New project, shape TBD | Quick Commands (little else — the point is not to demand structure before there is any) |
+
+Every archetype also expects **Dev Gotchas** — traps for someone changing the repo. Deployable and Usable split that further into Deployment Gotchas and Usage Gotchas, because the person deploying your service and the person changing it get bitten by different things.
+
+**What it changes:**
+
+- `review-claude` checks only the sections your archetype actually needs, so a Referenceable repo is never told it is missing a deploy section
+- `organize-claude` scaffolds the matching template when creating a CLAUDE.md
+- Overwatch warns at session start if a project has no archetype set
+
+**You rarely have to pick manually.** `organize-claude` infers it from what is in the repo — Terraform or a Dockerfile suggests Deployable, a `plugin.json` or `gemspec` suggests Usable, a tree of `wisdom/` markdown suggests Referenceable. Declaring it explicitly overrides the guess.
+
+**Archetypes are expected to change.** Most projects start Experimental and graduate once their shape settles. Re-running `/run-organize-claude` after changing the line scaffolds whatever the new archetype expects.
+
 ### Workspace Structure
 
 ```
@@ -96,6 +125,43 @@ project/
     ├── debt/           # Technical debt tracking
     └── archive/        # Auto-archived old items
 ```
+
+Filled in, on a real project, it looks more like this — the point being that the filenames carry meaning and the dates tell you what is current:
+
+```
+tagwarden/
+├── CLAUDE.md                                    # "## Archetype: Experimental", invariants, gotchas
+├── README.md
+├── docs/
+│   ├── deployment.md                            # for people deploying it
+│   └── tag-vocabulary.md                        # reference: the schema, stable
+└── .claude/
+    ├── work/
+    │   ├── todos/
+    │   │   └── 2026-08-09-db-ingress-drift.md   # one file per task, dated
+    │   ├── plans/
+    │   │   ├── 2026-05-15-001-phase-1-plan.md   # date + sequence + topic
+    │   │   └── 2026-06-02-008-architecture-diagram-plan.md
+    │   └── sessions/
+    │       └── 2026-05-22-path-2-validation.md  # what happened, what was decided
+    ├── debt/
+    │   └── KNOWN_TECHNICAL_DEBT.md
+    └── archive/
+        └── 2026-03/                             # anything untouched for 30+ days
+            └── plans/
+```
+
+**What goes where, concretely:**
+
+| You are writing… | It goes in | Because |
+|---|---|---|
+| "How do I deploy this?" | `docs/deployment.md` | Someone else needs it, and it stays true |
+| "Fix the ingress drift before it recurs" | `.claude/work/todos/` | It is a task; it will be done and stop mattering |
+| "Here is how we will build Phase 2" | `.claude/work/plans/` | It is a proposal you want reviewed before work starts |
+| "We tried X, it failed because Y, so we did Z" | `.claude/work/sessions/` | It is the reasoning a future session would otherwise re-derive |
+| "This query is O(n²) and we know it" | `.claude/debt/` | It is a known compromise, not a task anyone has committed to |
+
+This is not just tidiness. `organize-project` archives work items untouched for 30 days into `.claude/archive/YYYY-MM/`, so a plan from March stops sitting in `plans/` looking active. `review-work` reads the same directory to flag what has gone stale or deserves a GitHub issue. Both depend on the split being honest — a reference doc filed under `work/` gets archived out from under you, and a todo filed under `docs/` never gets swept.
 
 **Why `docs/` vs `.claude/`?** Documentation is permanent reference—architecture decisions, deployment guides. Working artifacts are ephemeral—today's todos, this sprint's plan. Mixing them creates clutter and confusion. Separating them keeps both clean.
 
