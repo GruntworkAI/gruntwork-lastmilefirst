@@ -13,6 +13,8 @@ Most developers build features first and figure out deployment, configuration, a
 - Establish quality gates before shipping
 - Set up expert access before you're stuck
 
+For a deeper exploration of the ideas behind this, see [Last Mile First: Fast Alone, Far Together](https://outsideshot.substack.com/p/last-mile-first-fast-alone-far-together).
+
 ## Concepts
 
 ### Tiered CLAUDE.md
@@ -576,7 +578,9 @@ Currently supported:
 └── reference/            # General reference
 ```
 
-## Structure
+## Plugin Layout
+
+How this plugin is built, for anyone reading or extending it. (For the structure it creates in *your* projects, see [Project Structure](#project-structure) above.)
 
 ```
 lastmilefirst/
@@ -640,10 +644,6 @@ Task: consult-adam for AWS deployment help
 # Multi-agent orchestration
 Task: scout-coordinator to analyze cross-domain problem
 ```
-
-## Philosophy
-
-For a deeper exploration of the ideas behind this plugin, see [Last Mile First: Fast Alone, Far Together](https://outsideshot.substack.com/p/last-mile-first-fast-alone-far-together).
 
 ## Related
 
