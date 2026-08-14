@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # Add script directory to path for local imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from format_loader import write_merged_config
+from format_loader import write_merged_config, consume_sync_note
 
 # Severity bump map for public repos
 SEVERITY_BUMP = {
@@ -462,6 +462,9 @@ def scan_repo(
 
         # Build report
         lines = _public_repo_banner(visibility)
+        sync_note = consume_sync_note()
+        if sync_note:
+            lines.append(sync_note)
         lines.append(_format_findings(findings))
 
         return (1 if findings else 0), "\n".join(lines)
@@ -524,6 +527,9 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
         )
 
         lines = []
+        sync_note = consume_sync_note()
+        if sync_note:
+            lines.append(sync_note)
         if is_public:
             lines.append("Reminder: you are committing to a PUBLIC repository")
 
