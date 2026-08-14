@@ -309,6 +309,61 @@ def check_secret_scan_status(state: Dict, project_label: Optional[str] = None) -
     return None
 
 
+def _current_rules_fingerprint() -> Optional[str]:
+    """Fingerprint of the ruleset a scan would use right now, or None."""
+    try:
+        scan_scripts = (
+            Path(__file__).parent.parent.parent
+            / "skills" / "scan-secrets" / "scripts"
+        )
+        sys.path.insert(0, str(scan_scripts))
+        from scanner import rules_fingerprint  # type: ignore
+
+        return rules_fingerprint()
+    except Exception:
+        return None
+
+
+def check_workspace_scan_status(state: Dict) -> Optional[str]:
+    """
+    Check whether the whole estate has been swept recently, and whether the
+    ruleset has improved since it was.
+
+    Per-project freshness is not sufficient on its own. A project is only
+    checked when someone opens it, and a project with no new commits looks
+    permanently fresh — so a repo nobody touches can hold a committed secret
+    indefinitely without ever raising an alert. A workspace sweep closes that,
+    and this is the reminder to run one.
+    """
+    last = state.get("last_workspace_scan", 0)
+    if last == 0:
+        return (
+            "ACTION REQUIRED: No workspace-wide secret scan on record. "
+            "Run /run-scan-secrets --all — per-project scans never reach a repo you don't open."
+        )
+
+    days = (int(time.time()) - last) // 86400
+
+    # A ruleset change matters regardless of how recent the sweep was: rules
+    # that can now see something they previously could not make every earlier
+    # scan incomplete, however fresh its timestamp looks.
+    current = _current_rules_fingerprint()
+    recorded = state.get("last_workspace_scan_rules")
+    if current and recorded and current != recorded:
+        return (
+            "ACTION REQUIRED: Secret-scanning rules have changed since the last "
+            f"workspace sweep ({days}d ago). Earlier scans could not detect what the "
+            "current rules can. Run /run-scan-secrets --all."
+        )
+
+    if days >= 14:
+        return (
+            f"WARNING: {days} days since the last workspace-wide secret scan. "
+            "Run /run-scan-secrets --all."
+        )
+    return None
+
+
 def check_claude_review_status(
     project_state: Dict,
     org_state: Dict,
@@ -783,6 +838,12 @@ def main() -> None:
         secret_scan_alert = check_secret_scan_status(project_state, project_label)
         if secret_scan_alert:
             alerts.append(secret_scan_alert)
+
+    # Check 7b: Workspace-wide sweep. Deliberately not gated on being inside a
+    # project — the repos this is for are the ones nobody opens.
+    workspace_scan_alert = check_workspace_scan_status(global_state)
+    if workspace_scan_alert:
+        alerts.append(workspace_scan_alert)
 
     # Check 8: Repo visibility
     visibility_alert = check_repo_visibility()

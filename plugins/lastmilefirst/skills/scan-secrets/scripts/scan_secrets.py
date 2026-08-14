@@ -151,7 +151,7 @@ Examples:
         from scanner import scan_workspace, update_scan_timestamp
         exit_code, report = scan_workspace()
         print(report)
-        update_scan_timestamp()
+        update_scan_timestamp(workspace=True)
         return exit_code
 
     # Default: scan current repo

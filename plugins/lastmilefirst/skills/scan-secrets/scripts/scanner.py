@@ -609,15 +609,68 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     return (1 if total_findings else 0), "\n".join(lines)
 
 
-def update_scan_timestamp() -> None:
-    """Update the overwatch state with current scan timestamp (project-scoped)."""
+def rules_fingerprint() -> str:
+    """
+    Short digest of the ruleset a scan actually used.
+
+    Recorded alongside the scan timestamp so a later session can tell whether a
+    project was last scanned with rules that have since improved. Freshness by
+    date alone is not enough: a repo with no new commits looks "recently
+    scanned" forever, even after the scanner gains the ability to detect
+    something it previously walked straight past.
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    try:
+        from format_loader import ensure_format_dir
+
+        formats_dir = Path(ensure_format_dir())
+    except Exception:
+        formats_dir = Path.home() / ".claude" / "lastmilefirst" / "secret-formats"
+
+    try:
+        for name in sorted(p.name for p in formats_dir.glob("*.toml")):
+            h.update(name.encode())
+            h.update((formats_dir / name).read_bytes())
+    except Exception:
+        h.update(b"formats-unreadable")
+
+    # Scanner behaviour matters as much as the rules — archive inspection
+    # changed what a scan can see without changing a single rule.
+    try:
+        plugin_json = Path(__file__).parents[3] / ".claude-plugin" / "plugin.json"
+        h.update(json.loads(plugin_json.read_text()).get("version", "?").encode())
+    except Exception:
+        h.update(b"version-unknown")
+
+    return h.hexdigest()[:16]
+
+
+def update_scan_timestamp(workspace: bool = False) -> None:
+    """
+    Record that a scan ran, with the ruleset it used.
+
+    When `workspace` is set the sweep covered every repo, so a workspace-scoped
+    marker is written too — a per-project timestamp cannot express "the whole
+    estate was swept", and a dormant repo nobody opens is exactly the one that
+    needs that guarantee.
+    """
     try:
         hooks_scripts = (
             Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
         )
         sys.path.insert(0, str(hooks_scripts))
-        from overwatch import update_project_state
+        from overwatch import update_project_state, update_state_field
 
-        update_project_state("last_secret_scan", int(time.time()))
+        now = int(time.time())
+        fingerprint = rules_fingerprint()
+
+        update_project_state("last_secret_scan", now)
+        update_project_state("last_scan_rules", fingerprint)
+
+        if workspace:
+            update_state_field("last_workspace_scan", now)
+            update_state_field("last_workspace_scan_rules", fingerprint)
     except (ImportError, Exception):
         pass  # Non-critical — don't fail scan over state update
