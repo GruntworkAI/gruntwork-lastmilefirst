@@ -96,8 +96,62 @@ def _read_toml(path: Path) -> Dict[str, Any]:
         return tomllib.load(f)
 
 
+# Set when a scan silently picked up newer plugin-shipped rules, so the run can
+# say so. Read via consume_sync_note() — reading clears it.
+_SYNC_NOTE: Optional[str] = None
+
+
+def consume_sync_note() -> Optional[str]:
+    """Return and clear the note from the last automatic format sync, if any."""
+    global _SYNC_NOTE
+    note, _SYNC_NOTE = _SYNC_NOTE, None
+    return note
+
+
+def sync_common_formats() -> bool:
+    """
+    Refresh the plugin-shipped rule tier when it has changed.
+
+    Scans read the *installed* rules, not the plugin's shipped copy, so a plugin
+    update alone used to leave the new rules inert until someone remembered to
+    run `--update-formats`. That failure is self-concealing: the scan still
+    runs, still reports findings, and looks exactly like a scan that is working
+    — while quietly using rules that cannot see what the new ones can.
+
+    Only the common tier is touched. The org tier is user-owned and is never
+    overwritten; that separation is why refreshing common is safe to automate.
+
+    Returns True if a sync occurred.
+    """
+    global _SYNC_NOTE
+
+    common_src = PLUGIN_DATA_DIR / COMMON_FILENAME
+    common_dest = FORMAT_DIR / COMMON_FILENAME
+    if not common_src.exists():
+        return False
+
+    if common_dest.exists():
+        try:
+            if common_src.read_bytes() == common_dest.read_bytes():
+                return False
+        except OSError:
+            return False
+
+    try:
+        shutil.copy2(common_src, common_dest)
+    except OSError:
+        return False
+
+    _SYNC_NOTE = (
+        "Note: plugin-shipped secret formats had changed and were synced "
+        "automatically before this scan. Rules are current."
+    )
+    return True
+
+
 def ensure_format_dir() -> Path:
-    """Create format directory and seed files on first run."""
+    """Create the format directory, seed it on first run, and keep the
+    plugin-shipped tier current."""
     FORMAT_DIR.mkdir(parents=True, exist_ok=True)
 
     common_dest = FORMAT_DIR / COMMON_FILENAME
@@ -106,6 +160,9 @@ def ensure_format_dir() -> Path:
         common_src = PLUGIN_DATA_DIR / COMMON_FILENAME
         if common_src.exists():
             shutil.copy2(common_src, common_dest)
+    else:
+        # Already seeded — keep it in step with whatever the plugin now ships.
+        sync_common_formats()
 
     org_dest = FORMAT_DIR / ORG_FILENAME
     if not org_dest.exists():
