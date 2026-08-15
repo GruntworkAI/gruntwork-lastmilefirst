@@ -166,16 +166,55 @@ def check_structure(project_root: Path) -> dict:
     return result
 
 
-def classify_file(filename: str) -> tuple[str, str] | None:
-    """Classify a file and return (category, destination) or None."""
+def read_project_archetype(project_root: Path) -> str | None:
+    """
+    Read the archetype declared in the project's CLAUDE.md, if any.
+
+    Returns a lowercase archetype name, or None when there is no CLAUDE.md, no
+    archetype line, or the value is not one we recognise.
+    """
+    claude_md = project_root / "CLAUDE.md"
+    if not claude_md.is_file():
+        return None
+    try:
+        content = claude_md.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+
+    try:
+        organize_claude = (
+            Path(__file__).resolve().parents[2] / "organize-claude" / "scripts"
+        )
+        sys.path.insert(0, str(organize_claude))
+        from archetypes import detect_archetype  # type: ignore
+
+        return detect_archetype(content)
+    except Exception:
+        return None
+
+
+def classify_file(filename: str, archetype: str | None = None) -> tuple[str, str] | None:
+    """
+    Classify a file and return (category, destination) or None.
+
+    The documentation patterns assume root-level markdown is stray
+    documentation that belongs in docs/. For a Referenceable project that
+    assumption is backwards: the markdown at the root may be the content the
+    repo exists to hold, and moving it would relocate the product rather than
+    tidy around it. So docs migration is skipped for that archetype.
+
+    Work and debt patterns still apply — they match distinctive prefixes
+    (SESSION_, TODO_, PLAN_) that mean the same thing in any project.
+    """
     # Skip files that should stay at root
     if filename in ROOT_STAY:
         return None
 
     # Check documentation patterns
-    for pattern, dest in DOC_PATTERNS:
-        if re.match(pattern, filename, re.IGNORECASE):
-            return ("docs", dest)
+    if archetype != "referenceable":
+        for pattern, dest in DOC_PATTERNS:
+            if re.match(pattern, filename, re.IGNORECASE):
+                return ("docs", dest)
 
     # Check work patterns
     for pattern, dest in WORK_PATTERNS:
@@ -190,16 +229,28 @@ def classify_file(filename: str) -> tuple[str, str] | None:
     return None
 
 
-def find_scattered_files(project_root: Path) -> dict:
-    """Find files in project root that should be migrated."""
-    scattered = {"docs": [], "work": [], "debt": []}
+def find_scattered_files(project_root: Path, archetype: str | None = None) -> dict:
+    """
+    Find files in project root that should be migrated.
+
+    `held_docs` records files the doc patterns would have claimed but were left
+    alone because of the archetype. Reporting them matters: silently declining
+    to move something looks identical to not having noticed it.
+    """
+    scattered = {"docs": [], "work": [], "debt": [], "held_docs": []}
 
     for item in project_root.iterdir():
         if item.is_file():
-            result = classify_file(item.name)
+            result = classify_file(item.name, archetype)
             if result:
                 category, dest = result
                 scattered[category].append((item, dest))
+            elif archetype == "referenceable" and item.name not in ROOT_STAY:
+                # Would this have been swept into docs/ under another archetype?
+                for pattern, _dest in DOC_PATTERNS:
+                    if re.match(pattern, item.name, re.IGNORECASE):
+                        scattered["held_docs"].append(item)
+                        break
 
     return scattered
 
@@ -256,6 +307,26 @@ def find_archive_candidates(project_root: Path) -> tuple[list, list]:
     return candidates, protected
 
 
+MOVABLE_CATEGORIES = ("docs", "work", "debt")
+
+
+def movable_count(scattered: dict) -> int:
+    """Files that will actually be moved. Excludes archetype-held files."""
+    return sum(len(scattered.get(c, [])) for c in MOVABLE_CATEGORIES)
+
+
+def show_held_docs(scattered: dict) -> None:
+    """Report files the doc patterns matched but the archetype held back."""
+    held = scattered.get("held_docs", [])
+    if not held:
+        return
+    print(f"\nLeft in place ({len(held)}) — Referenceable project:")
+    for path in held:
+        print(f"    - {path.name}")
+    print("  Root markdown may be this repo's content rather than documentation")
+    print("  about it. Move any that really are docs by hand.")
+
+
 def show_structure_report(structure: dict, scattered: dict) -> None:
     """Display structure validation results."""
     print("\n" + "=" * 60)
@@ -282,7 +353,7 @@ def show_structure_report(structure: dict, scattered: dict) -> None:
             count = len(list(path.iterdir()))
             print(f"  - {name}/ ({count} files) → {target}/ + symlink")
 
-    has_scattered = any(scattered.values())
+    has_scattered = movable_count(scattered) > 0
     if has_scattered:
         print("\nScattered files in root:")
         if scattered["docs"]:
@@ -297,6 +368,8 @@ def show_structure_report(structure: dict, scattered: dict) -> None:
             print("  Technical debt:")
             for path, dest in scattered["debt"]:
                 print(f"    - {path.name} → {dest}/")
+
+    show_held_docs(scattered)
 
 
 def show_archive_report(candidates: list, protected: list) -> None:
@@ -420,11 +493,12 @@ def main():
 
     # Phase 1: Structure and migration
     structure = check_structure(project_root)
-    scattered = find_scattered_files(project_root)
+    archetype = read_project_archetype(project_root)
+    scattered = find_scattered_files(project_root, archetype)
 
     has_missing = bool(structure["missing_dirs"])
     has_legacy = bool(structure["legacy_dirs"])
-    has_scattered = any(scattered.values())
+    has_scattered = movable_count(scattered) > 0
     has_work = has_missing or has_legacy or has_scattered
 
     if has_work:
@@ -437,7 +511,7 @@ def main():
                 print(f"  • Create {len(structure['missing_dirs'])} directories")
             if structure["legacy_dirs"]:
                 print(f"  • Migrate {len(structure['legacy_dirs'])} legacy directories")
-            total_scattered = sum(len(v) for v in scattered.values())
+            total_scattered = movable_count(scattered)
             if total_scattered:
                 print(f"  • Move {total_scattered} scattered files")
         elif not should_act(args, "organize"):
@@ -458,6 +532,10 @@ def main():
                 print(f"\n✓ Migrated {migrated} files.")
     else:
         print("\n✓ Structure is valid, no scattered files found.")
+        # Held files are not work, so they do not make has_work true — but they
+        # still have to be said. A file deliberately left alone and a file never
+        # noticed look identical from the outside.
+        show_held_docs(scattered)
 
     # Phase 2: Archive old files
     candidates, protected = find_archive_candidates(project_root)
