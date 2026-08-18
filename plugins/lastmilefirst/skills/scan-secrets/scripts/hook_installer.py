@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-Global pre-commit hook installer for secret scanning.
+Global pre-commit hook installer.
 
 Uses git config --global core.hooksPath to apply to all repos.
 Installs to ~/.claude/lastmilefirst/git-hooks/pre-commit.
+
+The installed hook is a *dispatcher*: it resolves the plugin root once, then
+runs each registered check in order and fails on the first non-zero exit.
+Checks are listed in CHECKS below. Adding one is a single entry — the hook was
+previously a single-purpose script, which meant a second concern could not be
+added without rewriting it.
 """
 from __future__ import annotations
 
@@ -17,49 +23,106 @@ from typing import Optional
 HOOKS_DIR = Path.home() / ".claude" / "lastmilefirst" / "git-hooks"
 HOOK_FILE = HOOKS_DIR / "pre-commit"
 
-# The pre-commit hook script
-HOOK_SCRIPT = """\
+# Registered pre-commit checks, in run order.
+#
+# Ordered cheapest-first so an obvious failure reports before slower work runs:
+# the identity check is a couple of `git config` reads and a small JSON parse,
+# while the secret scan shells out to gitleaks over the staged diff.
+#
+# Each entry: (label, path relative to the plugin root, failure message).
+CHECKS = [
+    (
+        "identity",
+        "skills/organize-orgs/scripts/check_identity.py",
+        # check_identity.py prints its own diagnosis and remedy, so the hook
+        # adds nothing here.
+        "",
+    ),
+    (
+        "secret scan",
+        "skills/scan-secrets/scripts/scan_secrets.py",
+        "\n".join(
+            [
+                "Secret scan found potential secrets in staged changes.",
+                "Review the findings above and either:",
+                "  1. Remove the secrets and re-stage",
+                "  2. Add to .gitignore if the file shouldn't be tracked",
+                "  3. Add a gitleaks:allow comment if it's a false positive",
+            ]
+        ),
+    ),
+]
+
+
+def _render_check(label: str, rel_path: str, failure_message: str) -> str:
+    """Emit the bash for one check: skip if absent, else run and gate on it."""
+    message_block = ""
+    if failure_message:
+        echoes = "\n".join(
+            f'        echo "{line}" >&2' for line in failure_message.split("\n")
+        )
+        message_block = f'\n        echo "" >&2\n{echoes}\n        echo "" >&2'
+    return f"""
+# {label}
+CHECK_PATH="$PLUGIN_ROOT/{rel_path}"
+if [ -f "$CHECK_PATH" ]; then
+    CHECKS_RUN=$((CHECKS_RUN + 1))
+    python3 "$CHECK_PATH" --pre-commit
+    if [ $? -ne 0 ]; then{message_block}
+        exit 1
+    fi
+fi"""
+
+
+def build_hook_script() -> str:
+    """Assemble the dispatcher installed as the global pre-commit hook."""
+    checks = "".join(
+        _render_check(label, rel, msg) for label, rel, msg in CHECKS
+    )
+    return f"""\
 #!/usr/bin/env bash
-# lastmilefirst secret scanner pre-commit hook
+# lastmilefirst pre-commit hook (dispatcher)
 # Installed by: /run-scan-secrets --install-hooks
 # Remove with:  /run-scan-secrets --uninstall-hooks
+#
+# Runs each registered check in order, failing on the first non-zero exit.
+# Checks: {', '.join(label for label, _, _ in CHECKS)}
 
-# Find the scan-secrets CLI. The marketplace name and version are globbed rather
+# Resolve the plugin root. The marketplace name and version are globbed rather
 # than hard-coded so a marketplace rename (e.g. gruntwork-marketplace ->
 # gruntwork-lastmilefirst) or a version bump can't silently disarm the hook. The
 # marketplace glob is constrained to the gruntwork-* namespace so an unrelated or
-# hostile marketplace can't supply the scan_secrets.py this hook executes.
+# hostile marketplace can't supply the scripts this hook executes.
 # Glob expands sorted, so the last existing match wins -> newest installed version.
-CLI_PATH=""
-for candidate in \
-    "$HOME/.claude/plugins/cache"/gruntwork-*/lastmilefirst/*/skills/scan-secrets/scripts/scan_secrets.py \
-    "$HOME/.claude/plugins/marketplaces"/gruntwork-*/plugins/lastmilefirst/skills/scan-secrets/scripts/scan_secrets.py; do
-    [ -f "$candidate" ] && CLI_PATH="$candidate"
+PLUGIN_ROOT=""
+for candidate in \\
+    "$HOME/.claude/plugins/cache"/gruntwork-*/lastmilefirst/* \\
+    "$HOME/.claude/plugins/marketplaces"/gruntwork-*/plugins/lastmilefirst; do
+    [ -d "$candidate" ] && PLUGIN_ROOT="$candidate"
 done
 
-if [ -z "$CLI_PATH" ]; then
-    # Plugin not found — don't block commits, just warn
-    echo "lastmilefirst: scan-secrets plugin not found, skipping secret scan" >&2
+if [ -z "$PLUGIN_ROOT" ]; then
+    # Plugin not found — don't block commits, just warn.
+    echo "lastmilefirst: plugin not found, skipping pre-commit checks" >&2
     exit 0
 fi
 
-# Run staged scan
-python3 "$CLI_PATH" --pre-commit
-EXIT_CODE=$?
+# Counted so a resolved-but-incomplete install (plugin root present, check
+# scripts missing) reports instead of silently passing every commit.
+CHECKS_RUN=0
+{checks}
 
-if [ $EXIT_CODE -ne 0 ]; then
-    echo "" >&2
-    echo "Secret scan found potential secrets in staged changes." >&2
-    echo "Review the findings above and either:" >&2
-    echo "  1. Remove the secrets and re-stage" >&2
-    echo "  2. Add to .gitignore if the file shouldn't be tracked" >&2
-    echo "  3. Add a gitleaks:allow comment if it's a false positive" >&2
-    echo "" >&2
-    exit 1
+if [ "$CHECKS_RUN" -eq 0 ]; then
+    echo "lastmilefirst: no check scripts found under $PLUGIN_ROOT" >&2
+    echo "lastmilefirst: commit allowed, but the install looks incomplete" >&2
 fi
 
 exit 0
 """
+
+
+# Rendered once at import so callers can still read HOOK_SCRIPT directly.
+HOOK_SCRIPT = build_hook_script()
 
 
 def get_current_hooks_path() -> Optional[str]:
@@ -123,7 +186,10 @@ def install_hooks() -> str:
     lines.append(f"Pre-commit hook installed at: {HOOK_FILE}")
     lines.append(f"Global core.hooksPath set to: {HOOKS_DIR}")
     lines.append("")
-    lines.append("The hook will scan staged changes for secrets before every commit.")
+    lines.append("Checks run before every commit, in order:")
+    for label, rel_path, _ in CHECKS:
+        lines.append(f"  - {label} ({rel_path})")
+    lines.append("")
     lines.append("To uninstall: /run-scan-secrets --uninstall-hooks")
 
     return "\n".join(lines)
