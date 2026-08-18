@@ -362,3 +362,55 @@ def test_marker_outside_workspace_is_not_consulted(workspace, tmp_path):
     org = write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(org / "site", name="wrong", email="wrong@example.com")
     assert check(repo, workspace).status == "blocked"
+
+
+# --------------------------------------------------------------------------
+# hook-mode output discipline
+# --------------------------------------------------------------------------
+
+def test_pre_commit_mode_suppresses_the_gh_advisory(workspace, monkeypatch, capsys):
+    """A clean commit must print nothing from this check.
+
+    The gh advisory is accurate but unactionable at commit time, and would
+    otherwise fire on every commit in an org whose account isn't the active
+    one — training the user to ignore the check's output entirely.
+    """
+    write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
+    repo = make_repo(workspace / "outsideshot" / "site",
+                     name="outsideshot", email="outsideshot@gmail.com")
+    monkeypatch.setattr(check_identity, "gh_active_account", lambda: "GruntworkAI")
+    monkeypatch.chdir(repo)
+
+    code = check_identity.main(["--pre-commit", "--workspace-root", str(workspace)])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_non_hook_mode_still_reports_the_gh_advisory(workspace, monkeypatch, capsys):
+    """Read deliberately rather than mid-commit, the advisory is still useful."""
+    write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
+    repo = make_repo(workspace / "outsideshot" / "site",
+                     name="outsideshot", email="outsideshot@gmail.com")
+    monkeypatch.setattr(check_identity, "gh_active_account", lambda: "GruntworkAI")
+    monkeypatch.chdir(repo)
+
+    code = check_identity.main(["--workspace-root", str(workspace)])
+    assert code == 0
+    assert "gh's active account" in capsys.readouterr().out
+
+
+def test_blocking_problems_still_print_in_hook_mode(workspace, monkeypatch, capsys):
+    """Suppressing the advisory must not mute real failures."""
+    write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
+    repo = make_repo(workspace / "outsideshot" / "site",
+                     name="GruntworkAI", email="admin@gruntwork.ai")
+    monkeypatch.setattr(check_identity, "gh_active_account", lambda: "GruntworkAI")
+    monkeypatch.chdir(repo)
+
+    code = check_identity.main(["--pre-commit", "--workspace-root", str(workspace)])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "BLOCKED" in captured.err
+    assert "gh's active account" not in captured.err
