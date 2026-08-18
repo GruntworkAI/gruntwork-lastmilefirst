@@ -306,3 +306,91 @@ class TestHttpPrimitive:
                             lambda req, timeout: _FakeResp(b"{}", status=500))
         assert overwatch._http_get_json(
             "https://raw.githubusercontent.com/a/b/main/x", 1) is None
+
+
+# --------------------------------------------------------------------------
+# identity contract surfacing (Phase 3)
+# --------------------------------------------------------------------------
+
+class TestIdentityContractAlerts:
+    """Session-start surfacing of missing identity contracts.
+
+    This is what keeps fail-closed enforcement humane: without it the first
+    sign of a missing contract is a blocked commit with a dirty tree.
+    """
+
+    def test_errors_become_action_required(self, monkeypatch):
+        import session_start
+
+        class F:
+            severity, message, remedy, org = "error", "Org 'x' has no contract", "/run-organize-orgs", "x"
+
+        monkeypatch.setattr(session_start, "_identity_findings", lambda root: [F()])
+        alerts = session_start.check_identity_contracts({"workspace": "/tmp"})
+        assert alerts == ["ACTION REQUIRED: Org 'x' has no contract /run-organize-orgs"]
+
+    def test_warnings_become_warning(self, monkeypatch):
+        import session_start
+
+        class F:
+            severity, message, remedy, org = "warning", "prose drifted", None, "x"
+
+        monkeypatch.setattr(session_start, "_identity_findings", lambda root: [F()])
+        alerts = session_start.check_identity_contracts({"workspace": "/tmp"})
+        assert alerts == ["WARNING: prose drifted"]
+
+    def test_info_findings_are_not_surfaced(self, monkeypatch):
+        """Info is for the explicit audit. Session start stays high-signal."""
+        import session_start
+
+        class F:
+            severity, message, remedy, org = "info", "claims no remotes", None, "x"
+
+        monkeypatch.setattr(session_start, "_identity_findings", lambda root: [F()])
+        assert session_start.check_identity_contracts({"workspace": "/tmp"}) == []
+
+    def test_audit_failure_never_wedges_session_start(self, monkeypatch):
+        import session_start
+
+        def explode(root):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(session_start, "_identity_findings", explode)
+        assert session_start.check_identity_contracts({"workspace": "/tmp"}) == []
+
+    def test_missing_audit_module_is_tolerated(self, monkeypatch):
+        """Older install, or a partial update — degrade quietly."""
+        import session_start
+
+        monkeypatch.setattr(session_start, "_identity_findings", None)
+        assert session_start.check_identity_contracts({"workspace": "/tmp"}) == []
+
+
+class TestOrgInfrastructureOptOut:
+    """An org may decline operatives / stack-wisdom repos without nagging."""
+
+    def _org(self, tmp_path, org_json):
+        import json as _json
+        org = tmp_path / "minimal"
+        (org / ".claude").mkdir(parents=True)
+        (org / ".claude" / "org.json").write_text(_json.dumps(org_json))
+        return {"workspace": str(tmp_path), "orgs": ["minimal"]}
+
+    def test_opted_out_org_emits_no_warnings(self, tmp_path):
+        import session_start
+
+        config = self._org(tmp_path, {
+            "name": "minimal",
+            "operatives": {"enabled": False},
+            "stack_wisdom": {"enabled": False},
+        })
+        assert session_start.check_org_infrastructure(config) == []
+
+    def test_default_org_still_warns(self, tmp_path):
+        import session_start
+
+        config = self._org(tmp_path, {"name": "minimal"})
+        alerts = session_start.check_org_infrastructure(config)
+        assert len(alerts) == 2
+        assert any("operatives" in a for a in alerts)
+        assert any("stack-wisdom" in a for a in alerts)

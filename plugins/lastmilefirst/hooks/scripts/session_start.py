@@ -46,6 +46,14 @@ try:
 except ImportError:
     _detect_archetype = None
 
+# Import the identity audit from organize-orgs (sibling skill)
+_ORGANIZE_ORGS_DIR = Path(__file__).parent.parent.parent / "skills" / "organize-orgs" / "scripts"
+sys.path.insert(0, str(_ORGANIZE_ORGS_DIR))
+try:
+    from audit_identity import cheap_findings as _identity_findings
+except ImportError:
+    _identity_findings = None
+
 # Path to todos-summary scripts (sibling skill)
 TODOS_SUMMARY_SCRIPTS = Path(__file__).parent.parent.parent / "skills" / "todos-summary" / "scripts"
 
@@ -498,8 +506,15 @@ def check_org_infrastructure(config: Dict) -> List[str]:
             try:
                 with open(org_json, encoding="utf-8") as f:
                     org_data = json.load(f)
-                operatives_dir = org_dir / org_data.get("operatives", {}).get("repo", f"{org_name}-operatives")
-                wisdom_dir = org_dir / org_data.get("stack_wisdom", {}).get("repo", f"{org_name}-stack-wisdom")
+                operatives_cfg = org_data.get("operatives", {})
+                wisdom_cfg = org_data.get("stack_wisdom", {})
+                # An org may opt out of these repos entirely. Without this, a
+                # deliberately minimal org emits two WARNINGs every session
+                # forever, which is how alert fatigue starts.
+                if operatives_cfg.get("enabled") is not False:
+                    operatives_dir = org_dir / operatives_cfg.get("repo", f"{org_name}-operatives")
+                if wisdom_cfg.get("enabled") is not False:
+                    wisdom_dir = org_dir / wisdom_cfg.get("repo", f"{org_name}-stack-wisdom")
             except (json.JSONDecodeError, IOError):
                 operatives_dir = org_dir / f"{org_name}-operatives"
                 wisdom_dir = org_dir / f"{org_name}-stack-wisdom"
@@ -508,11 +523,45 @@ def check_org_infrastructure(config: Dict) -> List[str]:
             operatives_dir = org_dir / f"{org_name}-operatives"
             wisdom_dir = org_dir / f"{org_name}-stack-wisdom"
 
-        if not operatives_dir.is_dir():
+        if operatives_dir is not None and not operatives_dir.is_dir():
             alerts.append(f"WARNING: Org '{org_name}' missing operatives repo — run /run-organize-orgs")
-        if not wisdom_dir.is_dir():
+        if wisdom_dir is not None and not wisdom_dir.is_dir():
             alerts.append(f"WARNING: Org '{org_name}' missing stack-wisdom repo — run /run-organize-orgs")
 
+    return alerts
+
+
+def check_identity_contracts(config: Dict) -> List[str]:
+    """Surface missing or malformed org identity contracts at session start.
+
+    This is what keeps fail-closed enforcement humane. Without it the only
+    signal that an org lacks a contract is a blocked commit with a dirty tree,
+    and a check whose first appearance is an ambush gets aliased away.
+
+    Only the filesystem-only checks run here — the per-repo drift walk and the
+    GitHub account probe stay in `/run-organize-orgs`, because the SessionStart
+    hook shares a 10-second budget with every other check.
+    """
+    if _identity_findings is None:
+        return []
+
+    workspace = config.get("workspace")
+    try:
+        findings = _identity_findings(Path(workspace) if workspace else None)
+    except Exception:
+        # A broken audit must never wedge session start.
+        return []
+
+    alerts: List[str] = []
+    for finding in findings:
+        if finding.severity == "error":
+            prefix = "ACTION REQUIRED"
+        elif finding.severity == "warning":
+            prefix = "WARNING"
+        else:
+            continue  # info-level findings are for the explicit audit only
+        remedy = f" {finding.remedy}" if finding.remedy else ""
+        alerts.append(f"{prefix}: {finding.message}{remedy}")
     return alerts
 
 
@@ -884,7 +933,13 @@ def main() -> None:
         if org_infra_alerts:
             alerts.extend(org_infra_alerts)
 
-    # Check 15: Workspace-level project summary (summary or full)
+    # Check 15: Org identity contracts (all orgs)
+    if config:
+        identity_alerts = check_identity_contracts(config)
+        if identity_alerts:
+            alerts.extend(identity_alerts)
+
+    # Check 16: Workspace-level project summary (summary or full)
     if config:
         workspace_alerts = check_workspace_summary(config, full=full_mode)
         if workspace_alerts:
