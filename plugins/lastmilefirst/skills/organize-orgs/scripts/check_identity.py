@@ -484,7 +484,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
         return 0
 
-    result = evaluate(workspace_root=args.workspace_root)
+    # The gh advisory is deliberately absent in hook mode. It is accurate but
+    # unactionable at commit time — gh's active account cannot affect the commit
+    # being made — and it would otherwise print on *every* commit in an org
+    # whose account isn't the currently active one. A per-commit nag about
+    # unrelated state is how a check trains people to stop reading it.
+    # audit_identity.py still reports it, where it is read deliberately.
+    result = evaluate(
+        workspace_root=args.workspace_root,
+        check_gh=not args.pre_commit,
+    )
 
     if args.json:
         print(json.dumps(result.to_dict(), indent=2))
