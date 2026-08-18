@@ -303,3 +303,62 @@ def test_gh_check_is_advisory_only(workspace, monkeypatch):
     assert result.status == "warned"
     assert result.exit_code == 0
     assert any("gh's active account" in w for w in result.warnings)
+
+
+# --------------------------------------------------------------------------
+# workspace type markers (hook side)
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("type: external\n", "external"),
+        ("# comment\ntype: scratch\n", "scratch"),
+        ("type: Studio\n", "studio"),
+        ("type: external  # inline note\n", "external"),
+        ("note: no type here\n", None),
+        ("", None),
+        ("  type: indented-is-not-top-level\n", None),
+    ],
+)
+def test_workspace_type_parsing(tmp_path, text, expected):
+    (tmp_path / ".claude-workspace").write_text(text, encoding="utf-8")
+    assert check_identity.workspace_type(tmp_path) == expected
+
+
+def test_no_marker_is_none(tmp_path):
+    assert check_identity.workspace_type(tmp_path) is None
+
+
+@pytest.mark.parametrize("marker_type", ["external", "scratch"])
+def test_marked_dir_skips_the_check(workspace, marker_type):
+    """every/ and drafts/ must not block commits, and must not be 'unregistered'."""
+    org = workspace / "third-party"
+    org.mkdir()
+    (org / ".claude-workspace").write_text(f"type: {marker_type}\n", encoding="utf-8")
+    repo = make_repo(org / "cloned", name="whoever", email="whoever@example.com")
+    assert check(repo, workspace).status == "skipped"
+
+
+def test_studio_marker_is_still_governed(workspace):
+    org = workspace / "mine"
+    org.mkdir()
+    (org / ".claude-workspace").write_text("type: studio\n", encoding="utf-8")
+    repo = make_repo(org / "proj")
+    assert check(repo, workspace).status == "blocked"
+
+
+def test_marker_exemption_is_inherited_by_nested_repos(workspace):
+    org = workspace / "third-party"
+    (org / "nested").mkdir(parents=True)
+    (org / ".claude-workspace").write_text("type: external\n", encoding="utf-8")
+    repo = make_repo(org / "nested" / "deep")
+    assert check(repo, workspace).status == "skipped"
+
+
+def test_marker_outside_workspace_is_not_consulted(workspace, tmp_path):
+    """The walk stops at the workspace root; a stray marker above it is ignored."""
+    (tmp_path / ".claude-workspace").write_text("type: scratch\n", encoding="utf-8")
+    org = write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
+    repo = make_repo(org / "site", name="wrong", email="wrong@example.com")
+    assert check(repo, workspace).status == "blocked"

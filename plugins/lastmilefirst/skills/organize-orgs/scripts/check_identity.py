@@ -52,6 +52,12 @@ ENFORCEMENT_OFF = "off"
 
 REQUIRED_FIELDS = ("github_account", "git_user_name", "git_email")
 
+# Workspace directory types (see the workspace-types spec). Only two matter
+# here: directories holding work that isn't first-party carry no identity
+# obligation, because there is no "our account" for them to be wrong about.
+WORKSPACE_MARKER = ".claude-workspace"
+UNGOVERNED_TYPES = {"external", "scratch"}
+
 
 # --------------------------------------------------------------------------
 # git helpers
@@ -142,6 +148,45 @@ def load_org_config(org_dir: Path) -> Optional[dict[str, Any]]:
         return json.loads(config_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
+
+
+def workspace_type(directory: Path) -> Optional[str]:
+    """Declared type from a `.claude-workspace` marker, lowercased.
+
+    Deliberately not a YAML parse: this runs in a pre-commit hook, which must
+    not depend on PyYAML being installed. Only the top-level `type:` key is
+    needed, and a malformed marker returns None so the caller falls back to the
+    default (governed) behavior rather than silently exempting a directory.
+    """
+    marker = directory / WORKSPACE_MARKER
+    if not marker.is_file():
+        return None
+    try:
+        text = marker.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    for line in text.splitlines():
+        if line.startswith(("#", " ", "\t")) or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        if key.strip() == "type":
+            return value.split("#")[0].strip().lower() or None
+    return None
+
+
+def ungoverned_ancestor(start: Path, workspace_root: Path) -> Optional[Path]:
+    """Nearest ancestor marked as a type carrying no identity obligation."""
+    try:
+        start = start.resolve()
+        workspace_root = workspace_root.resolve()
+    except OSError:
+        return None
+    for candidate in [start, *start.parents]:
+        if workspace_type(candidate) in UNGOVERNED_TYPES:
+            return candidate
+        if candidate == workspace_root:
+            break
+    return None
 
 
 def find_governing_org(
@@ -272,6 +317,12 @@ def evaluate(
     # The workspace root is the governance boundary. Repos outside it are none
     # of our business — cloned tools, other checkouts, anything transient.
     if not is_under(root, workspace_root):
+        return Result("skipped")
+
+    # External / scratch directories hold work that isn't ours to attribute:
+    # third-party clones and throwaway artifacts. Checked before contract
+    # resolution so a marked directory never reports as "unregistered".
+    if ungoverned_ancestor(root, workspace_root):
         return Result("skipped")
 
     org_dir, config = find_governing_org(root, workspace_root)

@@ -73,6 +73,17 @@ Scans workspace for org directories and checks infrastructure:
 - Does it have `.claude/org.json`?
 - Does it have an operatives repo?
 - Does it have a stack-wisdom repo?
+- Does it declare a valid **identity contract**, and do its repos comply?
+
+Run the identity portion directly:
+
+```bash
+python3 scripts/audit_identity.py              # full audit
+python3 scripts/audit_identity.py --cheap      # filesystem-only (what session start runs)
+python3 scripts/audit_identity.py --json       # machine-readable
+```
+
+Exits non-zero when any error-severity finding is present.
 
 ### 3. Scaffolds Missing Infrastructure
 Creates what's missing:
@@ -208,9 +219,49 @@ Created from template with org name substituted:
   "workflow": {
     "complexity_threshold": "moderate",
     "auto_compound": true
+  },
+  "identity": {
+    "github_account": "REPLACE_ME",
+    "git_user_name": "REPLACE_ME",
+    "git_email": "REPLACE_ME",
+    "owns_remotes": [],
+    "enforcement": "block"
   }
 }
 ```
+
+An org may decline the operatives and stack-wisdom repos with
+`{"enabled": false}` in place of `{"repo": ...}`. Overwatch then stops
+reporting them as missing, rather than warning about them every session.
+
+**The identity block ships with placeholders on purpose.** Scaffolding it
+half-configured means the pre-commit hook fails loudly with a clear message,
+which is enforcement; leaving the key out entirely would mean the org silently
+has no contract until someone remembers. Fill in the placeholders as part of
+creating the org — instructions can be skipped, the hook cannot.
+
+## Identity Contracts
+
+An org's `identity` block declares who commits there. Three surfaces read it,
+with deliberately different budgets:
+
+| Surface | Cost | Network | Question |
+|---|---|---|---|
+| `check_identity.py` (pre-commit) | instant, blocking | never | does *this* commit match? |
+| Session start (Overwatch) | sub-second | never | is any contract missing or malformed? |
+| `audit_identity.py` (this skill) | seconds | yes | do all repos actually comply? |
+
+The per-repo drift walk and the GitHub account probe stay out of session start,
+which shares a 10-second budget with every other check.
+
+**`owns_remotes` is a claim registry, not an allowlist.** An owner nobody claims
+passes — collaborating on someone else's repo, a fork's `upstream`, and OSS
+contributions are all normal. Only an owner claimed by a *different GitHub
+account* blocks. Claims key on account rather than org directory, so two
+workspace orgs sharing one account is not a conflict.
+
+Directories marked `external` or `scratch` in a `.claude-workspace` marker carry
+no identity obligation and are skipped everywhere.
 
 ### Operatives Repo
 
