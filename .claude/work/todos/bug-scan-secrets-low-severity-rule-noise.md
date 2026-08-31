@@ -1,8 +1,31 @@
 # Bug: two low-severity rules generate most of the false positives in a workspace sweep
 
-**Status:** OPEN
+**Status:** RESOLVED in v0.28.1 (2026-08-30)
 **Priority:** medium (does not miss secrets; makes `--all` output expensive to triage)
 **Created:** 2026-08-30
+**Resolved:** 2026-08-30
+
+## Resolution
+
+Both defects fixed as proposed.
+
+- The four connection-string rules (postgres, mysql, mongodb, redis) gained a shared `[rules.allowlist]` with fixture `paths` and a `regexes` entry excluding local/dummy databases. They previously had **no allowlist at all**.
+- `lmf-hardcoded-password`'s value run became `[^"'\s]{8,}`, so it can no longer span from one string's closing quote to the next quote on the line.
+
+Verified with real gitleaks against fixtures before writing the unit tests:
+
+| Fixture | Expected | Result |
+|---|---|---|
+| `postgres://postgres:postgres@localhost/…_test` | suppressed | gone | <!-- gitleaks:allow -->
+| `postgres://admin:…@prod-db.example.com/app` | still fires | fires | <!-- gitleaks:allow -->
+| `sudo -p "…login password: " …` | suppressed | gone | <!-- gitleaks:allow -->
+| `password = "hunter2hunter2"` | still fires | fires |
+
+18 regression tests in `skills/scan-secrets/tests/test_common_rule_precision.py`. Every suppression case is paired with one that must still fire, so a change that silences noise and signal together fails the suite. Patterns are read from the shipped TOML rather than restated.
+
+**Testing note for anyone reproducing this:** installed rules re-sync automatically (v0.25.0), so copying a modified source TOML into `~/.claude/lastmilefirst/secret-formats/` and scanning will silently test the *cache's* rules instead. Point `format_loader.FORMAT_DIR` at a temp directory to test source rules.
+
+---
 
 ## Summary
 
