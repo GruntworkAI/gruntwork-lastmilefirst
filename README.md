@@ -71,7 +71,7 @@ rm -rf ~/.claude/plugins/cache/gruntwork-marketplace
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [lastmilefirst](plugins/lastmilefirst/) | 0.27.1 | PARC workflow, AI expert agents, org-level operatives, stack-wisdom, and stack-knowledge |
+| [lastmilefirst](plugins/lastmilefirst/) | 0.28.0 | PARC workflow, AI expert agents, org-level operatives, stack-wisdom, and stack-knowledge |
 
 ## About
 

@@ -110,31 +110,54 @@ def check_dangerous_committed_files(repo_path: Optional[Path] = None) -> List[st
     return list(set(dangerous))
 
 
+def _load_github_protections():
+    """Lazy-import the shared posture module from hooks/scripts.
+
+    Soft failure: auditing still works without it, matching how scanner.py
+    reaches `overwatch`.
+    """
+    try:
+        hooks_scripts = Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
+        sys.path.insert(0, str(hooks_scripts))
+        import github_protections  # type: ignore
+        return github_protections
+    except Exception:
+        return None
+
+
+def _fetch_posture(cwd: Path):
+    gp = _load_github_protections()
+    if gp is None:
+        return None
+    return gp.fetch_posture(repo_path=cwd)
+
+
+def _describe_posture(posture) -> str:
+    gp = _load_github_protections()
+    return gp.describe(posture) if gp else ""
+
+
 def audit_repo(repo_path: Optional[Path] = None) -> str:
     """Run full audit on a single repo. Returns formatted report."""
     cwd = repo_path or Path.cwd()
     lines = [f"Audit: {cwd.name}", "=" * 50]
 
-    # 1. Visibility
-    try:
-        result = subprocess.run(
-            ["gh", "repo", "view", "--json", "visibility,nameWithOwner"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            cwd=str(cwd),
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            vis = data.get("visibility", "unknown").upper()
-            name = data.get("nameWithOwner", "unknown")
-            lines.append(f"\nVisibility: {vis}  ({name})")
-            if vis == "PUBLIC":
-                lines.append("  WARNING: This repo is publicly accessible!")
-        else:
-            lines.append("\nVisibility: Could not determine (no remote or gh not available)")
-    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        lines.append("\nVisibility: Could not determine")
+    # 1. Visibility and GitHub's own protections.
+    #
+    # One `gh api` call returns both, replacing the `gh repo view` this used
+    # to make. See hooks/scripts/github_protections.py for why absent posture
+    # is UNKNOWN rather than DISABLED.
+    posture = _fetch_posture(cwd)
+    if posture is None:
+        lines.append("\nVisibility: Could not determine (github_protections unavailable)")
+    elif posture.get("visibility") is None:
+        lines.append(f"\nVisibility: Could not determine ({posture.get('reason')})")
+    else:
+        lines.append(f"\nVisibility: {posture['visibility']}  ({posture.get('repo')})")
+        if posture["visibility"] == "PUBLIC":
+            lines.append("  WARNING: This repo is publicly accessible!")
+        lines.append("")
+        lines.append(_describe_posture(posture))
 
     # 2. .gitignore gaps
     missing, present = check_gitignore(cwd)

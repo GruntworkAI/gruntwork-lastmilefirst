@@ -13,13 +13,15 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # Add script directory to path for local imports
 sys.path.insert(0, str(Path(__file__).parent))
 
+from github_protections import fetch_posture, posture_alert
 from overwatch import (
     load_state,
+    update_scoped_state,
     resolve_context,
     get_scoped_state,
     get_plugins_dir,
@@ -403,8 +405,33 @@ def check_claude_review_status(
     return alerts
 
 
-def check_repo_visibility() -> Optional[str]:
-    """Check if current repo is public via gh CLI."""
+# Posture changes rarely and session start must stay fast, so the result is
+# cached per repo. Mirrors the plugin_update_cache precedent.
+POSTURE_CACHE_TTL = 24 * 60 * 60
+
+
+def _cached_posture(project_key: str, now: int) -> Optional[Dict[str, Any]]:
+    """Return a still-fresh cached posture for this repo, else None."""
+    try:
+        entry = get_scoped_state("projects", project_key).get("github_protections")
+        if not isinstance(entry, dict):
+            return None
+        checked_at = entry.get("checked_at", 0)
+        if not isinstance(checked_at, int) or now - checked_at > POSTURE_CACHE_TTL:
+            return None
+        posture = entry.get("posture")
+        return posture if isinstance(posture, dict) else None
+    except Exception:
+        return None
+
+
+def check_repo_visibility(project_key: Optional[str] = None) -> Optional[str]:
+    """Warn on public repos, and on public repos missing GitHub's free
+    protections.
+
+    One `gh api` call returns visibility and security posture together, so
+    this costs no more than the `gh repo view` it replaces.
+    """
     try:
         # First check if we're in a git repo with a remote
         result = subprocess.run(
@@ -415,21 +442,35 @@ def check_repo_visibility() -> Optional[str]:
         )
         if result.returncode != 0:
             return None  # No remote, skip check
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
 
-        result = subprocess.run(
-            ["gh", "repo", "view", "--json", "visibility,nameWithOwner",
-             "-q", '.visibility + " " + .nameWithOwner'],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            parts = result.stdout.strip().split(" ", 1)
-            if len(parts) == 2 and parts[0].upper() == "PUBLIC":
-                return f"WARNING: PUBLIC repo ({parts[1]}) — do not commit secrets or sensitive content"
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass  # gh not available or too slow - skip silently
-    return None
+    now = int(time.time())
+
+    posture = _cached_posture(project_key, now) if project_key else None
+    if posture is None:
+        posture = fetch_posture()
+        if project_key:
+            try:
+                update_scoped_state(
+                    "projects",
+                    project_key,
+                    "github_protections",
+                    {"posture": posture, "checked_at": now},
+                )
+            except Exception:
+                pass  # cache is an optimization, never a correctness requirement
+
+    if posture.get("visibility") != "PUBLIC":
+        return None
+
+    messages = [
+        f"WARNING: PUBLIC repo ({posture.get('repo')}) — do not commit secrets or sensitive content"
+    ]
+    alert = posture_alert(posture)
+    if alert:
+        messages.append(alert)
+    return "\n".join(messages)
 
 
 def check_claude_md() -> Optional[str]:
@@ -895,7 +936,7 @@ def main() -> None:
         alerts.append(workspace_scan_alert)
 
     # Check 8: Repo visibility
-    visibility_alert = check_repo_visibility()
+    visibility_alert = check_repo_visibility(ctx["project"])
     if visibility_alert:
         alerts.append(visibility_alert)
 
