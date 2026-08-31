@@ -612,6 +612,17 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
                 pass  # Per-project update is best-effort; don't fail the scan
 
     lines.append(f"\nScanned {len(repos)} repos. {total_findings} with findings.")
+
+    # Account-wide posture pass. Posture is a property of the repo on GitHub,
+    # not of the working copy, so a clone-only sweep can miss an unguarded
+    # public repo entirely. Soft-failure: never let this break the scan.
+    try:
+        from github_protections import sweep_accounts  # type: ignore
+
+        lines.extend(sweep_accounts(ws))
+    except Exception:
+        pass
+
     return (1 if total_findings else 0), "\n".join(lines)
 
 

@@ -1,6 +1,6 @@
 # Plan: check GitHub's own secret-scanning posture on public repos
 
-**Status:** APPROVED 2026-08-30 — in build
+**Status:** BUILT 2026-08-30 — see PR
 **Created:** 2026-08-30
 **Type:** feature (scan-secrets + Overwatch)
 
@@ -84,7 +84,7 @@ Follow the existing `plugin_update_cache` precedent in `overwatch-state.json` un
 
 ## Tests
 
-Under `skills/scan-secrets/tests/` (new file — the skill currently has no test dir; `hooks/tests/` and the other suites carry their own `conftest.py`, and per the repo's Dev Gotchas the suites cannot be run in one command).
+Under `skills/scan-secrets/tests/`, which already exists and already carries a `conftest.py` serving `test_hook_installer.py` — extend it, do not replace it. Per the repo's Dev Gotchas the suites still cannot be run in one command.
 
 Fixtures for the `gh api` JSON:
 1. public + both enabled → no alert

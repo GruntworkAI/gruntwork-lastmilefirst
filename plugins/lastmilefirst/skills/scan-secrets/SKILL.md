@@ -66,6 +66,7 @@ python3 ${SKILL_DIR}/scripts/scan_secrets.py --all
 
 Checks a single repo for:
 - **Visibility**: Public vs private (via gh CLI)
+- **GitHub protections**: whether GitHub's own secret scanning and push protection are enabled
 - **.gitignore coverage**: Checks for required patterns (.env, *.pem, *.key, *.tfstate, etc.)
 - **Dangerous committed files**: Searches git history for files that should never be committed
 
@@ -150,6 +151,43 @@ Copies the latest `common_secret_formats.toml` from the plugin to the user's for
 python3 ${SKILL_DIR}/scripts/scan_secrets.py --update-formats
 ```
 
+## GitHub Protections (Posture Check)
+
+The content scan asks *"is there a secret in this repo?"*. This asks *"is GitHub's own safety net switched on?"* — a different layer, and one this plugin cannot substitute for:
+
+| Protection | What it does |
+|---|---|
+| **Secret scanning** | GitHub detects branded credentials and notifies the issuing vendor through the partner program. For many providers that means automatic revocation. |
+| **Push protection** | Blocks the push server-side, before the secret reaches the remote. Unlike the pre-commit hook, `--no-verify` cannot get past it. |
+
+Both are **free on public repositories**, and both can be off — repository-level push protection is **disabled by default**.
+
+**Where it appears:**
+
+| Surface | Behavior |
+|---|---|
+| `--audit` | Full posture block beside the visibility line, including tier-gated fields |
+| `--all` | Account-wide pass over every public repo, including ones never cloned |
+| Session start | ACTION REQUIRED when the current public repo is missing a protection |
+
+**Three states, not two.** GitHub omits the `security_and_analysis` block entirely for callers without admin on a repo. Absence is treated as **unknown**, never as *disabled* — otherwise the check would fire on every contributor for every repo they do not own. Unknown is always silent.
+
+**What is deliberately not checked:**
+
+- **Private repos** — secret scanning there requires paid GitHub Secret Protection, so an alert would be permanently unfixable. They short-circuit before any API call.
+- **Forks and repos without admin access** — you cannot change those settings, so they are not your finding.
+- **`non_provider_patterns` and `validity_checks`** — tier-gated, so they read `disabled` forever on a free public repo. Shown in `--audit`, never alerted on. Generic-pattern detection is what this plugin's own `lmf-*` rules cover.
+
+**Fixing a finding.** The alert carries the command; nothing is changed for you. Secret scanning must be enabled for push protection to be accepted, and one PATCH carrying both keys works:
+
+```bash
+gh api -X PATCH repos/OWNER/REPO \
+  -F 'security_and_analysis[secret_scanning][status]=enabled' \
+  -F 'security_and_analysis[secret_scanning_push_protection][status]=enabled'
+```
+
+**Accounts** for the `--all` pass are derived from each org's identity contract (`<org>/.claude/org.json` → `identity.github_account`), so a new org is picked up automatically. Listing another account's *public* repos works from any authenticated identity, so this never calls `gh auth switch` — which is machine-global and would silently repoint every other shell.
+
 ## Secret Format Libraries
 
 Two-tier system for custom gitleaks rules:
@@ -225,6 +263,7 @@ The scan-secrets skill integrates with Overwatch:
 |-------|---------|-------|
 | Scan freshness | Every session start | "Never scanned" or "N days since last scan" |
 | Repo visibility | Every session start | "You're working in a PUBLIC repo" |
+| GitHub protections | Every session start (cached 24h) | "PUBLIC repo has push protection disabled" + the enable command |
 | Scan timestamp | After scan completes | Updates `last_secret_scan` in overwatch state |
 
 ## Related Skills
