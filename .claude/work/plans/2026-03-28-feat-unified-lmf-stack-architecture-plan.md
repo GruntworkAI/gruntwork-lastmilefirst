@@ -225,6 +225,7 @@ Exception: solo/private projects where only you clone the repo may optionally sy
 **Tasks:**
 
 - [ ] Verify no tools or configs depend on `~/Code/` path (shell aliases, IDE projects, cron jobs, etc.)
+- [ ] Inventory existing symlinks that point into `~/Code/` before moving anything: `find ~ -maxdepth 4 -type l -lname '*/Code/*' 2>/dev/null`. Absolute links break on the move and most break silently.
 - [ ] Create `~/work/` directory
 - [ ] Move `~/Code/` contents → `~/work/code/` (preserve git repos, symlinks break intentionally)
 - [ ] Rename org dirs to lowercase/normalized:
@@ -237,7 +238,8 @@ Exception: solo/private projects where only you clone the repo may optionally sy
 - [ ] Update org-level CLAUDE.md files if they reference workspace paths
 - [ ] Update auto-memory `MEMORY.md` and any memory files with hardcoded paths
 - [ ] Remove old symlinks (they'll point to `~/Code/` which no longer exists)
-- [ ] Do NOT create new symlinks yet — that's Phase 2 with the new stack structure
+- [ ] **Recreate the user-level CLAUDE.md link at `~/work/code/CLAUDE.md`**, pointing at `gruntwork/gruntwork-stack-wisdom/claude/claude-md-files/user-claude-file/CLAUDE.md`. `~/Code/CLAUDE.md` is itself an absolute symlink into that repo (created 2026-01-23), which is why the user-level CLAUDE.md is version-controlled there and why the move breaks it. The failure is silent: Claude Code finds no user-level CLAUDE.md and loads no workspace context, with no error. Make the new link **relative** so the next move does not break it again. Verify with `readlink ~/work/code/CLAUDE.md` and by confirming a fresh session picks up the workspace rules.
+- [ ] Do NOT create other new symlinks yet, that's Phase 2 with the new stack structure. The user-level CLAUDE.md link above is the one exception, because it is not a stack symlink: it points at that file's own tracked home and has to exist for any session to load correctly.
 - [ ] Verify Claude Code session starts cleanly from `~/work/code/`
 - [ ] Commit plugin and CLAUDE.md changes
 
