@@ -31,7 +31,7 @@ Use `review-signal` when the bottleneck is writing quality, clarity, prioritizat
 
 ## Core Standard
 
-Every sentence should earn its place by adding at least one of these:
+Every sentence should pay its rent by adding at least one of these:
 
 - **Relevant**: directly serves the task, reader, or argument
 - **Evidenced**: grounded in fact, reasoning, example, or clearly marked judgment
@@ -120,7 +120,7 @@ Read the target text and identify:
 - what the document is trying to do
 - who the reader seems to be
 - where the real point first appears
-- whether the opening and ending are earning their keep
+- whether the opening and ending are paying their way
 
 ### Step 3: Diagnose the Biggest Leaks
 Focus on the highest-value issues:

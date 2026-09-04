@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-04
+
+Entries between 0.16.0 and 0.28.1 were recorded in GitHub releases only.
+
+### Added
+
+- **review-voice: house rules.** A second kind of rule alongside fingerprints. House rules are the author's own hard rules (retired phrases, banned constructions), supplied by the author, where one instance is a finding. The skill reads them from the user-level `CLAUDE.md` Voice section, then from the conversation, and otherwise asks. It ships with an example list only. Literal use is exempt (a load-bearing wall). Reported in their own table, never de-duped against fingerprints.
+- **review-voice: five author-calibrated fingerprints**, extracted by diffing an author's hand edits against machine drafts: in-clause balanced antithesis as the default contrast shape (1b), universal-quantifier inflation (6), canon-speak definite articles for systems that do not exist yet (7), wit-personification of components (8), and emphasis tags after the semantic landing (9). All density-measured; single instances stay non-findings.
+- **review-voice: rewrite guidance** for plain functional subjects over coined compressions, dissolving repeated colon-led feature lists, sizing claims to reality, and contrast as a trailing parenthetical. New guard: homely abbreviations (i.e., e.g., aka) and parenthetical variation are voice, not informality to clean.
+
+### Changed
+
+- **review-voice** prose brought into line with the rules it enforces. The author's-voice exemption now uses a neutral worked example instead of citing a persona's idiolect.
+- **Ripley** no longer speaks in "earns its keep," "earns its place," or "load-bearing." Her idiolect is the rent vocabulary that is literal for her (RENT, pay rent, collect the rent, reader cost). Her dual-review protocol gains a step applying the author's house rules as single-instance findings.
+- **review-signal** drops two "earn its place / keep" phrasings for rent vocabulary.
+
+
 ## [0.16.0] - 2026-07-13
 
 ### Changed
