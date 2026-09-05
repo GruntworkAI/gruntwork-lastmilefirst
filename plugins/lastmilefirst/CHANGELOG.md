@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-04
+
+### Added
+
+- **review-voice: fingerprint 10, negative-universal setups.** "Nobody does X" / "no one ever" as a framing or opening move, measured per thousand words like the universal-quantifier row and tagged author-calibrated (one essay-series draft carried seven). Single instances stay non-findings. Rewrite guidance: recast with the specific actor, state what happens instead, or name the absence directly.
+
+
 ## [0.29.0] - 2026-09-04
 
 Entries between 0.16.0 and 0.28.1 were recorded in GitHub releases only.

@@ -84,13 +84,14 @@ specimen behind them rather than a general study.
 | 7 | Canon-speak definite articles | "the first threshold" for a system that does not exist yet (vs. "a first threshold") | frequency | observed (author-calibrated) |
 | 8 | Wit-personification of components | a component that "holds no opinions" (vs. "is just there to enforce the limits") | frequency | observed (author-calibrated) |
 | 9 | Emphasis tags after the semantic landing | "declined right there" (vs. "declined.") | frequency | observed (author-calibrated) |
+| 10 | Negative-universal setups as a framing move | "Nobody sets out to build a bureaucracy," "no one ever asks" opening a paragraph (vs. "the cardholder doesn't get asked," or naming the absence directly) | frequency | observed (author-calibrated) |
 
 Also flag, all variance-measured: LLM tricolon addiction (distinct from an author who simply
 likes threes), uniform paragraph length, section and heading symmetry, consecutive paragraphs
 with identical skeletons, and consecutive sections built on colon-led feature lists.
 
 The Tier 2 tells overlap on purpose. #1 is #4 at sentence scale, #1b is #1 read at the clause,
-#2 feeds #4, #9 is the payoff line of #4 seen on its own, and #5 is the envelope around #4. One
+#2 feeds #4, #9 is the payoff line of #4 seen on its own, #10 is #6 used as an opener, and #5 is the envelope around #4. One
 habit (antithetical reframing) can set off three rows. The Method handles this so the score
 reflects one finding, not three.
 
@@ -99,7 +100,7 @@ reflects one finding, not three.
 Every reliable marker in the research is a rate or a variance across the whole text, never a
 single occurrence. So the skill measures fingerprints. It does not spot-flag them.
 
-- **Presence-tells (#1, #1b, #2, #3, #3b, #6 through #9, Tier 1 lexical):** count per ~1,000
+- **Presence-tells (#1, #1b, #2, #3, #3b, #6 through #10, Tier 1 lexical):** count per ~1,000
   words. Flag when density crosses from device to fingerprint. Once is a rhetorical choice; six
   times in one piece is a tell. For 3b, learn the author's genuine reach-words first, then flag
   over-recurrence.
@@ -194,7 +195,9 @@ Without them the skill reproduces the known false-positive failures of AI detect
    that does not strictly need to be there. Swap the recycled words for the author's own range.
    Prefer a plain functional subject over a coined compression ("the monitoring and oversight,"
    not "the actuals"). Where a section repeats a colon-led feature list, dissolve it into
-   prose. Size claims to reality ("most," not "every"). Move a woven contrast into a trailing
+   prose. Size claims to reality ("most," not "every"). Where a paragraph opens on "nobody does X,"
+   recast with the specific actor who does not, say what happens instead, or name the absence.
+   Move a woven contrast into a trailing
    parenthetical. Give a component a job, not a personality. End where the information ends.
    Keep what is real.
 
