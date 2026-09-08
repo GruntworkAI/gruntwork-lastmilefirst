@@ -1,13 +1,13 @@
 ---
 name: parc
-description: The PARC workflow - Plan, Allocate, Review, Compound - adaptive guidance for AI-assisted development
+description: The PARC workflow (Plan, Allocate, Review, Compound). Adaptive guidance for AI-assisted work at every scale, from one exchange to a multi-agent build. Entry points, the five elements, the Compound close with rhyming lessons and the human rung.
 ---
 
 # PARC Workflow
 
 **P**lan → **A**llocate → **R**eview → **C**ompound
 
-A disciplined workflow for AI-assisted development that scales with task complexity.
+A disciplined workflow for AI-assisted work that scales with task complexity. It applies at every scale: one exchange that produces an answer, and a multi-agent build that produces a system, run the same four steps with different amounts of ceremony.
 
 ## Why PARC?
 
@@ -20,7 +20,46 @@ Without structure, AI-assisted development falls into traps:
 | **Quality gaps** | Bugs ship, tech debt grows | **Review** thoroughly |
 | **Repeated mistakes** | Same problems recur | **Compound** learnings |
 
-PARC isn't bureaucracy - it's leverage. Each step makes the next easier.
+PARC isn't bureaucracy. It's leverage. Each step makes the next easier.
+
+---
+
+## Entry points and posture
+
+These rules govern when to speak and where to start. They apply to every substantive request,
+not only builds.
+
+**Entry points.** A request enters at Plan. A draft, plan, or analysis handed over for review
+enters at Review directly, with no Plan or Allocate. Reviewing a handed artifact means finding
+what is weakest and naming it plainly, without softening criticism into hedges. A review that
+returns "strong, with a few small notes" has usually not been done.
+
+**Discovery is the first move of Plan.** When the request is exploratory, Plan means
+interviewing and widening the frame before narrowing to a solution. Arriving fast is the
+failure, not the goal. In every case the proposal precedes the artifact. Three sentences can be
+enough. Skipping it cannot.
+
+**Show the work.** State the assumptions being relied on and flag the shaky ones. Confident
+output that hides its assumptions is worse than uncertain output that names them, because it
+cannot be checked.
+
+**The five elements are Plan's completeness test.** A well-formed request names most of five:
+role, context, task, constraints, success. Use them in two directions that pull opposite ways.
+Receiving a request, do not audit it. Answer on the best reading, then name the one missing
+element that changed the answer ("I assumed a two-year bet with a small team; say if it is a
+weekend project and the answer changes"). Success is the element most often missing and the one
+to ask for when the answer turns on it. Authoring a prompt for another model (a skill, a
+subagent brief, a system prompt), use all five as a checklist on your own output. An empty
+success slot in a prompt you wrote is a defect you control.
+
+**Every cycle closes on Compound.** A cycle is a unit of work that produced an artifact or a
+decision: code, a document, an analysis, a plan. Once per cycle, not once per message. When
+nothing was applied, nothing rhymes, and nothing is new, the close is one line. The ceremony
+scales with what was found, not with the phase.
+
+**Escape hatches.** "Quick question," "no PARC," or the equivalent drops the ceremony and
+answers directly. The trivial tier in Adaptive Guidance does the same implicitly. There is no
+separate hatch for the Compound close; those two cover the cases where it is wrong.
 
 ---
 
@@ -30,6 +69,7 @@ PARC isn't bureaucracy - it's leverage. Each step makes the next easier.
 
 ### What Planning Means
 
+- Start in discovery when the request is exploratory (see Entry points and posture)
 - Understand the problem fully
 - Consider approaches (not just the first one)
 - Check existing wisdom (`/run-search-wisdom`)
@@ -152,18 +192,18 @@ Scout will:
 
 | Domain | Primary Agent | Backup |
 |--------|---------------|--------|
-| **Python/FastAPI** | Paloma | — |
-| **TypeScript/React** | Paloma | — |
-| **AWS Infrastructure** | Adam | — |
+| **Python/FastAPI** | Paloma | none |
+| **TypeScript/React** | Paloma | none |
+| **AWS Infrastructure** | Adam | none |
 | **Architecture/Design** | Archer | Charles |
-| **AI/ML Integration** | Andor | — |
+| **AI/ML Integration** | Andor | none |
 | **Security** | security-sentinel | Paloma |
 | **DevOps/CI/CD** | Otto | Adam |
-| **QA Strategy** | Quinn | — |
-| **Product/UX** | Dino | — |
-| **Research/Evaluation** | Reese | — |
+| **QA Strategy** | Quinn | none |
+| **Product/UX** | Dino | none |
+| **Research/Evaluation** | Reese | none |
 | **Process/Methodology** | Maya | Scout |
-| **Claude Code/Skills** | Shannon | — |
+| **Claude Code/Skills** | Shannon | none |
 | **Cross-domain/Unclear** | Scout → routes | Charles |
 
 ### Your Operatives
@@ -300,92 +340,151 @@ Task: security-sentinel to audit the authentication flow
 
 ## Compound
 
-*Capture learnings for future leverage*
+*Capture learnings for future leverage, and keep the human learning too*
 
 ### What Compounding Means
 
-Every hard-won insight should make future work easier. Compounding is how you build leverage over time.
+Every hard-won insight should make future work easier. Compounding is how leverage builds over
+time. Two things compound: the system (wisdom, skills, operatives, context) and the person. A
+codebase and a toolset keep getting more capable on their own. The person's ability to judge
+them does not, unless something forces the learning. Compound does both, every cycle.
 
-**Ask after every significant task:**
-1. Did we learn something worth remembering?
-2. Did we build expertise worth encoding?
-3. Should we update existing patterns?
+### The Compound close
 
-### Compound Triggers
+Three questions, in this order, before anything is written. Spaced repetition is recall, not
+re-reading, so the first question is a retrieval.
 
-| Trigger | Compound Action |
-|---------|-----------------|
-| Debugging took 30+ minutes | Add to stack-wisdom |
-| Discovered a gotcha that generalizes | Add to stack-wisdom |
-| Discovered a repo-specific gotcha | Add to that project's CLAUDE.md Gotchas section |
-| Built domain expertise | Consider operative |
-| Found better pattern | Update existing wisdom |
-| Solved novel problem | Document approach |
-| Made architectural decision | Record in ADR or wisdom |
+1. **Did we apply an old lesson?** Search wisdom and knowledge with the cycle as the query
+   (project, files touched, prompts, skills used) and surface the matches. The user confirms
+   which were used. Each confirmation writes `last_applied:` with today's date on the entry.
+   That date is the ledger: applied last week needs nothing, never applied in six months is
+   forgotten or dead.
+2. **Does anything rhyme?** The same search, scored against what was learned rather than what
+   was done. A rhyme is the promotion signal (see Rhyming lessons).
+3. **Is there anything new to compound?** Route it through the fork table. "Nothing" is an
+   acceptable answer and has to be said out loud.
+
+The order matters. Asking what is new first produces a lesson that already exists. Asking what
+was applied first primes the search, and the rhyme question catches the duplicate before it is
+written.
+
+When all three come back empty, the close is one line:
+
+> Compound: nothing applied, no rhymes, nothing new.
+
+### Forks, not rungs
+
+The routing question is "what kind of thing did we learn?" Magnitude decides only whether to
+capture at all. The destination depends on the shape of the thing, never on escalation.
+
+| Learned | Home | Tool |
+|---|---|---|
+| A fact about how something works or is configured | stack-knowledge | `/run-add-knowledge` |
+| A lesson, pattern, or gotcha that generalizes | stack-wisdom | `/run-add-wisdom` |
+| A gotcha bound to one repo | that project's CLAUDE.md gotchas section | edit it |
+| A repeatable procedure | a skill | new or extended SKILL.md |
+| Something Claude must know every session | context (CLAUDE.md at the right level) | Shannon decides the level |
+| Judgment in a domain, across many problems | an operative | `/run-create-operative` |
+| A line of work with its own roadmap | a project | `/run-organize-project` |
+| A repo learning in the ce-compound shape | `docs/solutions/` | `ce-compound`, where installed |
+
+Two forks are judgment calls rather than type matches, so each gets a test.
+
+**Skill or context.** Context if Claude needs to *know* it every session: a rule, a constraint,
+a fact about the environment. Skill if Claude needs to *do* it on demand: a procedure with
+steps, inputs, and an output. A thing that is both gets a one-line pointer in context and the
+procedure in a skill.
+
+**Operative or project.** An operative encodes judgment: how to think about a domain, applied
+across many problems. A project encodes work: a roadmap, a repo, deliverables. The work may
+later produce the operative. The operative never substitutes for the work.
+
+### Rhyming lessons
+
+A lesson that recurs is a procedure or a rule that never got written down. Before any wisdom or
+knowledge write, run the rhyme check (`/run-search-wisdom`, `/run-search-knowledge`) and act on
+the outcome:
+
+| Outcome | Action |
+|---|---|
+| No rhyme | Write the entry. First occurrence. |
+| One rhyme | Do not write a second entry. Promote: route through the skill-or-context fork. Add `rhymes_with:` on the original pointing at this occurrence, and `promoted_to:` once the skill or rule exists. |
+| Rhyme with an entry already promoted | The promotion did not hold. Fix the skill or the rule. Do not add a third copy. |
+
+This is the debugging circuit breaker (same error seen twice escalates) applied to learning.
+
+### The human rung
+
+The system compounding while the person does not is the failure this rung exists to prevent.
+The rung is a contract with two implementations, and it runs for MODERATE and HIGH cycles.
+
+**The contract**, reduced from the four practices in Every's "To Read, Or Not to Read the Code":
+
+1. Walk the mechanics of what was built: where it starts, what happens next, where the data goes.
+2. Recover why one safeguard or design choice exists.
+3. Predict before seeing: a short quiz taken before the explanation, so the gap between the
+   guess and the mechanism is visible.
+
+**Preferred: `ce-explain`** (compound-engineering plugin), in diff mode with "Quiz me." It does
+all three with a prediction protocol and leaves a durable artifact. Its recap mode covers the
+weekly review ("what happened this week?"). Use it for HIGH cycles and weekly recaps. It is
+present when it appears in the session's available skills; do not probe the filesystem for it.
+
+**Fallback: three questions in chat.** No artifact, no run directory. Ask the prediction
+question first, walk the mechanics, then name one design rationale. Use it when ce-explain is
+not installed, and by default for MODERATE cycles, where ce-explain's ceremony is more than the
+moment warrants.
+
+Two prompts from the same article belong in the close as questions, not mechanisms: what is
+the measurable learning goal for this cycle, and is this a task the person has been routing
+around for years and should do by hand once.
 
 ### Stack-Wisdom
-
-Capture patterns and insights:
 
 ```
 /run-add-wisdom "OAuth implementation gotchas"
 ```
 
-Good wisdom includes:
-- The problem and how you recognize it
-- The solution and why it works
-- Prevention for next time
-- Trigger keywords for search
+Good wisdom includes the problem and how to recognize it, the solution and why it works,
+prevention for next time, and trigger keywords for search. Entries carry `last_applied:`,
+`rhymes_with:`, and `promoted_to:` when those apply.
 
 ### Operatives
-
-When you've built deep expertise in a domain:
 
 ```
 /run-create-operative
 ```
 
-Consider an operative when:
-- You've solved multiple related problems
-- Domain knowledge is substantial
-- Future projects will need this expertise
-- The knowledge is specific to your org
+An operative is the judgment fork: several related problems solved, substantial domain
+knowledge, future projects that will need it, and knowledge specific to the org.
 
 ### CLAUDE.md Updates
-
-For project or org-level learnings, consider updating CLAUDE.md:
 
 ```
 /run-consult-expert shannon "Should this OAuth pattern go in our CLAUDE.md?"
 ```
 
-Shannon can help decide:
-- Project-specific gotcha → Project CLAUDE.md
-- Org-wide pattern → Org CLAUDE.md
-- Personal preference → Workspace CLAUDE.md
+Shannon decides the level: a project-specific gotcha goes in the project CLAUDE.md, an org-wide
+pattern in the org CLAUDE.md, a personal preference in the workspace CLAUDE.md.
 
 ### Compound Checklist
 
 ```markdown
-## Compound: [Feature Name]
+## Compound: [Cycle Name]
 
-### Wisdom Capture
-- [ ] Any debugging insights? → `/run-add-wisdom`
-- [ ] Any gotchas discovered? → `/run-add-wisdom`
-- [ ] Any patterns worth reusing? → `/run-add-wisdom`
+### The close
+- [ ] Applied: [entries confirmed, `last_applied` written] or none
+- [ ] Rhymes: [entry and action] or none
+- [ ] New: [learned thing and its fork] or nothing
 
-### Operative Consideration
-- [ ] Built significant domain expertise?
-- [ ] Will future projects need this?
-- [ ] Worth encoding as an operative? → `/run-create-operative`
-
-### Documentation
-- [ ] CLAUDE.md updates needed? → Shannon
-- [ ] README updates needed?
-- [ ] ADR for architectural decisions?
+### Human rung (MODERATE and HIGH)
+- [ ] Prediction taken before the explanation
+- [ ] Mechanics walked, one rationale recovered
+- [ ] Learning goal for the cycle: [stated]
 
 ### Nothing to compound?
-That's fine for trivial tasks. But if a task took significant effort and there's nothing to compound, ask: "Did we miss an insight?"
+Say so in one line. If a cycle took significant effort and all three questions came back
+empty, ask once: "Did we miss an insight?"
 ```
 
 ---
@@ -409,7 +508,7 @@ Compound: Skip
 Plan:     Brief consideration
 Allocate: Maybe suggest an agent
 Review:   Run tests
-Compound: Offer if non-obvious solution
+Compound: The close, one line unless something was found
 ```
 
 **MODERATE** (multi-file, some unknowns)
@@ -417,7 +516,7 @@ Compound: Offer if non-obvious solution
 Plan:     Think through approach, YAGNI/YAGWYDI check
 Allocate: Use appropriate agents
 Review:   Tests + reviewer agent
-Compound: Prompt for wisdom if applicable
+Compound: The close, forks, and the human rung in chat
 ```
 
 **HIGH** (architectural, unfamiliar, cross-cutting)
@@ -425,7 +524,7 @@ Compound: Prompt for wisdom if applicable
 Plan:     Full planning with experts, document plan
 Allocate: Scout orchestrates, multiple agents
 Review:   Comprehensive: tests, reviewers, E2E, Quinn
-Compound: Always prompt, likely multiple captures
+Compound: The close, forks, and ce-explain with Quiz me where installed
 ```
 
 ---
@@ -490,9 +589,10 @@ For complex tasks, track PARC progress:
 - [ ] Staging validation
 
 ### Compound ◯
-- [ ] OAuth gotchas → stack-wisdom
-- [ ] Auth patterns → stack-wisdom
-- [ ] Consider auth-specialist operative?
+- [ ] Applied: check wisdom for prior OAuth entries, mark `last_applied`
+- [ ] Rhymes: PKCE gotcha rhymes with the 2026-03 token-refresh entry? promote if so
+- [ ] New: OAuth provider quirks → wisdom; auth setup steps → skill?
+- [ ] Human rung: ce-explain on the auth diff, Quiz me
 ```
 
 ---
@@ -504,4 +604,4 @@ For complex tasks, track PARC progress:
 | **Plan** | `/run-consult-expert scout/maya/archer`, `/run-search-wisdom` |
 | **Allocate** | `/run-consult-expert [specialist]`, `/run-consult-operative` |
 | **Review** | `/review`, test runners, reviewer agents |
-| **Compound** | `/run-add-wisdom`, `/run-create-operative` |
+| **Compound** | `/run-search-wisdom` (the close), `/run-add-wisdom`, `/run-add-knowledge`, `/run-create-operative`, `ce-explain` where installed |
