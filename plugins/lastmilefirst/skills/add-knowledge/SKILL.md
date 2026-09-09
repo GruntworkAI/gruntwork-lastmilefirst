@@ -24,7 +24,7 @@ This skill captures **knowledge**, not wisdom. Know the difference:
 - "This is specific to how this project/client works" → **Knowledge**
 - "This will probably be helpful in a different project someday" → **Wisdom**
 
-**Gotchas are not knowledge.** Knowledge holds reference facts — how a thing works. A trap with a
+**Gotchas are not knowledge.** Knowledge holds reference facts (how a thing works). A trap with a
 symptom and a fix goes to the project's CLAUDE.md when it is repo-specific, or to stack-wisdom when
 it generalizes. The project-specific test above does *not* route gotchas here. See the placement
 rule in the `organize-claude` skill.
@@ -87,6 +87,13 @@ If no backend is configured (or adapter unavailable), knowledge is written local
 > "Knowledge saved locally. Consider adding to your team's knowledge base (Confluence, Notion, etc.) for better discoverability."
 
 ## Creation Process
+
+### Step 0: Rhyme check first
+
+Before writing, run `/run-search-knowledge` with the title and summary as the query. A prior
+entry on the same fact is updated, not duplicated. If the search turns up a wisdom entry
+instead (a lesson, not a fact), this is not knowledge; hand it to `/run-add-wisdom`, which runs
+its own rhyme check.
 
 ### Step 1: Identify Knowledge Type
 

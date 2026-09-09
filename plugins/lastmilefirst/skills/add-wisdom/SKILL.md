@@ -24,7 +24,7 @@ This skill captures **wisdom**, not knowledge. Know the difference:
 - "This will probably be helpful in a different project someday" → **Wisdom**
 - "This is specific to how this project/client works" → **Knowledge**
 
-**Gotchas are the exception — there are three destinations, not two.** A trap that only bites in
+**Gotchas are the exception. There are three destinations, not two.** A trap that only bites in
 one repo belongs in that project's CLAUDE.md (`## Dev Gotchas` / `## Deployment Gotchas` /
 `## Usage Gotchas`), not here and not in knowledge. Wisdom takes the gotchas that generalize. See
 the placement rule in the `organize-claude` skill.
@@ -87,6 +87,21 @@ Keywords that signal a specific issue (used by proactive systems).
 
 ## Creation Process
 
+### Step 0: Rhyme check first
+
+Before writing anything, search for a prior lesson this one rhymes with: the same problem,
+mechanism, or trap under a different name. Run `/run-search-wisdom` with the problem statement
+and the symptoms as the query, and act on the outcome:
+
+| Outcome | Action |
+|---|---|
+| No rhyme | Continue to Step 1. First occurrence. |
+| One rhyme | Stop. Do not write a second entry. A lesson that recurs is a procedure or a rule that never got written down, so route it through the skill-or-context fork in the `parc` skill. On the original entry, set `Rhymes with` to this occurrence (date and a few words), and set `Promoted to` once the skill or rule exists. |
+| Rhyme with an entry already promoted | The promotion did not hold. Fix the skill or the rule it points at. Do not add a third copy. |
+
+The Compound close in `parc` runs this same search earlier in the cycle. This step is the guard
+for when `/run-add-wisdom` is invoked directly.
+
 ### Step 1: Gather Context
 
 Ask the user:
@@ -125,6 +140,9 @@ Use this template:
 
 **Type:** [Pattern | Circuit Breaker | Trigger]
 **Added:** [Date]
+**Last applied:** never
+**Rhymes with:** none
+**Promoted to:** none
 
 ## Problem
 
@@ -166,6 +184,19 @@ Use this template:
 3. Write the file
 
 4. Offer to commit: "Should I commit this wisdom to the repo?"
+
+### The three ledger lines
+
+Every entry carries three lines under `Added`, and they are what make wisdom compound instead
+of accumulate:
+
+- **Last applied.** The date the entry was last confirmed as used, written by the Compound
+  close (`/run-search-wisdom --applied <file>`). An entry applied last week needs nothing. An
+  entry never applied in six months is forgotten or dead, and the weekly review decides which.
+- **Rhymes with.** A later occurrence of the same lesson. Set instead of writing a second
+  entry.
+- **Promoted to.** The skill, CLAUDE.md rule, or operative the lesson became once it recurred.
+  A rhyme against a promoted entry means the promotion did not hold.
 
 ## Proactive Wisdom Capture
 

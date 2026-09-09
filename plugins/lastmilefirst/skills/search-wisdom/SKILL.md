@@ -67,6 +67,28 @@ When invoked with a query:
    - Match in symptoms section: high
    - Match in problem description: medium
    - Match in file name: lower
+5. **Show the ledger** on every result: `Last applied`, and `Promoted to` when set. An entry
+   promoted to a skill or rule is reported as such, so the reader goes to the skill, not the
+   entry.
+
+### Compound-close mode
+
+The `parc` Compound close calls this skill twice per cycle with the cycle as the query rather
+than a problem statement.
+
+- **Applied.** Query is what was done: project name, files touched, prompts, skills used.
+  Results are candidates the user confirms. For each confirmed entry, write today's date to
+  `Last applied` (same as `/run-search-wisdom --applied <file>`).
+- **Rhymes.** Query is what was learned. A hit is the promotion signal; hand it to
+  `/run-add-wisdom`, whose Step 0 carries the outcomes table.
+
+### Ledger queries
+
+```
+/run-search-wisdom --applied terraform-workspace-check.md   # mark used today
+/run-search-wisdom --never-applied                          # entries with no Last applied
+/run-search-wisdom --applied-before 2026-03-01              # candidates for the weekly review
+```
 
 ## Output Format
 
@@ -77,6 +99,7 @@ When invoked with a query:
 - **terraform-workspace-check.md** - Pattern: Terraform Workspace Check
   - Triggers: "resource already exists", "unexpected changes in plan"
   - Insight: Always check workspace before plan/apply
+  - Last applied: 2026-08-30
 
 ### Related Patterns
 - **pre-migration-database-syndrome.md** - Pattern: Pre-Migration Database Syndrome
