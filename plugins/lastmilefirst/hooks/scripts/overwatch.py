@@ -59,6 +59,136 @@ def get_lock_file() -> Path:
     return get_state_dir() / "overwatch.lock"
 
 
+
+# ---------------------------------------------------------------------------
+# Invocation log parsing (shared by session_start, stop_hook, review-week)
+# ---------------------------------------------------------------------------
+
+# Skills whose invocation means a learning was captured. Names are normalized
+# (plugin prefix and "run-" stripped), so "lastmilefirst:run-add-wisdom" and
+# "add-wisdom" both count.
+COMPOUND_SKILLS = frozenset({
+    "add-wisdom", "add-knowledge", "create-operative",
+    "ce-compound", "ce-explain",
+})
+
+# Skills whose invocation means a cycle was closed: a review, a PR, a commit,
+# or a strict-PARC run. Any "review-*" skill counts (prefix rule below).
+CLOSING_SKILLS = frozenset({
+    "strict-parc", "code-review", "ce-code-review", "ce-doc-review",
+    "ce-commit", "ce-commit-push-pr", "simplify", "security-review",
+})
+
+# Session-start WARNING fires when a week has at least this many sessions
+# that ran a closing skill and zero compound actions. Tune after a month.
+COMPOUND_WARNING_MIN_CYCLES = 5
+
+
+def normalize_skill_name(name: str) -> str:
+    """'lastmilefirst:run-review-voice' -> 'review-voice'."""
+    if not name:
+        return "unknown"
+    name = name.strip().split(":")[-1]
+    if name.startswith("run-"):
+        name = name[4:]
+    return name or "unknown"
+
+
+def invocation_name_from_payload(payload: Dict[str, Any]) -> str:
+    """Extract the skill or agent name from a PostToolUse hook payload."""
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return "unknown"
+    for key in ("skill", "subagent_type"):
+        val = tool_input.get(key)
+        if isinstance(val, str) and val.strip():
+            return normalize_skill_name(val)
+    return "unknown"
+
+
+def is_compound_skill(name: str) -> bool:
+    return normalize_skill_name(name) in COMPOUND_SKILLS
+
+
+def is_closing_skill(name: str) -> bool:
+    n = normalize_skill_name(name)
+    return n in CLOSING_SKILLS or n.startswith("review-")
+
+
+def parse_invocation_line(line: str) -> Optional[Dict[str, Any]]:
+    """Parse one log line. Accepts legacy 2-field and v2 4-field lines."""
+    parts = line.strip().split("|")
+    if len(parts) < 2:
+        return None
+    try:
+        ts = int(parts[0])
+    except ValueError:
+        return None
+    return {
+        "ts": ts,
+        "kind": parts[1] or "unknown",
+        "name": normalize_skill_name(parts[2]) if len(parts) > 2 and parts[2] else "",
+        "session": parts[3] if len(parts) > 3 else "",
+    }
+
+
+def read_invocations(since: int, path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """All invocations at or after `since` (epoch seconds), oldest first."""
+    path = path or get_invocations_file()
+    if not path.exists():
+        return []
+    out: List[Dict[str, Any]] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                rec = parse_invocation_line(line)
+                if rec and rec["ts"] >= since:
+                    out.append(rec)
+    except IOError:
+        return []
+    return out
+
+
+def compound_summary(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Count compound actions and closing sessions in a set of records.
+
+    Returns {"compound": int, "closing_sessions": int, "sessions": int}.
+    Records without a session id (legacy lines) cannot be attributed to a
+    session and are counted only in "compound".
+    """
+    compound = 0
+    closing: set = set()
+    sessions: set = set()
+    for r in records:
+        name = r.get("name") or ""
+        if not name:
+            continue
+        if is_compound_skill(name):
+            compound += 1
+        if r.get("session"):
+            sessions.add(r["session"])
+            if is_closing_skill(name):
+                closing.add(r["session"])
+    return {"compound": compound, "closing_sessions": len(closing), "sessions": len(sessions)}
+
+
+def session_needs_compound_nudge(session_id: str, records: List[Dict[str, Any]]) -> bool:
+    """True when this session ran a closing skill and no compound skill."""
+    if not session_id:
+        return False
+    mine = [r for r in records if r.get("session") == session_id and r.get("name")]
+    if not any(is_closing_skill(r["name"]) for r in mine):
+        return False
+    return not any(is_compound_skill(r["name"]) for r in mine)
+
+
+COMPOUND_NUDGE = (
+    "Compound close: a cycle closed this session with nothing captured. "
+    "Did we apply an old lesson? Does anything rhyme? Is there anything new? "
+    "(one line if all three are empty)"
+)
+
+
 def get_invocations_file() -> Path:
     """Get the path to the invocations log."""
     return get_state_dir() / "invocations.log"

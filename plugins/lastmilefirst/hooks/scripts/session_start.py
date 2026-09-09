@@ -25,7 +25,12 @@ from overwatch import (
     resolve_context,
     get_scoped_state,
     get_plugins_dir,
+    get_state_dir,
     get_invocations_file,
+    parse_invocation_line,
+    read_invocations,
+    compound_summary,
+    COMPOUND_WARNING_MIN_CYCLES,
     get_tmp_dir,
     get_lock_file,
     file_lock,
@@ -229,57 +234,61 @@ def _check_plugin_updates() -> List[str]:
 
 
 def check_usage_stats() -> List[str]:
-    """Generate usage statistics for the past week."""
+    """Usage statistics for the past week, plus the compound counter."""
     invocations_file = get_invocations_file()
     if not invocations_file.exists():
         return []
 
-    week_ago = int(time.time()) - 604800
-    month_ago = int(time.time()) - 2592000
+    now = int(time.time())
+    week_ago = now - 604800
+    month_ago = now - 2592000
 
-    weekly_invocations: List[str] = []
-    retained_lines: List[str] = []
-
+    # Prune to one month, with file locking to avoid racing log_invocation.
     try:
         with open(invocations_file, encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split("|")
-                if len(parts) >= 2:
-                    try:
-                        ts = int(parts[0])
-                        if ts >= month_ago:
-                            retained_lines.append(line)
-                        if ts >= week_ago:
-                            weekly_invocations.append(parts[1])
-                    except ValueError:
-                        continue
-
-        # Prune old entries with file locking to prevent race with log_invocation
+            retained = [ln.rstrip("\n") for ln in f if ln.strip()]
+        retained = [ln for ln in retained
+                    if (parse_invocation_line(ln) or {}).get("ts", 0) >= month_ago]
         with file_lock(get_lock_file()):
             with open(invocations_file, 'w', encoding='utf-8') as f:
-                if retained_lines:
-                    f.write('\n'.join(retained_lines) + '\n')
-
+                if retained:
+                    f.write('\n'.join(retained) + '\n')
     except IOError:
         return []
 
-    if not weekly_invocations:
+    # Prune stop-hook nudge flags older than a week.
+    try:
+        for flag in get_state_dir().glob("compound-nudged-*"):
+            if flag.stat().st_mtime < week_ago:
+                flag.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    weekly = read_invocations(week_ago, invocations_file)
+    if not weekly:
         return []
 
-    results = [f"{len(weekly_invocations)} skill invocations this week"]
+    results = [f"{len(weekly)} skill invocations this week"]
 
-    # Count top skills
-    counts = Counter(s for s in weekly_invocations if s != "unknown")
+    # Top skills by name. Legacy lines carry no name and are skipped here.
+    counts = Counter(r["name"] for r in weekly if r["name"] and r["name"] != "unknown")
     if counts:
         top = counts.most_common(3)
-        top_str = " ".join(f"{name} ({count})" for name, count in top)
-        results.append(f"   Top: {top_str}")
+        results.append("   Top: " + " ".join(f"{n} ({c})" for n, c in top))
+
+    summary = compound_summary(weekly)
+    results.append(
+        f"{summary['compound']} compound actions this week "
+        f"({summary['closing_sessions']} sessions closed a cycle)"
+    )
+    if summary["compound"] == 0 and summary["closing_sessions"] >= COMPOUND_WARNING_MIN_CYCLES:
+        results.append(
+            f"WARNING: {summary['closing_sessions']} sessions closed a cycle this week and "
+            f"nothing was compounded. Run the Compound close on the next one: applied, rhymes, new."
+        )
 
     # Occasional prompt (roughly 1 in 10)
-    if random.randint(0, 9) == 0 and len(weekly_invocations) >= 10:
+    if random.randint(0, 9) == 0 and len(weekly) >= 10:
         results.append("   Enjoying these plugins? Consider starring their repos!")
 
     return results
