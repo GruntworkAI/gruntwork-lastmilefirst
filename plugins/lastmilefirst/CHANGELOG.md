@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-08
+
+### Added
+
+- **parc: entry points and posture.** A handed draft enters at Review directly; discovery is the first move of Plan and the proposal precedes the artifact; the five elements are Plan's completeness test in both directions; "no PARC" is the escape hatch. PARC now applies at every scale, one exchange to a multi-agent build, and every cycle closes on Compound with a one-line ceiling when nothing was found.
+- **parc: the Compound close.** Three questions in a fixed order (applied, rhymes, new), a fork table routing a learning by kind rather than by escalation, two named tests (skill or context, operative or project), rhyming lessons as the promotion signal, and a human rung (predict, mechanics, rationale) with `ce-explain` preferred and a three-question fallback in chat.
+- **strict-parc:** the final gate requires the Compound close and the human rung.
+- **add-wisdom, add-knowledge:** rhyme check before every write. Entries carry `Last applied`, `Rhymes with`, `Promoted to`.
+- **search-wisdom:** shows the ledger, serves the Compound close's applied and rhymes queries, and marks entries applied (`--applied`, `--never-applied`, `--applied-before`).
+- **overwatch:** counts compound actions per week beside skill invocations, warns when five sessions closed a cycle with nothing compounded, and nudges once per session at turn end when a closing skill ran without a compound skill.
+
+### Fixed
+
+- **overwatch:** the invocation log recorded only the tool kind ("skill" or "agent"), so the weekly "Top:" line never named a real skill. The hook now reads the payload and logs skill name and session id. Legacy lines still parse.
+
+
 ## [0.30.0] - 2026-09-04
 
 ### Added

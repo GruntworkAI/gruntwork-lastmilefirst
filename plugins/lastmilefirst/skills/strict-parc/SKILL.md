@@ -71,14 +71,21 @@ Strict PARC creates a tracking file and enforces gates:
 
 ### Gate 4: Compound → Done
 
+The Compound close runs three questions in a fixed order (see the `parc` skill): applied,
+rhymes, new. Then the human rung. None can be left blank; "none" and "nothing" are answers.
+
 **Cannot mark done until:**
-- [ ] Wisdom capture considered (prompted)
-- [ ] Operative creation considered (prompted)
-- [ ] CLAUDE.md updates considered (prompted)
-- [ ] Explicit "nothing to compound" if skipping
+- [ ] Applied: prior wisdom or knowledge entries this cycle used are named, and `Last applied`
+      is written on each, or "none"
+- [ ] Rhymes: the rhyme check ran against what was learned, and any rhyme was promoted rather
+      than written twice, or "none"
+- [ ] New: each new learning is routed through the fork table to its home, or "nothing"
+- [ ] Human rung: prediction taken before the explanation, mechanics walked, one design
+      rationale recovered (ce-explain with Quiz me, or the three questions in chat)
+- [ ] Learning goal for the cycle stated
 
 **Sign-off prompt:**
-> "Have you captured all learnings? [Y/N]"
+> "Compound close complete: applied, rhymes, new, human rung. Mark done? [Y/N]"
 
 ## Tracker File Format
 
@@ -174,18 +181,17 @@ Created at `.claude/work/parc/[task-slug].md`:
 
 **Status:** ◯ Pending | ⏳ In Progress | ✓ Complete
 
-### Wisdom Capture
-- [ ] Debugging insights? [Added: filename / None]
-- [ ] Gotchas discovered? [Added: filename / None]
-- [ ] Patterns worth reusing? [Added: filename / None]
+### The close (in this order)
+- [ ] Applied: [entries used this cycle, `Last applied` written] / none
+- [ ] Rhymes: [entry it rhymes with, promotion action] / none
+- [ ] New: [learning] → [fork: knowledge | wisdom | project gotcha | skill | context | operative | project]
+      / nothing
 
-### Operative Consideration
-- [ ] Domain expertise built? [Yes/No]
-- [ ] Operative created? [Name / Not needed]
-
-### Documentation
-- [ ] CLAUDE.md updates? [Yes/No - what]
-- [ ] README updates? [Yes/No - what]
+### Human rung
+- [ ] Prediction taken before the explanation
+- [ ] Mechanics walked, one rationale recovered
+- [ ] Tool: [ce-explain Quiz me / three questions in chat]
+- [ ] Learning goal for this cycle: [stated]
 
 **Compound Sign-off:** ◯ Pending
 
@@ -195,8 +201,10 @@ Created at `.claude/work/parc/[task-slug].md`:
 
 **Completed:** [timestamp]
 **Total Duration:** [time]
-**Wisdom Added:** [list or "none"]
-**Operatives Created:** [list or "none"]
+**Applied:** [entries or "none"]
+**Rhymes promoted:** [list or "none"]
+**New, by fork:** [list or "nothing"]
+**Human rung:** [tool used, learning goal]
 ```
 
 ## Strict Mode Behaviors

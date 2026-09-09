@@ -197,7 +197,9 @@ They compound: CLAUDE.md tells Claude about your project, skills organize it, ag
 
 ### The PARC Workflow
 
-Claude follows the PARC workflow by default, scaling ceremony to task complexity:
+Claude follows the PARC workflow by default, scaling ceremony to task complexity. It applies at
+every scale: one exchange that produces an answer and a multi-agent build run the same four
+steps.
 
 ```
 Plan → Allocate → Review → Compound
@@ -205,10 +207,16 @@ Plan → Allocate → Review → Compound
 
 | Step | Purpose | Trivial Task | Complex Task |
 |------|---------|--------------|--------------|
-| **Plan** | Think before doing | Skip | Full planning, experts |
-| **Allocate** | Delegate to agents | Direct execution | Orchestrate multiple agents |
-| **Review** | Verify correctness | Quick check | Tests, reviewers, E2E |
-| **Compound** | Capture learnings | Skip | Prompt for wisdom/operative |
+| **Plan** | Discovery first, then the proposal before the artifact | Skip | Full planning, experts, the five elements |
+| **Allocate** | Delegate to agents (or to yourself) | Direct execution | Orchestrate multiple agents |
+| **Review** | Verify correctness; a handed draft enters here directly | Quick check | Tests, reviewers, E2E |
+| **Compound** | The close: applied, rhymes, new; then the human rung | Skip | Forks, promotion, ce-explain with Quiz me |
+
+**Every cycle closes on Compound.** Three questions in order: did we apply an old lesson, does
+anything rhyme with a previous one, is there anything new. A lesson that recurs is promoted to a
+skill or a rule instead of being written twice. Then the human rung: predict, walk the
+mechanics, recover one design rationale, so the person compounds along with the system. When
+all of it comes back empty, the close is one line.
 
 **The key tension:** YAGNI vs YAGWYDI
 - **YAGNI** (You Aren't Gonna Need It) - Don't overbuild features
@@ -477,12 +485,23 @@ Stack-wisdom is your org's institutional insight - patterns that took time to le
 
 ### The Compound Loop
 
-1. **Encounter a problem** - Something takes 30+ minutes to debug
-2. **Solve it** - With or without expert help
-3. **Capture the insight** - `/run-add-wisdom` to add the pattern
-4. **Future benefit** - Next time, `/run-search-wisdom` finds it instantly
+1. **Encounter a problem.** Something takes 30+ minutes to debug.
+2. **Solve it.** With or without expert help.
+3. **Close the cycle.** Applied? Rhymes? New? The rhyme check runs before any write.
+4. **Route the learning by kind.** A fact goes to knowledge, a lesson to wisdom, a repo gotcha
+   to that CLAUDE.md, a procedure to a skill, a standing rule to context, domain judgment to an
+   operative, a roadmap to a project.
+5. **Promote on recurrence.** The second time a lesson appears it becomes a skill or a rule.
+   Entries carry `Last applied`, `Rhymes with`, and `Promoted to`.
+6. **Compound the human.** ce-explain with Quiz me on high cycles, three questions in chat on
+   moderate ones.
 
-This is the "compound" in compound engineering - every hard-won insight becomes future leverage.
+Overwatch counts compound actions each week beside skill invocations, warns when a week closes
+five cycles with nothing captured, and nudges once at the end of a session that closed a cycle
+without a Compound step.
+
+This is the "compound" in compound engineering. Every hard-won insight becomes future leverage,
+and the person keeps up with the system.
 
 ### Stack-Wisdom Structure
 
