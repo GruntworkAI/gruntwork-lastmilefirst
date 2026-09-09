@@ -1,6 +1,6 @@
 # Plan: PARC everywhere, Compound as forks, rhyming lessons, and the human rung
 
-**Status:** APPROVED 2026-09-08, building (U1 started)
+**Status:** BUILT 2026-09-08. U1 to U4 and U6 merged as PR #27, released v0.31.0. U5 on stack-wisdom main (`c2e29ea`); settings v2.6 paste pending. Open: U7 verification after `/reload-plugins`. U8 deferred to a later release.
 **Created:** 2026-09-08
 **Type:** feature (parc, strict-parc, add-wisdom, add-knowledge, overwatch) + docs propagation (stack-wisdom, CLAUDE.md, app settings)
 **Version:** v1.3 (2026-09-08). Open question 3 settled: no separate escape hatch for the Compound close. Two clarifications do that work: the close has a one-line cost ceiling when nothing was found, and it runs once per cycle (a unit of work that produced an artifact or a decision), not once per message. All three questions are now settled and the plan is approved.
