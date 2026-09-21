@@ -2,7 +2,9 @@
 
 > Build the delivery infrastructure before the product.
 
-Claude Code plugin for setting up the "last mile" of Claude-assisted development: environment configuration, project structure, quality gates, and expert access via parallel AI agents.
+An opinionated Claude Code plugin for projects where people and coding agents both do the work. Most of its opinions answer one question: what if someone else wants to contribute to this project?
+
+It sets up the "last mile" of Claude-assisted development first: environment configuration, project structure, quality gates, and expert access via parallel AI agents. After setup, a session-start check called Overwatch identifies where a project has drifted from it.
 
 ## Philosophy
 
@@ -13,7 +15,24 @@ Most developers build features first and figure out deployment, configuration, a
 - Establish quality gates before shipping
 - Set up expert access before you're stuck
 
+The same logic applies when several people and their agents work on one project. Each person will end up with a personal system. If those systems come first, the team spends the last mile reconciling them. This plugin sets up the shared structure first (folders, tiered CLAUDE.md, org-level wisdom), so the project is consistent where it has to be, and each person can still build their own setup on top.
+
 For a deeper exploration of the ideas behind this, see [Last Mile First: Fast Alone, Far Together](https://outsideshot.substack.com/p/last-mile-first-fast-alone-far-together).
+
+## What the structure is for
+
+Most of the structure answers one question: what if someone else wants to contribute to this project? The someone else may be a teammate, a coding agent starting a new session with no memory of the last one, or you a few months later. To contribute, they need to find what is current and know where new work goes, without asking.
+
+- `docs/` holds what someone else needs and what stays true.
+- `.claude/work/` holds what is in progress, in dated files, so a newcomer (or their agent) can see what was happening and why.
+- Work untouched for 30 days is archived, so an old plan doesn't look current.
+- `CLAUDE.md` is tiered (workspace, org, project), so shared standards are inherited and personal preferences stay personal.
+
+The "What goes where" table under [Project Structure](#project-structure) shows where each kind of writing belongs.
+
+### Keeping it that way
+
+Structure drifts once a project is underway, so the plugin keeps checking it. Overwatch runs at the start of each Claude Code session and identifies drift: uncommitted changes, todos older than 14 days, a project overdue for review or organizing, a missing `CLAUDE.md` or archetype, a stale secret scan. This is soft enforcement: Overwatch reports and recommends (doesn't block), and the `review-*` and `organize-*` skills do the fixing when you run them. `/run-overwatch` shows the current alerts at any time.
 
 ## Concepts
 
