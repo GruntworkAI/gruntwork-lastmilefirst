@@ -28,8 +28,8 @@ Marketplace for the lastmilefirst plugin: opinionated structure and workflow for
 
 ## Also
 
-The GitHub repo description is set in GitHub's settings (i.e. not in a file). It can change at any time, independent of a release:
+The GitHub repo description is set in GitHub's settings (i.e. not in a file). Done 2026-09-21, with wording the author approved. Do not overwrite it when updating the manifests:
 
-```bash
-gh repo edit GruntworkAI/gruntwork-lastmilefirst --description "Opinionated structure and workflow for projects built by people and coding agents"
+```
+Opinionated Claude Code plugin for projects built by people and coding agents. Sets up the structure that lets someone else contribute, then identifies drift as the project ages.
 ```
