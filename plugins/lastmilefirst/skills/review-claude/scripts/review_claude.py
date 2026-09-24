@@ -13,6 +13,7 @@ project's declared archetype (Deployable, Usable, Referenceable, Experimental).
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -385,17 +386,46 @@ def find_projects(org_path: Path) -> list[tuple[str, Path, bool]]:
     return results
 
 
+# --tier choices. "workspace" is the user-facing name for the top tier; the code
+# still calls it "user" internally (template names, report keys), so map here.
+TIER_CHOICES = ("workspace", "user", "org", "project")
+_TIER_TO_LEVEL = {"workspace": "user", "user": "user", "org": "org", "project": "project"}
+_LEVEL_TO_TIER = {"user": "workspace", "org": "org", "project": "project"}
+
+
+def classify_tier(file_path: Path, workspace: Path) -> tuple[str, str]:
+    """
+    Classify a CLAUDE.md as user, org, or project level, and say how.
+
+    Returns (level, reason). An org declares itself with `.claude/org.json`, and
+    that is checked first because it holds at any depth. Position relative to the
+    workspace root is the fallback, since orgs without org.json are supported.
+    Callers must pass an unresolved path: resolving a symlinked CLAUDE.md moves it
+    to wherever its source lives, and the position test then runs on the wrong path.
+    """
+    parent = file_path.parent
+    if (parent / ".claude" / "org.json").is_file():
+        return "org", "found .claude/org.json"
+
+    grandparent = parent.parent
+    if parent == workspace:
+        return "user", "by position"
+    elif grandparent == workspace:
+        return "org", "by position"
+    else:
+        return "project", "by position"
+
+
 def determine_level(file_path: Path, workspace: Path) -> str:
     """Determine if a file is user, org, or project level."""
-    parent = file_path.parent
-    grandparent = parent.parent
+    return classify_tier(file_path, workspace)[0]
 
-    if parent == workspace:
-        return "user"
-    elif grandparent == workspace:
-        return "org"
-    else:
-        return "project"
+
+def resolve_tier(file_path: Path, workspace: Path, override: Optional[str] = None) -> tuple[str, str]:
+    """Apply a --tier override if given, else detect. Returns (level, reason)."""
+    if override:
+        return _TIER_TO_LEVEL[override], "set by --tier"
+    return classify_tier(file_path, workspace)
 
 
 def main():
@@ -404,6 +434,11 @@ def main():
     parser.add_argument("--suggest", action="store_true", help="Generate suggestions for gaps")
     parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm suggestion generation")
     parser.add_argument("--fix", action="store_true", help="Add inferred archetype labels to CLAUDE.md files missing them")
+    parser.add_argument(
+        "--tier",
+        choices=TIER_CHOICES,
+        help="Override tier detection for --file (\"user\" is an alias for workspace)",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -418,12 +453,15 @@ def main():
 
     # Single file mode
     if args.file:
-        file_path = args.file.expanduser().resolve()
+        # Absolute but NOT resolved: a symlinked CLAUDE.md must be classified
+        # where it sits, not where its source lives.
+        file_path = Path(os.path.abspath(args.file.expanduser()))
         if not file_path.exists():
             print(f"Error: {file_path} does not exist")
             return
 
-        level = determine_level(file_path, workspace)
+        level, tier_reason = resolve_tier(file_path, workspace, args.tier)
+        print(f"Tier: {_LEVEL_TO_TIER[level]} ({tier_reason})")
 
         # For project-level, detect archetype first
         archetype = None
