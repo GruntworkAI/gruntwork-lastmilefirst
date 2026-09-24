@@ -59,6 +59,15 @@ gruntwork-lastmilefirst/
 3. Add entry to `.claude-plugin/marketplace.json` plugins array
 4. Add row to README.md version table
 
+## Public-Repo Content Rule
+
+This repo is public. Nothing committed here names a client, an engagement, or a private person.
+Skill text, example files, fixtures, tests, commit messages, PRs, and release notes reconstruct
+their examples. Provenance is a date and a generic context ("a README review," "an engagement's
+first round"), never a name or a quote. Our own project names are allowed where the reader needs
+them and dropped where they do not. The same holds for security specifics: describe the class of
+problem, not the incident.
+
 ## Development Environment
 
 This repo ships Python scripts but has **no `pyproject.toml` and no Poetry env** — unlike griffith
