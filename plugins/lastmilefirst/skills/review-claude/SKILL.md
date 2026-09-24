@@ -39,7 +39,22 @@ python3 ${SKILL_ROOT}/scripts/review_claude.py
 
 Present the review summary. Highlight files with gaps and what sections are missing.
 
-### Step 2: Offer suggestions
+### Step 2: Check across tiers (single file)
+
+When reviewing one workspace or org file, run it in single-file mode. After the section check, the
+script prints two cross-tier results (see Cross-Tier Checks below): an inventory of the file's
+project table against the directories on disk, and a list of topics that more than one tier covers.
+
+```bash
+python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/CLAUDE.md
+```
+
+Then, for each topic the script lists under more than one tier, read both sections and report
+anything the lower tier says that the higher tier contradicts, quoting the line from each file.
+Label this part of the report as a reading, not a scripted check: the script only says where the
+overlaps are, and the comparison is your judgment.
+
+### Step 3: Offer suggestions
 
 If gaps were found, ask: "I found gaps in N files. Want me to generate suggestion templates?"
 
@@ -155,6 +170,32 @@ precisely because heading presence is all it measures.
 - Projects
 
 **Project-level** (archetype-specific — see table above)
+
+## Cross-Tier Checks
+
+One rule covers the tiers: a lower tier may narrow or extend a higher one, and must not restate or
+contradict it.
+
+Two checks are scripted, and both measure rather than judge:
+
+| Check | What it compares | How it reports |
+|-------|------------------|----------------|
+| **Inventory** | The org file's `## Projects` table, or the workspace file's `## Project Directory Mapping`, against the project directories on disk | "27 of 32 project directories are listed", the directories no row names, and the rows that name no directory on disk |
+| **Overlapping topics** | Which tiers (the file under review and the files above it) have a heading on tools or on the project inventory | One line per topic naming each tier's heading and file |
+
+A directory counts as listed when its name appears anywhere in a table row, whether bare, inside a
+path, or as a `[name](path)` link. A row that names no directory on disk is a finding at the org
+tier. At the workspace tier it is informational, because a mapped project may exist on GitHub
+without being cloned here. If the section exists but has no table the script can read, it says
+"could not read the table" instead of reporting every directory as unlisted. If the section is
+absent, it says so in one line and skips the check.
+
+The full-workspace walk adds the inventory as one line per workspace and org file and leaves the
+section findings as they were. The overlap list and the contradiction reading run only in
+single-file mode.
+
+Contradictions are not scripted. The overlap list tells Claude which pairs of sections to read (see
+Step 2).
 
 ## Update Overwatch
 
