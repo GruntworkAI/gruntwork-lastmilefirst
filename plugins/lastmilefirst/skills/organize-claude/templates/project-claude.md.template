@@ -1,6 +1,9 @@
 ---
 # Required sections for project-level CLAUDE.md
 # Used by organize-claude --review to check for gaps
+# Reader: someone who has never seen this repo, or an agent starting a fresh session.
+# Answers: what do I need to change or run this, without asking?
+# Test: could a newcomer act on it today? If it also applies to sibling projects, move it up.
 required_sections:
   - header: "## Development Environment"
     description: "Runtime setup, start commands"

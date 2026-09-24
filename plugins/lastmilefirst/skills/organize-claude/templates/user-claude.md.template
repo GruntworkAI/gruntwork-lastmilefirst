@@ -1,6 +1,9 @@
 ---
 # Required sections for the workspace-level CLAUDE.md
 # Used by organize-claude --review to check for gaps
+# Reader: you, and your agents, on every project.
+# Answers: how do I work, and where is everything?
+# Test: would a teammate reading this find your preferences in their project? Then it is in the wrong place.
 required_sections:
   - header: "## Workspace Organization"
     description: "Directory structure, org separation"
