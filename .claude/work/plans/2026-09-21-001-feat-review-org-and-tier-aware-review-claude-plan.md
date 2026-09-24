@@ -16,8 +16,9 @@ refs: []
 > 47, review-org 10, hooks 63, audit-plugin 189. Verification: the org file at stack-wisdom
 > `88fa9fb` reports 16 unlisted directories and the current file none; the full walk keeps its 34
 > files and section findings with four added inventory lines; `~/Code/gruntwork/CLAUDE.md` now
-> classifies as org via org.json. Still open: the U2 purpose table (README section and template
-> comment blocks), waiting on the author's wording. Two follow-ups filed as todos: archetype
+> classifies as org via org.json. U2 purpose table landed 2026-09-24 in the author's revised form
+> (a reader column and a per-row test replace the exclusions column; "an individual's preferences
+> never travel down" so an org can carry a house voice). Two follow-ups filed as todos: archetype
 > detection misses the bold-label form; the remaining "user-level" mentions listed in the PR.
 >
 > **v1.1 (2026-09-24).** Build started on `feat/review-org`. Retargeted from 0.34.0 to 0.34.0,
