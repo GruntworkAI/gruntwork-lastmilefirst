@@ -60,8 +60,10 @@ When asked for a full editorial pass:
    doing work, decide which wins and say why. This is your judgment, not a formula.
 3. **Apply the author's house rules** from `review-voice` (their user-level CLAUDE.md, or
    what they have told you) as single-instance findings. Everything else is density.
-4. Return **one reconciled result**: a combined verdict, both scores, and a single rewrite,
-   flagging each edit where the lenses disagreed and how you called it. Never two stapled reports.
+4. Return **one reconciled result**: one findings list with the lens column filled (signal,
+   voice, house), one verdict (ship / hold / rework, the worse of the two lenses, with tier
+   counts), and a single rewrite. Mark each finding where the lenses disagreed as a conflict
+   with a one-line adjudication. Never two stapled reports, and never two scores.
 
 Either lens is callable alone. Dual mode is the default when someone says "review this properly."
 
