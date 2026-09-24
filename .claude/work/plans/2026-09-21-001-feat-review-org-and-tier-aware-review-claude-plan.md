@@ -1,16 +1,25 @@
 ---
 title: review-org, and a review-claude that knows all three tiers
-version: 1.1
+version: 1.2
 date: 2026-09-21
-status: in-progress
+status: built
 type: feat
 component: plugins/lastmilefirst/skills/{review-claude,review-org,review-project,organize-claude,overwatch}
 target_version: 0.34.0
 refs: []
 ---
 
-# review-org, and a review-claude that knows all three tiers (v1.1)
+# review-org, and a review-claude that knows all three tiers (v1.2)
 
+> **v1.2 (2026-09-24).** Built. U1, U3, U4, U5, the rename half of U2, the manifest
+> descriptions, and the 0.34.0 bump are on `feat/review-org` (PR pending). Suites: review-claude
+> 47, review-org 10, hooks 63, audit-plugin 189. Verification: the org file at stack-wisdom
+> `88fa9fb` reports 16 unlisted directories and the current file none; the full walk keeps its 34
+> files and section findings with four added inventory lines; `~/Code/gruntwork/CLAUDE.md` now
+> classifies as org via org.json. Still open: the U2 purpose table (README section and template
+> comment blocks), waiting on the author's wording. Two follow-ups filed as todos: archetype
+> detection misses the bold-label form; the remaining "user-level" mentions listed in the PR.
+>
 > **v1.1 (2026-09-24).** Build started on `feat/review-org`. Retargeted from 0.34.0 to 0.34.0,
 > because 0.33.0 shipped in between (review-voice round three). The three open questions are
 > resolved on their own recommendations: no health score in `review-org`, no session-start alert
