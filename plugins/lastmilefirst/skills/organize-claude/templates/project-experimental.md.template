@@ -1,6 +1,9 @@
 ---
 # Required sections for Experimental project CLAUDE.md
 # Archetype: New project, shape TBD
+# Reader: someone who has never seen this repo, or an agent starting a fresh session.
+# Answers: what do I need to change or run this, without asking?
+# Test: could a newcomer act on it today? If it also applies to sibling projects, move it up.
 required_sections:
   - header: "## Quick Commands"
     description: "Essential commands to get started"

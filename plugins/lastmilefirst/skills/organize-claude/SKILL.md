@@ -1,6 +1,6 @@
 ---
 name: organize-claude
-description: Audits, validates, and scaffolds Claude configuration files (CLAUDE.md, later SKILL.md, rules) across the workspace hierarchy. Ensures consistency between user, org, and project levels.
+description: Audits, validates, and scaffolds Claude configuration files (CLAUDE.md, later SKILL.md, rules) across the workspace hierarchy. Ensures consistency between workspace, org, and project levels.
 ---
 
 # Organize Claude
@@ -9,13 +9,13 @@ Manages Claude configuration across your development workspace. Currently handle
 
 ## Security Model
 
-**IMPORTANT**: The user-level CLAUDE.md lives at `~/Code/` (not `~/`) to establish a security boundary. Claude's scope is intentionally limited to the Code directory tree.
+**IMPORTANT**: The workspace-level CLAUDE.md lives at `~/Code/` (not `~/`) to establish a security boundary. Claude's scope is intentionally limited to the Code directory tree.
 
 ## Hierarchy (3 Levels)
 
 ```
-~/Code/                           # USER LEVEL (security boundary)
-├── CLAUDE.md                     # User-wide settings, often symlinked to VCS
+~/Code/                           # WORKSPACE LEVEL (security boundary)
+├── CLAUDE.md                     # Workspace-wide settings, often symlinked to VCS
 │
 ├── gruntwork/                    # ORG LEVEL (optional)
 │   ├── CLAUDE.md                 # Org-specific overrides (optional)
@@ -35,7 +35,7 @@ Manages Claude configuration across your development workspace. Currently handle
 
 | Level | Location | Purpose | Required? |
 |-------|----------|---------|-----------|
-| User | `~/Code/CLAUDE.md` | Workspace-wide settings, security boundary, project mapping | Yes |
+| Workspace | `~/Code/CLAUDE.md` | Workspace-wide settings, security boundary, project mapping | Yes |
 | Org | `~/Code/{org}/CLAUDE.md` | Org-specific conventions, tech stack, deployment patterns | Optional |
 | Project | `~/Code/{org}/{project}/CLAUDE.md` | Project-specific commands, architecture, gotchas | Recommended |
 
@@ -43,7 +43,7 @@ Manages Claude configuration across your development workspace. Currently handle
 
 ### Current (v1 - CLAUDE.md)
 1. **Audit** - Scans workspace for all CLAUDE.md files, reports coverage
-2. **Validate** - Checks user-level project mappings against actual directories
+2. **Validate** - Checks workspace-level project mappings against actual directories
 3. **Scaffold** - Creates missing org/project CLAUDE.md files from templates
 4. **Sync** - Updates project mappings when new projects are discovered
 5. **Diff** - Identifies contradictions between hierarchy levels
@@ -165,7 +165,7 @@ CLAUDE CONFIGURATION AUDIT
 ==============================================================
 
 Workspace: ~/Code
-User Level: ~/Code/CLAUDE.md
+Workspace Level: ~/Code/CLAUDE.md
   → symlink to gruntwork-stack-wisdom/user-claude-file/CLAUDE.md ✓
 
 ORG COVERAGE
@@ -188,7 +188,7 @@ PROJECT COVERAGE: gruntwork/ (10 projects)
 
 Coverage: 5/10 (50%)
 
-PROJECT MAPPING VALIDATION (user-level)
+PROJECT MAPPING VALIDATION (workspace-level)
 --------------------------------------------------------------
 Projects in ~/Code/CLAUDE.md but not on disk:
   (none)
@@ -205,7 +205,7 @@ POTENTIAL CONTRADICTIONS
 [A] Audit only (no changes)
 [O] Scaffold missing org-level files
 [P] Scaffold missing project-level files
-[U] Update user-level project mappings
+[W] Update workspace-level project mappings
 [F] Full sync (all of the above)
 [Q] Quit
 ```
@@ -373,7 +373,7 @@ Inherits from ~/Code/CLAUDE.md with these additions/overrides:
 Settings cascade down the hierarchy:
 
 ```
-User Level (~/Code/CLAUDE.md)
+Workspace Level (~/Code/CLAUDE.md)
 ├── Workspace-wide policies (snake_case, security)
 ├── Project directory mapping
 ├── Tool references (compound-engineering, Synthasaurus)
@@ -394,7 +394,7 @@ Project Level (~/Code/gruntwork/project/CLAUDE.md)
 
 **Override Rules:**
 - Project can override org settings
-- Org can override user settings
+- Org can override workspace settings
 - Explicit > inherited (if specified at lower level, it wins)
 - Contradictions are flagged for review
 

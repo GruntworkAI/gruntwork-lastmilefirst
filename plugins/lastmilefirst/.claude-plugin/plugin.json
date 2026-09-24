@@ -1,7 +1,7 @@
 {
   "name": "lastmilefirst",
-  "version": "0.33.0",
-  "description": "Last Mile First methodology plugin: PARC workflow (Plan, Allocate, Review, Compound), AI expert agents, org-level operatives and stack-wisdom, and workspace organization.",
+  "version": "0.34.0",
+  "description": "Opinionated structure and workflow for projects built by people and coding agents: project structure, tiered CLAUDE.md, PARC workflow, AI expert agents, org-level operatives and stack-wisdom, and Overwatch drift checks.",
   "author": {
     "name": "Michael Fisher",
     "url": "https://github.com/GruntworkAI"

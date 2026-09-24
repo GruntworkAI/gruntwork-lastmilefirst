@@ -13,6 +13,7 @@ project's declared archetype (Deployable, Usable, Referenceable, Experimental).
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -248,7 +249,7 @@ def show_review_report(reviews: list[dict], level: str) -> list[dict]:
     """Display review results and return files with gaps."""
     files_with_gaps = []
 
-    print(f"\n{level.upper()}-LEVEL CLAUDE.MD REVIEW")
+    print(f"\n{_LEVEL_TO_TIER.get(level, level).upper()}-LEVEL CLAUDE.MD REVIEW")
     print("-" * 60)
 
     for review in reviews:
@@ -297,6 +298,9 @@ def show_review_report(reviews: list[dict], level: str) -> list[dict]:
             _print_alias_hits(via_alias)
         else:
             print(f"\n  {label}: All sections present ✓")
+
+        if review.get("inventory_line"):
+            print(f"    {review['inventory_line']}")
 
     return files_with_gaps
 
@@ -385,17 +389,324 @@ def find_projects(org_path: Path) -> list[tuple[str, Path, bool]]:
     return results
 
 
+# --tier choices. "workspace" is the user-facing name for the top tier; the code
+# still calls it "user" internally (template names, report keys), so map here.
+TIER_CHOICES = ("workspace", "user", "org", "project")
+_TIER_TO_LEVEL = {"workspace": "user", "user": "user", "org": "org", "project": "project"}
+_LEVEL_TO_TIER = {"user": "workspace", "org": "org", "project": "project"}
+
+
+def classify_tier(file_path: Path, workspace: Path) -> tuple[str, str]:
+    """
+    Classify a CLAUDE.md as user, org, or project level, and say how.
+
+    Returns (level, reason). An org declares itself with `.claude/org.json`, and
+    that is checked first because it holds at any depth. Position relative to the
+    workspace root is the fallback, since orgs without org.json are supported.
+    Callers must pass an unresolved path: resolving a symlinked CLAUDE.md moves it
+    to wherever its source lives, and the position test then runs on the wrong path.
+    """
+    parent = file_path.parent
+    if (parent / ".claude" / "org.json").is_file():
+        return "org", "found .claude/org.json"
+
+    grandparent = parent.parent
+    if parent == workspace:
+        return "user", "by position"
+    elif grandparent == workspace:
+        return "org", "by position"
+    else:
+        return "project", "by position"
+
+
 def determine_level(file_path: Path, workspace: Path) -> str:
     """Determine if a file is user, org, or project level."""
-    parent = file_path.parent
-    grandparent = parent.parent
+    return classify_tier(file_path, workspace)[0]
 
-    if parent == workspace:
-        return "user"
-    elif grandparent == workspace:
-        return "org"
+
+def resolve_tier(file_path: Path, workspace: Path, override: Optional[str] = None) -> tuple[str, str]:
+    """Apply a --tier override if given, else detect. Returns (level, reason)."""
+    if override:
+        return _TIER_TO_LEVEL[override], "set by --tier"
+    return classify_tier(file_path, workspace)
+
+
+# --- Cross-tier checks (plan 2026-09-21-001, U3) ------------------------------
+#
+# Two scripted checks, and deliberately no more (the plan's over-building risk:
+# if this needs a third, stop and re-plan). Both measure; neither judges.
+#   1. Inventory against disk: a project table vs the directories present.
+#   2. Overlapping topics: which tiers carry a section on the same topic, so
+#      Claude knows which pairs to read for contradictions.
+
+# The section each tier uses as its project inventory.
+INVENTORY_SECTION = {"user": "Project Directory Mapping", "org": "Projects"}
+
+# Topics more than one template asks for. A heading carries a topic when its
+# text starts with one of the prefixes. Prefix, not substring, so that
+# "snake_case convention (all projects)" is not taken for a projects table.
+OVERLAP_TOPICS = (
+    ("tools", ("development tools", "approved tools", "tools")),
+    ("project inventory", ("project directory mapping", "projects")),
+)
+
+_ATX_LEVEL = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+_TABLE_SEPARATOR = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_PATH_TOKEN = re.compile(r"(?:~|\.{1,2})?/[^\s|`)\]]+")
+
+
+def extract_section(content: str, name: str) -> Optional[tuple[str, str]]:
+    """
+    Return (heading, body) for the section named `name`, or None if absent.
+
+    An exact heading match wins; otherwise the first heading that starts with
+    the name. The body runs to the next heading of the same or higher level,
+    so subsections (the workspace map's per-org tables) are included.
+    """
+    lines = content.splitlines()
+    headings = []  # (line index, level, heading text as written)
+    in_fence = False
+    for i, line in enumerate(lines):
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = _ATX_LEVEL.match(line)
+        if match:
+            headings.append((i, len(match.group(1)), match.group(2).strip()))
+
+    name = name.casefold()
+    chosen = next((h for h in headings if h[2].casefold() == name), None)
+    if chosen is None:
+        chosen = next((h for h in headings if h[2].casefold().startswith(name)), None)
+    if chosen is None:
+        return None
+
+    start, level, text = chosen
+    end = len(lines)
+    for i, lvl, _ in headings:
+        if i > start and lvl <= level:
+            end = i
+            break
+    return text, "\n".join(lines[start + 1:end])
+
+
+def parse_table_rows(body: str) -> list[str]:
+    """
+    Return the data rows of every markdown table in `body`, as raw lines.
+
+    A table is a run of lines starting with `|`. When its second line is a
+    separator, the first is a header and both are dropped.
+    """
+    rows = []
+    block: list[str] = []
+    for line in body.splitlines() + [""]:
+        if line.strip().startswith("|"):
+            block.append(line.strip())
+            continue
+        if block:
+            if len(block) >= 2 and _TABLE_SEPARATOR.match(block[1]):
+                block = block[2:]
+            rows.extend(r for r in block if not _TABLE_SEPARATOR.match(r))
+            block = []
+    return rows
+
+
+def _name_in_row(name: str, row: str) -> bool:
+    """True when `name` appears in the row as a whole token (not inside a longer name)."""
+    return re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w.-])", row) is not None
+
+
+def _row_label(row: str) -> str:
+    """A short name for a row: the last part of its first path, else its first cell."""
+    path = _PATH_TOKEN.search(row)
+    if path:
+        return path.group(0).rstrip("/").rsplit("/", 1)[-1]
+    cells = [c.strip() for c in row.strip().strip("|").split("|")]
+    first = _LINK.sub(r"\1", cells[0] if cells else "")
+    return first.strip("`* ") or row
+
+
+def check_inventory(content: str, level: str, disk_names: list[str]) -> dict:
+    """
+    Compare a tier's project table with the directories on disk.
+
+    Returns a dict with `status`: "absent" (no such section), "unreadable"
+    (section present, no table rows), or "ok". For "ok", also `unlisted`
+    (directories no row names) and `not_on_disk` (rows naming no directory).
+    A directory counts as listed when its name appears anywhere in a row, as a
+    bare name, inside a path, or as a [name](path) link.
+    """
+    section_name = INVENTORY_SECTION.get(level)
+    result = {"status": "absent", "section": section_name, "disk_count": len(disk_names),
+              "unlisted": [], "not_on_disk": [], "row_count": 0}
+    if section_name is None:
+        return result
+    found = extract_section(content, section_name)
+    if found is None:
+        return result
+    result["section"] = found[0]
+    rows = parse_table_rows(found[1])
+    if not rows:
+        result["status"] = "unreadable"
+        return result
+    result["status"] = "ok"
+    result["row_count"] = len(rows)
+    result["unlisted"] = [n for n in disk_names if not any(_name_in_row(n, r) for r in rows)]
+    result["not_on_disk"] = [
+        _row_label(r) for r in rows if not any(_name_in_row(n, r) for n in disk_names)
+    ]
+    return result
+
+
+def disk_projects(file_path: Path, level: str, orgs: list[str]) -> list[str]:
+    """Project directory names the inventory is compared against."""
+    base = file_path.parent
+    if level == "org":
+        return [name for name, _path, _ in find_projects(base)]
+    if level == "user":
+        names = []
+        for org in orgs:
+            org_path = base / org
+            if org_path.is_dir():
+                names.extend(name for name, _path, _ in find_projects(org_path))
+        return names
+    return []
+
+
+def format_inventory(result: dict, level: str, verbose: bool = True) -> list[str]:
+    """
+    Report lines for an inventory check. Says what was measured, nothing more.
+
+    "Listed, not on disk" is a finding at the org tier and informational at the
+    workspace tier, where a mapped project may simply not be cloned here.
+    """
+    section = f"## {result['section']}" if result["section"] else "project table"
+    if result["status"] == "absent":
+        return [f"Inventory: no {section} section, check skipped"]
+    if result["status"] == "unreadable":
+        return [f"Inventory: {section} is present but could not read the table"]
+
+    disk = result["disk_count"]
+    listed = disk - len(result["unlisted"])
+    missing = result["not_on_disk"]
+    lines = [f"Inventory: {listed} of {disk} project directories are listed in {section}"]
+    if level == "user":
+        missing_line = (f"{len(missing)} of {result['row_count']} rows name no directory on disk "
+                        f"(informational: a mapped project may not be cloned)")
     else:
-        return "project"
+        missing_line = f"{len(missing)} of {result['row_count']} rows name no directory on disk"
+    if not verbose:
+        return [f"{lines[0]}; {missing_line}"]
+    for name in result["unlisted"]:
+        lines.append(f"  - on disk, not listed: {name}")
+    lines.append(missing_line)
+    for name in missing:
+        lines.append(f"  - listed, not on disk: {name}")
+    return lines
+
+
+def tier_files(file_path: Path, level: str, workspace: Path) -> list[tuple[str, Path]]:
+    """The file under review and the files above it, highest tier first."""
+    if level == "user":
+        return [("workspace", file_path)]
+    files = [("workspace", workspace / "CLAUDE.md")]
+    if level == "org":
+        files.append(("org", file_path))
+    else:
+        files.append(("org", file_path.parent.parent / "CLAUDE.md"))
+        files.append(("project", file_path))
+    return files
+
+
+def overlap_report(files: list[tuple[str, Path]], reviewed: Path) -> list[str]:
+    """
+    For each topic in OVERLAP_TOPICS, list which tiers have a heading on it.
+
+    This does not judge content. A topic carried by two tiers is a pair for
+    Claude to read for contradictions.
+    """
+    headings_by_tier = []
+    for tier, path in files:
+        if path.is_file():
+            headings_by_tier.append((tier, path, extract_headings(path.read_text())))
+
+    lines = ["Overlapping topics (tiers with a section on each; content not compared):"]
+    for topic, prefixes in OVERLAP_TOPICS:
+        carriers = []
+        for tier, path, headings in headings_by_tier:
+            hit = next((h for h in headings if h.startswith(prefixes)), None)
+            if hit:
+                where = "this file" if path == reviewed else str(path)
+                carriers.append(f'{tier} "{hit}" ({where})')
+        lines.append(f"  {topic}: {'; '.join(carriers) if carriers else 'no tier'}")
+    return lines
+
+
+def _walk_inventory_line(review: dict, level: str, orgs: list[str]) -> str:
+    """Full-workspace walk: the inventory as one line, so existing findings read as before."""
+    if not review["content"]:
+        return ""
+    path = review["path"]
+    result = check_inventory(review["content"], level, disk_projects(path, level, orgs))
+    return format_inventory(result, level, verbose=False)[0]
+
+
+def print_cross_tier(file_path: Path, level: str, workspace: Path, orgs: list[str]) -> None:
+    """Single-file mode: the full inventory and the overlap map."""
+    content = file_path.read_text()
+    print()
+    if level in INVENTORY_SECTION:
+        result = check_inventory(content, level, disk_projects(file_path, level, orgs))
+        for line in format_inventory(result, level):
+            print(f"  {line}")
+    for line in overlap_report(tier_files(file_path, level, workspace), file_path):
+        print(f"  {line}")
+
+
+def review_single_sections(file_path: Path, level: str, suggest: bool) -> None:
+    """Single-file mode: the section check (unchanged by the cross-tier pass)."""
+    # For project-level, detect archetype first
+    archetype = None
+    if level == "project" and file_path.exists():
+        content = file_path.read_text()
+        archetype = detect_archetype(content)
+
+    expected_sections = get_expected_sections(level, archetype)
+    template_path = get_template_path(level, archetype)
+
+    review = review_claude_md(file_path, expected_sections, level)
+
+    if review.get("archetype_missing"):
+        print(f"\n  No archetype declared in {file_path.name}")
+        print(f"  Add one of these near the top of your CLAUDE.md:")
+        print(format_archetype_choices())
+        return
+
+    via_alias = review.get("present_via_alias", [])
+
+    if not review["missing"]:
+        archetype_label = f" ({archetype.capitalize()})" if archetype else ""
+        print(f"\n✓ {file_path.name}{archetype_label} has all expected {_LEVEL_TO_TIER.get(level, level)}-level sections.")
+        _print_alias_hits(via_alias)
+        return
+
+    archetype_label = f" [{archetype.capitalize()}]" if archetype else ""
+    print(f"\nReviewing {file_path}{archetype_label}...")
+    print(f"  Level: {_LEVEL_TO_TIER.get(level, level)}")
+    print(f"  Found: {len(review['present']) + len(via_alias)} sections")
+    _print_alias_hits(via_alias)
+    print(f"  No heading found for: {len(review['missing'])} sections")
+    for header, desc in review["missing"]:
+        print(f"    - {header} ({desc})")
+
+    if suggest:
+        suggestions = generate_suggestions(review, template_path)
+        suggestions_file = file_path.parent / "CLAUDE.md.suggestions"
+        suggestions_file.write_text(suggestions)
+        print(f"\n✓ Suggestions written to {suggestions_file}")
 
 
 def main():
@@ -404,6 +715,11 @@ def main():
     parser.add_argument("--suggest", action="store_true", help="Generate suggestions for gaps")
     parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm suggestion generation")
     parser.add_argument("--fix", action="store_true", help="Add inferred archetype labels to CLAUDE.md files missing them")
+    parser.add_argument(
+        "--tier",
+        choices=TIER_CHOICES,
+        help="Override tier detection for --file (workspace, org, or project; \"user\" is accepted as an alias for workspace)",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -418,52 +734,18 @@ def main():
 
     # Single file mode
     if args.file:
-        file_path = args.file.expanduser().resolve()
+        # Absolute but NOT resolved: a symlinked CLAUDE.md must be classified
+        # where it sits, not where its source lives.
+        file_path = Path(os.path.abspath(args.file.expanduser()))
         if not file_path.exists():
             print(f"Error: {file_path} does not exist")
             return
 
-        level = determine_level(file_path, workspace)
+        level, tier_reason = resolve_tier(file_path, workspace, args.tier)
+        print(f"Tier: {_LEVEL_TO_TIER[level]} ({tier_reason})")
 
-        # For project-level, detect archetype first
-        archetype = None
-        if level == "project" and file_path.exists():
-            content = file_path.read_text()
-            archetype = detect_archetype(content)
-
-        expected_sections = get_expected_sections(level, archetype)
-        template_path = get_template_path(level, archetype)
-
-        review = review_claude_md(file_path, expected_sections, level)
-
-        if review.get("archetype_missing"):
-            print(f"\n  No archetype declared in {file_path.name}")
-            print(f"  Add one of these near the top of your CLAUDE.md:")
-            print(format_archetype_choices())
-            return
-
-        via_alias = review.get("present_via_alias", [])
-
-        if not review["missing"]:
-            archetype_label = f" ({archetype.capitalize()})" if archetype else ""
-            print(f"\n✓ {file_path.name}{archetype_label} has all expected {level}-level sections.")
-            _print_alias_hits(via_alias)
-            return
-
-        archetype_label = f" [{archetype.capitalize()}]" if archetype else ""
-        print(f"\nReviewing {file_path}{archetype_label}...")
-        print(f"  Level: {level}")
-        print(f"  Found: {len(review['present']) + len(via_alias)} sections")
-        _print_alias_hits(via_alias)
-        print(f"  No heading found for: {len(review['missing'])} sections")
-        for header, desc in review["missing"]:
-            print(f"    - {header} ({desc})")
-
-        if args.suggest:
-            suggestions = generate_suggestions(review, template_path)
-            suggestions_file = file_path.parent / "CLAUDE.md.suggestions"
-            suggestions_file.write_text(suggestions)
-            print(f"\n✓ Suggestions written to {suggestions_file}")
+        review_single_sections(file_path, level, args.suggest)
+        print_cross_tier(file_path, level, workspace, orgs)
         return
 
     # Full review mode
@@ -476,10 +758,11 @@ def main():
     org_info = find_org_directories(workspace, orgs)
     all_reviews = {"user": [], "org": [], "project": []}
 
-    # Review user-level file
+    # Review the workspace-level file
     user_claude_path = workspace / "CLAUDE.md"
     if user_claude_path.exists():
         review = review_claude_md(user_claude_path, get_expected_sections("user"), "user")
+        review["inventory_line"] = _walk_inventory_line(review, "user", orgs)
         all_reviews["user"].append(review)
 
     # Review org-level files
@@ -487,6 +770,7 @@ def main():
         if has_claude:
             claude_path = org_path / "CLAUDE.md"
             review = review_claude_md(claude_path, get_expected_sections("org"), "org")
+            review["inventory_line"] = _walk_inventory_line(review, "org", orgs)
             all_reviews["org"].append(review)
 
     # Review project-level files (archetype-aware)

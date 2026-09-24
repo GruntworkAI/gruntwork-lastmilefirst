@@ -5,14 +5,14 @@
     "url": "https://github.com/GruntworkAI"
   },
   "metadata": {
-    "description": "Marketplace for the lastmilefirst plugin: PARC workflow, AI expert agents, org-level operatives and stack-wisdom, Claude configuration management, and workspace organization.",
-    "version": "0.33.0"
+    "description": "Marketplace for the lastmilefirst plugin: opinionated structure and workflow for projects built by people and coding agents.",
+    "version": "0.34.0"
   },
   "plugins": [
     {
       "name": "lastmilefirst",
-      "description": "Last Mile First methodology plugin: PARC workflow, AI expert agents, org-level operatives and stack-wisdom, Claude configuration management, and workspace organization.",
-      "version": "0.33.0",
+      "description": "Opinionated structure and workflow for projects built by people and coding agents: project structure, tiered CLAUDE.md, PARC workflow, AI expert agents, org-level operatives and stack-wisdom, and Overwatch drift checks.",
+      "version": "0.34.0",
       "author": {
         "name": "Michael Fisher",
         "url": "https://github.com/GruntworkAI"

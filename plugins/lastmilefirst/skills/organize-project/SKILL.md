@@ -219,6 +219,6 @@ python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilef
 
 ## Related Skills
 
-- `organize-claude` - Manages CLAUDE.md hierarchy (user, org, project levels)
+- `organize-claude` - Manages CLAUDE.md hierarchy (workspace, org, project tiers)
 - `review-docs` - Reviews documentation quality
 - `review-work` - Reviews work artifacts

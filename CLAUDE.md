@@ -81,10 +81,11 @@ python3 -m venv .venv && .venv/bin/pip install pytest
 
 ## Testing
 
-Three suites, run from `plugins/lastmilefirst/`:
+Four suites, run from `plugins/lastmilefirst/`:
 
 ```bash
-../../.venv/bin/pytest skills/review-claude/tests/    # section matching
+../../.venv/bin/pytest skills/review-claude/tests/    # section matching, tier detection, cross-tier
+../../.venv/bin/pytest skills/review-org/tests/       # project roll-up from Overwatch state
 ../../.venv/bin/pytest skills/audit-plugin/tests/     # plugin analyzer
 ../../.venv/bin/pytest hooks/tests/                   # Overwatch update check
 ```
