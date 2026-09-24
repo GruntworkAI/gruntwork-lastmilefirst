@@ -1,6 +1,9 @@
 ---
 # Required sections for Referenceable project CLAUDE.md
 # Archetype: You read and consult it (knowledge archives, docs, wisdom repos)
+# Reader: someone who has never seen this repo, or an agent starting a fresh session.
+# Answers: what do I need to change or run this, without asking?
+# Test: could a newcomer act on it today? If it also applies to sibling projects, move it up.
 required_sections:
   - header: "## Content Structure"
     description: "How content is organized"

@@ -1,16 +1,32 @@
 ---
 title: review-org, and a review-claude that knows all three tiers
-version: 1.0
+version: 1.2
 date: 2026-09-21
-status: proposed
+status: built
 type: feat
 component: plugins/lastmilefirst/skills/{review-claude,review-org,review-project,organize-claude,overwatch}
-target_version: 0.32.0
+target_version: 0.34.0
 refs: []
 ---
 
-# review-org, and a review-claude that knows all three tiers (v1.0)
+# review-org, and a review-claude that knows all three tiers (v1.2)
 
+> **v1.2 (2026-09-24).** Built. U1, U3, U4, U5, the rename half of U2, the manifest
+> descriptions, and the 0.34.0 bump are on `feat/review-org` (PR pending). Suites: review-claude
+> 47, review-org 10, hooks 63, audit-plugin 189. Verification: the org file at stack-wisdom
+> `88fa9fb` reports 16 unlisted directories and the current file none; the full walk keeps its 34
+> files and section findings with four added inventory lines; `~/Code/gruntwork/CLAUDE.md` now
+> classifies as org via org.json. U2 purpose table landed 2026-09-24 in the author's revised form
+> (a reader column and a per-row test replace the exclusions column; "an individual's preferences
+> never travel down" so an org can carry a house voice). Two follow-ups filed as todos: archetype
+> detection misses the bold-label form; the remaining "user-level" mentions listed in the PR.
+>
+> **v1.1 (2026-09-24).** Build started on `feat/review-org`. Retargeted from 0.34.0 to 0.34.0,
+> because 0.33.0 shipped in between (review-voice round three). The three open questions are
+> resolved on their own recommendations: no health score in `review-org`, no session-start alert
+> yet, Approved Tools stays required with a pointer to the workspace list. Build order follows
+> Sequencing, with U1 and U4 in parallel since they touch disjoint files.
+>
 > **v1.0 (2026-09-21).** First version. Nothing to compare against yet. Written after a session
 > that ran `review-claude` across the workspace, fixed the Gruntwork org file by hand, and found
 > that neither problem fixed that day was visible to the tool.
@@ -72,7 +88,7 @@ org tier has no health review at all.
 
 In scope: the tier-detection fix; one vocabulary and a purpose statement per tier; a cross-tier
 pass in `review-claude`; a new `review-org` skill and `/run-review-org` command; `review-project`
-calling `review-claude`; Overwatch state for the new review; the 0.32.0 release, which also carries
+calling `review-claude`; Overwatch state for the new review; the 0.34.0 release, which also carries
 the manifest descriptions held in `todos/2026-09-21-manifest-descriptions-match-readme.md`.
 
 Out of scope:
@@ -196,11 +212,11 @@ listing files that adding a persona does, so update together: the README command
   `--key <org>` so it does not depend on the working directory.
 - A session-start alert for an overdue org review is an open question, not part of this unit.
 
-### U6. Release 0.32.0
+### U6. Release 0.34.0
 
 Version bump across `plugin.json`, both `version` fields in `marketplace.json`, and the root README
 table. CHANGELOG entry. The three manifest descriptions from the held todo go out in this release,
-and the todo is closed. After merge: `gh release create v0.32.0 --target main --latest`.
+and the todo is closed. After merge: `gh release create v0.34.0 --target main --latest`.
 
 ## Verification
 

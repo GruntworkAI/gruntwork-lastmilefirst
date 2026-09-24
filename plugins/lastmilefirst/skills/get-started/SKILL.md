@@ -42,7 +42,7 @@ Present findings in a clear format:
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| User CLAUDE.md | ✅/❌ | ~/Code/CLAUDE.md |
+| Workspace CLAUDE.md | ✅/❌ | ~/Code/CLAUDE.md |
 | Project CLAUDE.md | ✅/❌ | ./CLAUDE.md |
 | Project structure | ✅/❌ | docs/, plans/, .claude/work/ |
 | Documentation | ✅/❌ | README.md, docs/ |
@@ -91,6 +91,7 @@ Suggest immediate value based on their situation:
 | Command | Use When |
 |---------|----------|
 | `/run-review-project` | Want overall health check |
+| `/run-review-org` | Want a health check across one org's projects |
 | `/run-review-work` | Todos/plans feeling messy |
 | `/run-review-docs` | Documentation might be stale |
 | `/run-review-claude` | Claude config might need improvement |
@@ -143,7 +144,7 @@ Welcome to Last Mile First! Let me check your setup...
 ## Your Setup
 | Component | Status |
 |-----------|--------|
-| User CLAUDE.md | ✅ Found |
+| Workspace CLAUDE.md | ✅ Found |
 | Project CLAUDE.md | ❌ Missing |
 | Project structure | ❌ Missing |
 

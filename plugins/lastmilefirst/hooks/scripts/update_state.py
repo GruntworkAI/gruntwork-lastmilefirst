@@ -7,10 +7,11 @@ Usage:
   update_state.py <action> [--scope project|org|global] [--key KEY]
   update_state.py status [--all]
 
-Actions: review, organize, secret_scan, review_claude, plugin_check, status
+Actions: review, organize, secret_scan, review_claude, review_org, plugin_check, status
 
 Default scope per action:
   review, organize, secret_scan, review_claude -> project (auto-detected from CWD)
+  review_org -> org (pass --key <org> so it does not depend on CWD)
   plugin_check -> global
 """
 
@@ -36,6 +37,7 @@ DEFAULT_SCOPES = {
     "organize": "projects",
     "secret_scan": "projects",
     "review_claude": "projects",
+    "review_org": "orgs",
     "plugin_check": "global",
 }
 
@@ -89,7 +91,7 @@ def print_status(show_all: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Update Overwatch state")
-    parser.add_argument("action", help="Action: review, organize, secret_scan, review_claude, plugin_check, status")
+    parser.add_argument("action", help="Action: review, organize, secret_scan, review_claude, review_org, plugin_check, status")
     parser.add_argument("--scope", choices=["project", "org", "global"], help="Override default scope")
     parser.add_argument("--key", help="Explicit scope key (org name or org/project)")
     parser.add_argument("--all", action="store_true", dest="show_all", help="Show all scopes (status only)")

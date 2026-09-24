@@ -1,6 +1,9 @@
 ---
 # Required sections for org-level CLAUDE.md
 # Used by organize-claude --review to check for gaps
+# Reader: anyone (or any agent) working on any project in this org.
+# Answers: what does every project here share?
+# Test: is it true of every project in the org? If only one, move it down. If it is about you, move it up.
 required_sections:
   - header: "## Security & Compliance"
     description: "Data classification, access controls, policies"

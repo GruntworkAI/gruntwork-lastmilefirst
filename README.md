@@ -71,7 +71,7 @@ rm -rf ~/.claude/plugins/cache/gruntwork-marketplace
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [lastmilefirst](plugins/lastmilefirst/) | 0.33.0 | Opinionated structure and workflow for projects built by people and coding agents. Includes PARC, expert agents, operatives, stack-wisdom, and stack-knowledge. |
+| [lastmilefirst](plugins/lastmilefirst/) | 0.34.0 | Opinionated structure and workflow for projects built by people and coding agents. Includes PARC, expert agents, operatives, stack-wisdom, and stack-knowledge. |
 
 ## About
 

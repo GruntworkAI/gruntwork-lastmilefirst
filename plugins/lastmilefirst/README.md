@@ -48,7 +48,15 @@ Claude Code reads `CLAUDE.md` files for project context. This plugin structures 
 
 **Why "workspace"?** The top level isn't your home directory—that's too broad. Your workspace (e.g., `~/Code/`) is the broadest *safe* scope: everything you let Claude touch. Workspace preferences apply to all your development. Org standards apply to team projects. Project specifics stay local.
 
-**Why tiers?** Lower levels inherit from higher levels. No duplication, clear override path. Your teammate's workspace preferences don't pollute your projects; your shared org standards do.
+**Why tiers?** Lower tiers inherit from higher ones. Each file has a different reader, and that is what makes the tiers a handoff and not just a filing scheme:
+
+| Tier | Who reads it | The question it answers | Belongs here | The test |
+|---|---|---|---|---|
+| Workspace | You, and your agents, on every project | How do I work, and where is everything? | Preferences, voice, tools you use, the map of orgs and projects | Would a teammate reading this find your preferences in their project? If so, it is in the wrong place. |
+| Org | Anyone (or any agent) working on any project in this org | What does every project here share? | Identity, security and data handling, naming, the org's tech stack, the project list | Is it true of every project in the org? If only one, move it down. If it is about you rather than the org, move it up. |
+| Project | Someone who has never seen this repo, or an agent starting a fresh session | What do I need to change or run this, without asking? | Commands, environment, deployment, gotchas, the archetype | Could a newcomer act on it today? If it also applies to sibling projects, move it up. |
+
+Two rules cover the overlaps. Put each fact at the highest tier where it is still true for everyone who reads that tier; lower tiers inherit, and an individual's preferences never travel down (an org can carry a house voice, and that is the org's, not yours). And a lower tier may narrow or extend a higher one, but must not restate or contradict it: a client org that forbids a tool the workspace allows is narrowing, which is fine; an org tools table that repeats the workspace list is restating, and should point up instead. `review-claude` checks the second rule across tiers.
 
 ### Project Archetypes
 
@@ -331,6 +339,7 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | `/run-organize-project` | Enforce consistent project structure (docs/, .claude/) |
 | `/run-review-claude` | Review CLAUDE.md for gaps, suggest additions |
 | `/run-review-project` | Combined docs + work artifact review |
+| `/run-review-org` | Org health check: identity, org repos, todos, org CLAUDE.md, project roll-up |
 | `/run-review-docs` | Review docs/ for staleness, gaps, duplication |
 | `/run-review-work` | Review .claude/work/ for stale items, archive candidates |
 | `/run-consult-expert` | Consult public AI expert personas |

@@ -3,7 +3,7 @@
 CLAUDE Configuration Organization Tool
 
 Audits, validates, and scaffolds CLAUDE.md files across the workspace hierarchy:
-- User level: {workspace}/CLAUDE.md (security boundary)
+- Workspace level: {workspace}/CLAUDE.md (security boundary)
 - Org level: {workspace}/{org}/CLAUDE.md (optional)
 - Project level: {workspace}/{org}/{project}/CLAUDE.md
 
@@ -453,17 +453,17 @@ def show_audit_report(
     print("CLAUDE CONFIGURATION AUDIT")
     print("=" * 60)
 
-    # User level
+    # Workspace level
     print(f"\nWorkspace: {workspace}")
     user_path, user_exists, symlink_target = user_claude
     if user_exists:
         if symlink_target:
-            print(f"User Level: {user_path}")
+            print(f"Workspace Level: {user_path}")
             print(f"  → symlink to {symlink_target} ✓")
         else:
-            print(f"User Level: {user_path} ✓")
+            print(f"Workspace Level: {user_path} ✓")
     else:
-        print(f"User Level: {user_path} ✗ MISSING")
+        print(f"Workspace Level: {user_path} ✗ MISSING")
 
     # Org level
     print("\nORG COVERAGE")
@@ -503,7 +503,7 @@ def show_audit_report(
     # Mapping validation
     if mapping_validation:
         in_mapping_not_disk, on_disk_not_mapping = mapping_validation
-        print("\nPROJECT MAPPING VALIDATION (user-level)")
+        print("\nPROJECT MAPPING VALIDATION (workspace-level)")
         print("-" * 60)
 
         if in_mapping_not_disk:
@@ -544,7 +544,7 @@ def main():
     )
     parser.add_argument("--scaffold-all-orgs", action="store_true", help="Scaffold all missing org-level CLAUDE.md files")
     parser.add_argument("--scaffold-all-projects", action="store_true", help="Scaffold all missing project-level CLAUDE.md files")
-    parser.add_argument("--update-mappings", action="store_true", help="Show missing project mappings for user-level CLAUDE.md")
+    parser.add_argument("--update-mappings", action="store_true", help="Show missing project mappings for the workspace-level CLAUDE.md")
     parser.add_argument("--full-sync", action="store_true", help="Scaffold all missing files and show mapping updates")
 
     # Modifiers
