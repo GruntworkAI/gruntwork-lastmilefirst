@@ -150,7 +150,14 @@ Categories:
 - bloated opening/ending
 - low actionability
 
-Then give an **overall signal/slop score** out of 16.
+The category scores are your private step for tiering, not the headline. Each finding gets a
+tier: a category at 2 is **fix before it ships**; a category at 1 with a concrete cut attached
+is **fix if you are editing**; strong lines you chose to keep are **leave it**. Then derive one
+verdict, shared with `review-voice` and Ripley: **Ship** (nothing in the first tier, second tier
+short and local; gloss with the natural verb: publish, send, merge), **Hold** (first-tier
+findings, each a local edit; fix and ship), or **Rework** (weak prioritization or a scope/depth
+mismatch at 2, because no line edit reaches it). Carry the tier counts on the verdict line so
+rounds compare without a denominator. Do not print a fraction.
 
 ### Step 5: Revise Decisively
 Apply these moves:
@@ -173,10 +180,13 @@ Use this structure unless the user requests a different one.
 One line on what the text is trying to accomplish.
 
 ## Verdict
-A concise diagnosis of the draft.
+Ship / Hold / Rework: plain gloss. tier counts (fix before it ships / fix if editing / leave it).
+Then a concise diagnosis of the draft.
 
-## Signal / Slop Score
-X/16 — short interpretation
+## Findings
+| Lens | Tier | Where | What | Evidence | Fix |
+|------|------|-------|------|----------|-----|
+(lens is "signal" here; evidence names the RENT dimensions failed)
 
 ## Biggest Leaks
 - ...
@@ -202,7 +212,7 @@ author's words, so confirm the diagnosis before touching the prose.
 Diagnose and score, no rewrite. Then stop and wait for authorization. Return:
 - Job
 - Verdict
-- Signal / Slop Score
+- Findings
 - Biggest Leaks
 - Notes
 
