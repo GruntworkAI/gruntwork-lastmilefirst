@@ -116,8 +116,10 @@ Checked per instance, at the place the obligation arises. One uncashed instance 
 - **Audience address.** When the document names or clearly implies its readers (a plan for two
   named principals, a memo "for the team," a letter), each third-person reference to those
   readers ("leadership decides," "the team should") is a finding. The fix is direct address
-  ("your call") or a note that the mix is deliberate. Exempt broad or unnamed readerships,
-  where third person is correct.
+  ("your call") or a note that the mix is deliberate. A role name used to say which of several
+  named readers owns what ("where the queue lives is the Head of Product's call") is direct
+  address split between them, not a third-person reference. Exempt broad or unnamed
+  readerships, where third person is correct.
 
 ## Method: how a tell becomes a verdict
 
@@ -158,7 +160,9 @@ single occurrence. So the skill measures fingerprints. It does not spot-flag the
 Every finding carries the same fields, whichever lens or rule produced it: **lens** (signal,
 voice, house), **tier**, **where** (quote or location), **what** (the tell, rule, or leak,
 named), **evidence** (density per ~1,000 words, the variance observation, or "single instance"
-with the rule), and **fix** (the concrete move, or "protected").
+with the rule), and **fix** (the concrete move, or "protected"). Instances of one house rule or
+one obligation check share a row, with the count and every quote, so the tier counts track
+distinct fixes rather than occurrences.
 
 Three tiers. *Fix before it ships:* house-rule hits in figurative use, uncashed obligation
 checks. *Fix if you are editing:* fingerprints past the density line, session vocabulary,
