@@ -1,6 +1,6 @@
 # Todo: Update manifest descriptions to match the README framing
 
-**Status:** open
+**Status:** DONE 2026-09-24 (shipped in 0.34.0, feat/review-org)
 **Priority:** low
 **Created:** 2026-09-21
 
