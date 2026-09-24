@@ -5,7 +5,7 @@ description: Reviews existing CLAUDE.md files against expected sections and sugg
 
 # Review Claude
 
-Reviews CLAUDE.md files at all hierarchy levels (user, org, project) against expected sections defined in templates. Identifies gaps and optionally generates suggestions for missing content.
+Reviews CLAUDE.md files at all hierarchy levels (workspace, org, project) against expected sections defined in templates. Identifies gaps and optionally generates suggestions for missing content.
 
 ## When to Use
 
@@ -80,6 +80,9 @@ python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/C
 
 # Generate suggestions for a specific file
 python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/CLAUDE.md --suggest
+
+# Override tier detection for a specific file (workspace, org, or project; "user" still works as an alias for workspace)
+python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/CLAUDE.md --tier workspace
 ```
 
 ## Suggest Mode
@@ -155,7 +158,7 @@ precisely because heading presence is all it measures.
 
 ## Expected Sections
 
-**User-level** (from template frontmatter):
+**Workspace-level** (from template frontmatter):
 - Workspace Organization
 - Core Philosophy
 - Project Directory Mapping
@@ -208,7 +211,7 @@ python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilef
 # Org-level CLAUDE.md
 python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope org
 
-# User-level CLAUDE.md
+# Workspace-level CLAUDE.md (Overwatch still calls this scope "global")
 python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude --scope global
 ```
 

@@ -249,7 +249,7 @@ def show_review_report(reviews: list[dict], level: str) -> list[dict]:
     """Display review results and return files with gaps."""
     files_with_gaps = []
 
-    print(f"\n{level.upper()}-LEVEL CLAUDE.MD REVIEW")
+    print(f"\n{_LEVEL_TO_TIER.get(level, level).upper()}-LEVEL CLAUDE.MD REVIEW")
     print("-" * 60)
 
     for review in reviews:
@@ -689,13 +689,13 @@ def review_single_sections(file_path: Path, level: str, suggest: bool) -> None:
 
     if not review["missing"]:
         archetype_label = f" ({archetype.capitalize()})" if archetype else ""
-        print(f"\n✓ {file_path.name}{archetype_label} has all expected {level}-level sections.")
+        print(f"\n✓ {file_path.name}{archetype_label} has all expected {_LEVEL_TO_TIER.get(level, level)}-level sections.")
         _print_alias_hits(via_alias)
         return
 
     archetype_label = f" [{archetype.capitalize()}]" if archetype else ""
     print(f"\nReviewing {file_path}{archetype_label}...")
-    print(f"  Level: {level}")
+    print(f"  Level: {_LEVEL_TO_TIER.get(level, level)}")
     print(f"  Found: {len(review['present']) + len(via_alias)} sections")
     _print_alias_hits(via_alias)
     print(f"  No heading found for: {len(review['missing'])} sections")
@@ -718,7 +718,7 @@ def main():
     parser.add_argument(
         "--tier",
         choices=TIER_CHOICES,
-        help="Override tier detection for --file (\"user\" is an alias for workspace)",
+        help="Override tier detection for --file (workspace, org, or project; \"user\" is accepted as an alias for workspace)",
     )
     args = parser.parse_args()
 
@@ -758,7 +758,7 @@ def main():
     org_info = find_org_directories(workspace, orgs)
     all_reviews = {"user": [], "org": [], "project": []}
 
-    # Review user-level file
+    # Review the workspace-level file
     user_claude_path = workspace / "CLAUDE.md"
     if user_claude_path.exists():
         review = review_claude_md(user_claude_path, get_expected_sections("user"), "user")

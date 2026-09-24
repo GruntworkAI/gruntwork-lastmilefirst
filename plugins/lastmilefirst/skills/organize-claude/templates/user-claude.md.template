@@ -1,5 +1,5 @@
 ---
-# Required sections for user-level (workspace) CLAUDE.md
+# Required sections for the workspace-level CLAUDE.md
 # Used by organize-claude --review to check for gaps
 required_sections:
   - header: "## Workspace Organization"
