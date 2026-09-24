@@ -13,8 +13,15 @@ refs:
   - ~/Code/gruntwork/gruntwork-stack-wisdom/voice/agent-voice-guide-v1.5.md (the "whose voice" open question)
 ---
 
-# review-voice round three, living house rules, and one verdict across signal and voice (v1.3)
+# review-voice round three, living house rules, and one verdict across signal and voice (v1.4)
 
+> **v1.4 (2026-09-24).** Built on `feat/review-voice-round-three`. All four hand-run tests
+> passed on fresh agents reading only the skill; two things they surfaced were folded in (role
+> names splitting address between named readers pass; instances of one rule share a findings
+> row). Net growth of `review-voice/SKILL.md` is +101 lines against a budget of about 50; the
+> growth is method (three obligation checks, the layered house rules, the verdict derivation),
+> not padding, and is reported rather than compressed. Release 0.33.0 pending merge and tag.
+>
 > **v1.3 (2026-09-23).** Verdict verb reaffirmed as ship, with the gloss carrying the natural
 > verb for the artifact (publish, send, merge). A standing sanitization rule for public-repo
 > content is added to U8, because the plan had stated it twice at unit level and nowhere as a
