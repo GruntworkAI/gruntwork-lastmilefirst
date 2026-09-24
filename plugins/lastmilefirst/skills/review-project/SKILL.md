@@ -1,13 +1,13 @@
 ---
 name: review-project
-description: Complete project review - docs, work artifacts, and cross-cutting concerns. For CLAUDE.md review, use review-claude.
+description: Complete project review - docs, work artifacts, the project's own CLAUDE.md, and cross-cutting concerns. To check CLAUDE.md files across the whole hierarchy at once, use review-claude.
 ---
 
 # Review Project
 
-Comprehensive project review combining `/run-review-docs` and `/run-review-work` with cross-cutting analysis.
+Comprehensive project review combining `/run-review-docs`, `/run-review-work`, and a check of the project's CLAUDE.md with cross-cutting analysis.
 
-**Note:** This reviews project artifacts (docs, work items). For reviewing CLAUDE.md files, use `/run-review-claude`.
+**Note:** This reviews project artifacts (docs, work items) and the project's own CLAUDE.md. `/run-review-claude` remains the tool for checking CLAUDE.md files across the whole hierarchy at once.
 
 ## Prerequisites
 
@@ -22,7 +22,8 @@ See [organize-project/SKILL.md](../organize-project/SKILL.md) for required struc
 
 1. **Run `/run-review-docs`** - Analyze docs/ directory
 2. **Run `/run-review-work`** - Analyze .claude/work/ directory
-3. **Cross-cutting analysis** - Find issues spanning both areas
+3. **Check the project CLAUDE.md** - Sections against the project template, via the review-claude script
+4. **Cross-cutting analysis** - Find issues spanning these areas
 
 ## Cross-Cutting Checks
 
@@ -46,7 +47,13 @@ Calculate overall project hygiene:
 ## How to Run
 
 ### Step 1: Run Sub-Reviews
-Execute both review skills and collect their reports.
+Execute both review skills and collect their reports. Then check the project's own CLAUDE.md from the project root:
+
+```bash
+python3 ${SKILL_ROOT}/../review-claude/scripts/review_claude.py --file ./CLAUDE.md
+```
+
+`${SKILL_ROOT}` is this skill's directory, and sibling skills sit next to it. Keep the script's result for the report: the sections checked against the project template, the tier line, and any inventory or overlap lines it prints.
 
 ### Step 2: Cross-Reference Analysis
 
@@ -87,6 +94,9 @@ Check for disconnects:
 
 ## Work Artifacts Review
 [Output from /run-review-work]
+
+## CLAUDE.md Review
+[Output from review_claude.py --file ./CLAUDE.md: tier line, sections present and missing against the project template, any inventory or overlap lines]
 
 ## Cross-Cutting Issues
 
@@ -130,7 +140,8 @@ Present prioritized action list and offer to execute:
 - **`/run-organize-project`**: Run first to ensure structure, or after to archive
 - **`/run-review-docs`**: Standalone docs review
 - **`/run-review-work`**: Standalone work review
-- **`/run-review-claude`**: Review CLAUDE.md files for gaps
+- **`/run-review-claude`**: CLAUDE.md files across the whole hierarchy at once (this review covers only the project's own)
+- **`/run-review-org`**: the same review, one org at a time
 - **compound-engineering**: For advanced workflows
 
 ## When to Use
@@ -142,10 +153,11 @@ Present prioritized action list and offer to execute:
 
 ## Update Overwatch
 
-After completing the review, update the project's Overwatch state:
+After the report, record both reviews at project scope (the project is detected from the working directory):
 
 ```bash
 python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py review_claude
 ```
 
 ## Notes
