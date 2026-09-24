@@ -42,7 +42,7 @@ Present findings in a clear format:
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| User CLAUDE.md | ✅/❌ | ~/Code/CLAUDE.md |
+| Workspace CLAUDE.md | ✅/❌ | ~/Code/CLAUDE.md |
 | Project CLAUDE.md | ✅/❌ | ./CLAUDE.md |
 | Project structure | ✅/❌ | docs/, plans/, .claude/work/ |
 | Documentation | ✅/❌ | README.md, docs/ |
@@ -144,7 +144,7 @@ Welcome to Last Mile First! Let me check your setup...
 ## Your Setup
 | Component | Status |
 |-----------|--------|
-| User CLAUDE.md | ✅ Found |
+| Workspace CLAUDE.md | ✅ Found |
 | Project CLAUDE.md | ❌ Missing |
 | Project structure | ❌ Missing |
 

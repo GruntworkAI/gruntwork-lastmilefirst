@@ -400,7 +400,7 @@ def check_claude_review_status(
     now = int(time.time())
 
     checks = [
-        (global_state, "last_review_claude", "user-level CLAUDE.md"),
+        (global_state, "last_review_claude", "workspace CLAUDE.md"),
     ]
     if org_label:
         checks.append((org_state, "last_review_claude", f"org CLAUDE.md ({org_label})"))

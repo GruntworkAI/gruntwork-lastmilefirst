@@ -1,6 +1,6 @@
 ---
 name: run-organize-claude
-description: Audit and scaffold CLAUDE.md files across user, org, and project levels
+description: Audit and scaffold CLAUDE.md files across workspace, org, and project tiers
 argument-hint: "[audit|scaffold|sync]"
 ---
 
