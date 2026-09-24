@@ -331,6 +331,7 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | `/run-organize-project` | Enforce consistent project structure (docs/, .claude/) |
 | `/run-review-claude` | Review CLAUDE.md for gaps, suggest additions |
 | `/run-review-project` | Combined docs + work artifact review |
+| `/run-review-org` | Org health check: identity, org repos, todos, org CLAUDE.md, project roll-up |
 | `/run-review-docs` | Review docs/ for staleness, gaps, duplication |
 | `/run-review-work` | Review .claude/work/ for stale items, archive candidates |
 | `/run-consult-expert` | Consult public AI expert personas |

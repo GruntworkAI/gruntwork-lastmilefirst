@@ -31,6 +31,10 @@ from overwatch import (
     read_invocations,
     compound_summary,
     COMPOUND_WARNING_MIN_CYCLES,
+    REVIEW_THRESHOLD_DAYS,
+    SECRET_SCAN_THRESHOLD_DAYS,
+    ORGANIZE_THRESHOLD_DAYS,
+    REVIEW_CLAUDE_THRESHOLD_DAYS,
     get_tmp_dir,
     get_lock_file,
     file_lock,
@@ -99,7 +103,7 @@ def check_review_status(state: Dict, project_label: Optional[str] = None) -> Opt
         return f"ACTION REQUIRED: No project review on record{label}. Run /run-review-project before starting other work."
 
     days_since = (int(time.time()) - last_review) // 86400
-    if days_since >= 7:
+    if days_since >= REVIEW_THRESHOLD_DAYS:
         return f"ACTION REQUIRED: {days_since} days since last review{label}. Run /run-review-project."
     return None
 
@@ -112,7 +116,7 @@ def check_organize_status(state: Dict, project_label: Optional[str] = None) -> O
 
     label = f" of {project_label}" if project_label else ""
     days_since = (int(time.time()) - last_organize) // 86400
-    if days_since >= 14:
+    if days_since >= ORGANIZE_THRESHOLD_DAYS:
         return f"ACTION REQUIRED: {days_since} days since last organization{label}. Run /run-organize-project."
     return None
 
@@ -323,7 +327,7 @@ def check_secret_scan_status(state: Dict, project_label: Optional[str] = None) -
         return f"ACTION REQUIRED: Never scanned for secrets{label}. Run /run-scan-secrets before proceeding."
 
     days_since = (int(time.time()) - last_scan) // 86400
-    if days_since >= 7:
+    if days_since >= SECRET_SCAN_THRESHOLD_DAYS:
         return f"ACTION REQUIRED: {days_since} days since last secrets scan{label}. Run /run-scan-secrets."
     return None
 
@@ -392,7 +396,7 @@ def check_claude_review_status(
 ) -> List[str]:
     """Check CLAUDE.md review freshness at all levels. 30-day threshold."""
     alerts: List[str] = []
-    threshold = 30 * 86400
+    threshold = REVIEW_CLAUDE_THRESHOLD_DAYS * 86400
     now = int(time.time())
 
     checks = [
@@ -709,7 +713,7 @@ def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
             if last_review == 0:
                 if has_commits:
                     never_reviewed.append(project_label)
-            elif (now - last_review) // 86400 >= 7 and last_commit > last_review:
+            elif (now - last_review) // 86400 >= REVIEW_THRESHOLD_DAYS and last_commit > last_review:
                 stale_reviewed.append(project_label)
 
             # Check secret scan freshness
@@ -717,7 +721,7 @@ def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
             if last_scan == 0:
                 if has_commits:
                     never_scanned.append(project_label)
-            elif (now - last_scan) // 86400 >= 7 and last_commit > last_scan:
+            elif (now - last_scan) // 86400 >= SECRET_SCAN_THRESHOLD_DAYS and last_commit > last_scan:
                 stale_scanned.append(project_label)
 
             # Check organize freshness
@@ -725,7 +729,7 @@ def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
             if last_organize == 0:
                 if has_commits:
                     never_organized.append(project_label)
-            elif (now - last_organize) // 86400 >= 14 and last_commit > last_organize:
+            elif (now - last_organize) // 86400 >= ORGANIZE_THRESHOLD_DAYS and last_commit > last_organize:
                 stale_organized.append(project_label)
 
     if total == 0:
@@ -809,7 +813,7 @@ def _format_workspace_full(
         for p in never_reviewed:
             lines.append(f"    - {p}")
     if stale_reviewed:
-        lines.append(f"  Review overdue >7d ({len(stale_reviewed)}):")
+        lines.append(f"  Review overdue >{REVIEW_THRESHOLD_DAYS}d ({len(stale_reviewed)}):")
         for p in stale_reviewed:
             lines.append(f"    - {p}")
 
@@ -818,7 +822,7 @@ def _format_workspace_full(
         for p in never_scanned:
             lines.append(f"    - {p}")
     if stale_scanned:
-        lines.append(f"  Secret scan overdue >7d ({len(stale_scanned)}):")
+        lines.append(f"  Secret scan overdue >{SECRET_SCAN_THRESHOLD_DAYS}d ({len(stale_scanned)}):")
         for p in stale_scanned:
             lines.append(f"    - {p}")
 
@@ -827,7 +831,7 @@ def _format_workspace_full(
         for p in never_organized:
             lines.append(f"    - {p}")
     if stale_organized:
-        lines.append(f"  Organize overdue >14d ({len(stale_organized)}):")
+        lines.append(f"  Organize overdue >{ORGANIZE_THRESHOLD_DAYS}d ({len(stale_organized)}):")
         for p in stale_organized:
             lines.append(f"    - {p}")
 

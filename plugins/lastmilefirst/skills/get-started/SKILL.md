@@ -91,6 +91,7 @@ Suggest immediate value based on their situation:
 | Command | Use When |
 |---------|----------|
 | `/run-review-project` | Want overall health check |
+| `/run-review-org` | Want a health check across one org's projects |
 | `/run-review-work` | Todos/plans feeling messy |
 | `/run-review-docs` | Documentation might be stale |
 | `/run-review-claude` | Claude config might need improvement |

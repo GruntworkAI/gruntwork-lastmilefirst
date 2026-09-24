@@ -83,6 +83,14 @@ CLOSING_SKILLS = frozenset({
 # that ran a closing skill and zero compound actions. Tune after a month.
 COMPOUND_WARNING_MIN_CYCLES = 5
 
+# Freshness thresholds, in days. Session start alerts on these, and
+# review-org's project roll-up reads the same values, so they live here
+# (import-safe, stdlib only) rather than inline in session_start.py.
+REVIEW_THRESHOLD_DAYS = 7
+SECRET_SCAN_THRESHOLD_DAYS = 7
+ORGANIZE_THRESHOLD_DAYS = 14
+REVIEW_CLAUDE_THRESHOLD_DAYS = 30
+
 
 def normalize_skill_name(name: str) -> str:
     """'lastmilefirst:run-review-voice' -> 'review-voice'."""
