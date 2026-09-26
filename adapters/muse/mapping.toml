@@ -1,0 +1,290 @@
+# Translation table: Claude Code plugin content -> Muse skill package.
+#
+# build.py applies these replacements to the canonical skill sources under
+# plugins/lastmilefirst/skills/ when generating adapters/muse/dist/. Patterns
+# are applied longest-first so specific phrases win over general ones.
+# Replacements apply everywhere, including inside fenced code blocks: a
+# `/run-foo` in a fence is mechanism, and leaving it verbatim would hand the
+# Muse agent a command that does not exist there.
+#
+# Rule of thumb for adding entries: translate *mechanism*, keep *judgment*.
+# The PARC phases, the review rubrics, the YAGNI/YAGWYDI tension, the Compound
+# close — those are platform-agnostic and must survive untouched. Only the
+# nouns that name Claude Code machinery get rewritten.
+
+[[replacements]]
+pattern = "/run-consult-expert scout"
+replacement = "a subagent briefed with the scout-coordinator persona"
+
+[[replacements]]
+pattern = "/run-consult-expert "
+replacement = "spawning a subagent briefed with the persona "
+
+[[replacements]]
+pattern = "/run-consult-expert"
+replacement = "spawning a subagent briefed with a persona"
+
+[[replacements]]
+pattern = "/run-consult-operative"
+replacement = "checking workspace operatives"
+
+[[replacements]]
+pattern = "/run-create-operative"
+replacement = "creating a workspace skill or memory entry that encodes the judgment"
+
+[[replacements]]
+pattern = "/run-search-wisdom"
+replacement = "muse.memory_search"
+
+[[replacements]]
+pattern = "/run-search-knowledge"
+replacement = "muse.memory_search"
+
+[[replacements]]
+pattern = "/run-add-wisdom"
+replacement = "recording the lesson in the agent's durable memory (MEMORY.md)"
+
+[[replacements]]
+pattern = "/run-add-knowledge"
+replacement = "recording the fact in the agent's durable memory (MEMORY.md)"
+
+[[replacements]]
+pattern = "/run-review-signal"
+replacement = "a signal review"
+
+[[replacements]]
+pattern = "/run-review-docs"
+replacement = "the docs review checklist (references/review-docs.md)"
+
+[[replacements]]
+pattern = "/run-review-claude"
+replacement = "a working-notes review against the expected sections"
+
+[[replacements]]
+pattern = "/run-review-work"
+replacement = "a working-notes hygiene review (stale todos, archive candidates)"
+
+[[replacements]]
+pattern = "/run-review-project"
+replacement = "the review checklists in this skill"
+
+[[replacements]]
+pattern = "/run-organize-project"
+replacement = "organizing the workspace project directory"
+
+[[replacements]]
+pattern = "/run-organize-orgs"
+replacement = "organizing the workspace"
+
+[[replacements]]
+pattern = "/run-organize-claude"
+replacement = "organizing the workspace configuration"
+
+[[replacements]]
+pattern = "/run-scan-secrets --audit --github"
+replacement = "`bin/scan-secrets --audit --github`"
+
+[[replacements]]
+pattern = "/run-scan-secrets --add-format"
+replacement = "`bin/scan-secrets --add-format`"
+
+[[replacements]]
+pattern = "/run-scan-secrets --all"
+replacement = "`bin/scan-secrets --all`"
+
+[[replacements]]
+pattern = "/run-scan-secrets --audit"
+replacement = "`bin/scan-secrets --audit`"
+
+[[replacements]]
+pattern = "/run-scan-secrets --install-hooks"
+replacement = "`bin/scan-secrets --install-hooks`"
+
+[[replacements]]
+pattern = "/run-scan-secrets --list-formats"
+replacement = "`bin/scan-secrets --list-formats`"
+
+[[replacements]]
+pattern = "/run-scan-secrets --uninstall-hooks"
+replacement = "`bin/scan-secrets --uninstall-hooks`"
+
+[[replacements]]
+pattern = "/run-scan-secrets --update-formats"
+replacement = "`bin/scan-secrets --update-formats`"
+
+[[replacements]]
+pattern = "/run-scan-secrets"
+replacement = "`bin/scan-secrets`"
+
+[[replacements]]
+pattern = "/run-overwatch"
+replacement = "scheduled checks (a later slice of this port)"
+
+[[replacements]]
+pattern = "/run-todos-summary"
+replacement = "reviewing the working todo list"
+
+[[replacements]]
+pattern = "/run-plugin-inventory"
+replacement = "reviewing the installed skills"
+
+[[replacements]]
+pattern = "/run-get-started"
+replacement = "the getting-started guidance in this skill"
+
+[[replacements]]
+pattern = "/run-parc"
+replacement = "this skill"
+
+[[replacements]]
+pattern = "/run-parc --step plan"
+replacement = "this skill's Plan phase"
+
+[[replacements]]
+pattern = "/run-parc --step review"
+replacement = "this skill's Review phase"
+
+[[replacements]]
+pattern = "/run-parc --step compound"
+replacement = "this skill's Compound phase"
+
+[[replacements]]
+pattern = "/run-strict-parc"
+replacement = "this skill with explicit gates"
+
+[[replacements]]
+pattern = "/reload-plugins"
+replacement = "(no-op in Muse; skills load fresh each turn)"
+
+# --- tools ---
+[[replacements]]
+pattern = "Task:"
+replacement = "subagent.spawn:"
+
+# --- compound-engineering plugin commands (not installed here) ---
+[[replacements]]
+pattern = "`ce-compound`, where installed"
+replacement = "this skill's Compound phase"
+
+[[replacements]]
+pattern = "in the ce-compound shape"
+replacement = "in compound shape"
+
+# --- paths and files ---
+[[replacements]]
+pattern = "our CLAUDE.md"
+replacement = "our project's working notes"
+
+[[replacements]]
+pattern = "that project's CLAUDE.md"
+replacement = "that project's working notes"
+
+[[replacements]]
+pattern = "the project CLAUDE.md"
+replacement = "the project working notes"
+
+[[replacements]]
+pattern = "the org CLAUDE.md"
+replacement = "the org working notes"
+
+[[replacements]]
+pattern = "the workspace CLAUDE.md"
+replacement = "the workspace working notes"
+
+[[replacements]]
+pattern = "user-level CLAUDE.md"
+replacement = "user-level working notes"
+
+[[replacements]]
+pattern = "### CLAUDE.md Updates"
+replacement = "### Working-notes updates"
+
+[[replacements]]
+pattern = "(CLAUDE.md at the right level)"
+replacement = "(working notes at the right level)"
+
+[[replacements]]
+pattern = "CLAUDE.md (Desktop, Cowork)"
+replacement = "working-notes file"
+
+[[replacements]]
+pattern = "CLAUDE.md"
+replacement = "working notes"
+
+[[replacements]]
+pattern = "reviewing .claude/work/"
+replacement = "reviewing the working-notes directory"
+
+[[replacements]]
+pattern = ".claude/work/voice-sheet.md"
+replacement = "working-notes/voice-sheet.md"
+
+[[replacements]]
+pattern = ".claude/work/"
+replacement = "working-notes/"
+
+[[replacements]]
+pattern = "`voice-sheet-example.md` from this skill's directory"
+replacement = "`references/voice-sheet-example.md` from this skill"
+
+[[replacements]]
+pattern = "~/.claude/plugins/cache/gruntwork-lastmilefirst/lastmilefirst/*/"
+replacement = "<repo>/plugins/lastmilefirst/"
+
+[[replacements]]
+pattern = "~/.claude"
+replacement = "~"
+
+[[replacements]]
+pattern = "~/Code"
+replacement = "~/workspace"
+
+# --- product names (applied last; specific phrases above win) ---
+[[replacements]]
+pattern = "Claude Code/Skills"
+replacement = "Muse skills"
+
+[[replacements]]
+pattern = "ce-explain where installed"
+replacement = "the three-questions-in-chat fallback"
+
+[[replacements]]
+pattern = "Claude Code"
+replacement = "Muse"
+
+[[replacements]]
+pattern = "ce-explain"
+replacement = "the three-questions-in-chat fallback (ce-explain is not installed here)"
+
+# Sources to adapt, in order. Each becomes references/<output>.
+[[sources]]
+source = "plugins/lastmilefirst/skills/parc/SKILL.md"
+output = "references/parc-full.md"
+title = "PARC Workflow (full)"
+
+[[sources]]
+source = "plugins/lastmilefirst/skills/review-docs/SKILL.md"
+output = "references/review-docs.md"
+title = "Review Docs checklist"
+
+[[sources]]
+source = "plugins/lastmilefirst/skills/review-voice/SKILL.md"
+output = "references/review-voice.md"
+title = "Review Voice checklist"
+
+[[sources]]
+source = "plugins/lastmilefirst/skills/review-voice/voice-sheet-example.md"
+output = "references/voice-sheet-example.md"
+title = "Voice sheet example"
+
+[[sources]]
+source = "plugins/lastmilefirst/skills/scan-secrets/SKILL.md"
+output = "references/scan-secrets.md"
+title = "Scan Secrets"
+
+# Persona roster: generated index of plugins/lastmilefirst/personas/*.md.
+# Not a translation — an index so the agent can pick the right expert to brief.
+# One-liners go through the same replacement table as the sources.
+[persona_roster]
+source_dir = "plugins/lastmilefirst/personas"
+output = "references/personas.md"
