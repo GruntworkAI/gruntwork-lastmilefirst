@@ -1,6 +1,6 @@
 ---
 title: GitHub posture drift in Overwatch, and a hygiene guide for shared repositories
-version: 1.0
+version: 1.1
 date: 2026-09-26
 status: proposed
 type: feat
@@ -11,8 +11,19 @@ refs:
   - ~/Code/gruntwork/gruntwork-stack-wisdom/stack-wisdom/github-account-and-repo-hygiene.md (the private checklist, v1.0)
 ---
 
-# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.0)
+# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.1)
 
+> **v1.1 (2026-09-26).** Dry run of every planned endpoint by hand against this repo, read-only.
+> All behave as the Design assumes: `vulnerability-alerts` 404 means off; `rulesets` returns an
+> empty list; classic branch protection returns a 404 whose message is "Branch not protected",
+> which is distinguishable from a permissions 404 and should be mapped to "no classic protection"
+> rather than UNKNOWN. Two additions from the run. First, the account-level endpoints
+> (`user/emails`, `user/keys`, `user/gpg_keys`, `user/ssh_signing_keys`) need the `user` and
+> `read:public_key` scopes, which the default `gh auth login` does not grant; anything that reads
+> them must say so and print the `gh auth refresh -s user -s read:public_key` line rather than a
+> bare 404. Second, the run's findings on this repo (below, under Verification) are the
+> release-time baseline U5 compares against.
+>
 > **v1.0 (2026-09-26).** First version. Follows a day in which a squash merge of a fork pull request
 > published a personal email address on a public default branch, and the checklist written
 > afterwards turned out to split cleanly into things a tool can read and things only a person can
@@ -174,6 +185,15 @@ measurement for each in the PR, because the tag protection finding applies to th
 distribution first.
 
 ## Verification
+
+Baseline measured by hand on 2026-09-26 against `GruntworkAI/gruntwork-lastmilefirst` (public):
+0 rulesets and no classic protection on `main`; 0 rulesets on tags, with `v0.34.0` to `v0.34.2`
+being what Desktop installs from; Dependabot alerts off and security updates disabled; Actions
+allowed actions `all`, workflow token `read`, cannot approve pull requests; secret scanning and
+push protection on; squash, merge, and rebase all allowed, auto-merge off, delete-branch-on-merge
+off; forking on; wiki and projects on; 0 webhooks, 0 deploy keys, 1 collaborator (admin). The
+built `--audit` must reproduce these measurements before anything is changed, and U5 records what
+changed.
 
 - Hooks suite passes; count reported.
 - Session start on this repo: output identical to before U2, apart from nothing.
