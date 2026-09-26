@@ -1,20 +1,20 @@
 {
   "name": "gruntwork-lastmilefirst",
   "owner": {
-    "name": "Michael Fisher",
+    "name": "GruntworkAI",
     "url": "https://github.com/GruntworkAI"
   },
   "metadata": {
     "description": "Marketplace for the lastmilefirst plugin: opinionated structure and workflow for projects built by people and coding agents.",
-    "version": "0.34.1"
+    "version": "0.34.2"
   },
   "plugins": [
     {
       "name": "lastmilefirst",
       "description": "Opinionated structure and workflow for projects built by people and coding agents: project structure, tiered CLAUDE.md, PARC workflow, AI expert agents, org-level operatives and stack-wisdom, and Overwatch drift checks.",
-      "version": "0.34.1",
+      "version": "0.34.2",
       "author": {
-        "name": "Michael Fisher",
+        "name": "GruntworkAI",
         "url": "https://github.com/GruntworkAI"
       },
       "homepage": "https://github.com/GruntworkAI/gruntwork-lastmilefirst",
