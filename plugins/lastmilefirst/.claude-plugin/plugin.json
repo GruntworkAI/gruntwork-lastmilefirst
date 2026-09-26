@@ -6,7 +6,7 @@
     "name": "Michael Fisher",
     "url": "https://github.com/GruntworkAI"
   },
-  "repository": "https://github.com/GruntworkAI/gruntwork-stack-wisdom",
+  "repository": "https://github.com/GruntworkAI/gruntwork-lastmilefirst",
   "license": "MIT",
   "keywords": [
     "lastmilefirst",
@@ -23,3 +23,4 @@
     "security"
   ]
 }
+
