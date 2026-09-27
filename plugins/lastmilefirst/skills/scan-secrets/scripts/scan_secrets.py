@@ -8,6 +8,9 @@ Usage:
     python scan_secrets.py --pre-commit         # Scan staged changes (for hook)
     python scan_secrets.py --audit              # Audit current repo hygiene
     python scan_secrets.py --audit --github     # Audit all public GitHub repos
+    python scan_secrets.py --audit --github --deep  # ...plus per-call checks per repo
+    python scan_secrets.py --audit --propose    # Audit plus an itemized list of changes
+    python scan_secrets.py --apply ID [ID ...]  # Apply exactly the named items, re-read
     python scan_secrets.py --install-hooks      # Install global pre-commit hook
     python scan_secrets.py --uninstall-hooks    # Remove pre-commit hook
     python scan_secrets.py --list-formats       # Show active format rules
@@ -34,6 +37,8 @@ Examples:
     python scan_secrets.py --all              # Scan all workspace repos
     python scan_secrets.py --audit            # Audit repo hygiene
     python scan_secrets.py --audit --github   # List all public repos
+    python scan_secrets.py --audit --propose  # Itemized changes, nothing applied
+    python scan_secrets.py --apply wiki-off   # Apply one named item, then re-read
     python scan_secrets.py --install-hooks    # Install pre-commit hook
     python scan_secrets.py --list-formats     # Show format rules
         """,
@@ -56,6 +61,14 @@ Examples:
         "--audit",
         action="store_true",
         help="Audit repo hygiene (.gitignore, visibility, dangerous files)",
+    )
+    mode.add_argument(
+        "--apply",
+        nargs="*",
+        metavar="ID",
+        default=None,
+        help="Apply exactly the named GitHub setting items (ids from --audit --propose),"
+             " then re-read each. No ids: print the proposal and apply nothing",
     )
     mode.add_argument(
         "--install-hooks",
@@ -94,6 +107,16 @@ Examples:
         action="store_true",
         help="With --audit: scan entire GitHub account for public repos",
     )
+    parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="With --audit --github: per-call checks on every repo (about 8 calls per repo)",
+    )
+    parser.add_argument(
+        "--propose",
+        action="store_true",
+        help="With --audit: add an itemized list of setting changes (applies nothing)",
+    )
 
     args = parser.parse_args()
 
@@ -131,13 +154,19 @@ Examples:
         print("(This mode is handled by the SKILL.md instructions)")
         return 0
 
+    if args.apply is not None:
+        from repo_auditor import apply_to_repo
+        code, report = apply_to_repo(args.apply)
+        print(report)
+        return code
+
     if args.audit:
         if args.github:
             from repo_auditor import audit_github_account
-            print(audit_github_account())
+            print(audit_github_account(deep=args.deep))
         else:
             from repo_auditor import audit_repo
-            print(audit_repo())
+            print(audit_repo(propose=args.propose))
         return 0
 
     if args.pre_commit:

@@ -28,6 +28,9 @@ gitleaks version && gh auth status && python3 --version
 | `/run-scan-secrets --all` | Scan workspace | Walk ~/Code finding all git repos, scan each |
 | `/run-scan-secrets --audit` | Audit current repo | .gitignore gaps, dangerous files, visibility check |
 | `/run-scan-secrets --audit --github` | Audit GitHub account | List all public repos, flag suspicious names |
+| `/run-scan-secrets --audit --github --deep` | Audit GitHub account, per repo | Adds the per-call checks on every listed repo (about eight API calls per repo) |
+| `/run-scan-secrets --audit --propose` | Audit plus proposed changes | Itemized list of setting changes with a consequence each; applies nothing |
+| `/run-scan-secrets --apply <id> [<id>...]` | Apply named changes | Fresh audit, applies exactly the named items, re-reads, prints before and after |
 | `/run-scan-secrets --install-hooks` | Install pre-commit | Global hook via core.hooksPath |
 | `/run-scan-secrets --uninstall-hooks` | Remove pre-commit | Restore previous hook config |
 | `/run-scan-secrets --add-format` | Add custom format | Interactive: add org-specific secret pattern |
@@ -67,6 +70,7 @@ python3 ${SKILL_DIR}/scripts/scan_secrets.py --all
 Checks a single repo for:
 - **Visibility**: Public vs private (via gh CLI)
 - **GitHub protections**: whether GitHub's own secret scanning and push protection are enabled
+- **Per-call checks**: rulesets on the default branch and release tags, Dependabot alerts, Actions policy, workflow token, webhooks, deploy keys (see the posture section below)
 - **.gitignore coverage**: Checks for required patterns (.env, *.pem, *.key, *.tfstate, etc.)
 - **Dangerous committed files**: Searches git history for files that should never be committed
 
@@ -85,7 +89,10 @@ Scans your entire GitHub account (personal + orgs):
 **Run:**
 ```bash
 python3 ${SKILL_DIR}/scripts/scan_secrets.py --audit --github
+python3 ${SKILL_DIR}/scripts/scan_secrets.py --audit --github --deep   # plus per-call checks per repo
 ```
+
+`--deep` runs the seven per-call checks on every listed repo. That is about eight API calls per repo (the repo read plus seven checks), plus one more per ruleset and one for the selected-actions list where it applies. A running count prints to stderr. On an account with many repos, mind the API rate limit (5,000 calls an hour for an authenticated user).
 
 ### `--install-hooks`: Pre-commit Hook
 
@@ -166,7 +173,7 @@ Both are **free on public repositories**, and both can be off — repository-lev
 
 | Surface | Behavior |
 |---|---|
-| `--audit` | Full posture block beside the visibility line, including tier-gated fields |
+| `--audit` | Full posture block beside the visibility line, including tier-gated fields, then the per-call checks below |
 | `--all` | Account-wide pass over every public repo, including ones never cloned |
 | Session start | ACTION REQUIRED when the current public repo is missing a protection |
 
@@ -201,6 +208,50 @@ gh api -X PATCH repos/OWNER/REPO \
 ```
 
 **Accounts** for the `--all` pass are derived from each org's identity contract (`<org>/.claude/org.json` → `identity.github_account`), so a new org is picked up automatically. Listing another account's *public* repos works from any authenticated identity, so this never calls `gh auth switch` — which is machine-global and would silently repoint every other shell.
+
+### Per-call checks (`--audit` only)
+
+Each of these costs its own API call, so they run when you ask (`--audit`) and never at session start. Every line is a measurement; none is alerted on.
+
+| Check | Endpoint(s) | Printed |
+|---|---|---|
+| Default-branch rulesets | `repos/{r}/rulesets`, then `rulesets/{id}` per ruleset; `branches/{default}/protection` | active rulesets targeting the default branch; whether they block force pushes, block deletion, require a pull request; classic protection on or none |
+| Release-tag rulesets | same listing, tag targets | active rulesets whose pattern covers `refs/tags/v*` (or `~ALL`); whether they block updates and deletion. When the repo ships `.claude-plugin/marketplace.json`, one clause adds that consumer installs resolve from this tag |
+| Dependabot alerts | `repos/{r}/vulnerability-alerts` | on (204) or off (404) |
+| Actions policy | `repos/{r}/actions/permissions` (+ `selected-actions`) | enabled; allowed actions class; GitHub-owned, verified, pattern count when selected |
+| Workflow token | `repos/{r}/actions/permissions/workflow` | default permissions; can approve pull requests |
+| Webhooks | `repos/{r}/hooks` | count; count with no secret; count with SSL verification off |
+| Deploy keys | `repos/{r}/keys` | count; count writable |
+
+Any other non-2xx reads as **unknown** and prints one line saying so, never a finding. Two 404s carry meaning by API contract: `vulnerability-alerts` 404 is "off", and a branch-protection 404 whose message is "Branch not protected" is "none" (any other 404 there is a permissions answer, so unknown). A 403 whose message asks for an upgrade prints **not available on this plan** (rulesets and branch protection on a private repo owned by a personal account on a free plan), so it is not read as a gap.
+
+### Proposing and applying changes (`--propose`, `--apply`)
+
+`--audit --propose` adds an itemized list after the per-call block. Each item has an id, the setting, the current value, the value it would take, the reason, and the consequence. Items already in place are left out. Nothing is written.
+
+`--apply <id> [<id>...]` runs a fresh audit, applies exactly the named items, re-reads each one through the same GET the audit uses, and prints before and after. An unknown id is an error and nothing is applied. `--apply` with no ids prints the proposal and applies nothing. Applying an item that is already in place is a no-op that says "already set". A repo your account does not administer gets no proposal and nothing is applied. None of this runs at session start.
+
+**Default items** (the baseline; none changes who can push or merge):
+
+| Id | Change | Consequence |
+|---|---|---|
+| `ruleset-main` | Ruleset "protect main" on `~DEFAULT_BRANCH`: `deletion`, `non_fast_forward` (no pull request rule) | Blocks force pushes to and deletion of the default branch; direct pushes still work |
+| `ruleset-tags` | Ruleset "protect release tags" on `refs/tags/v*`: `update`, `deletion` | Existing `v*` tags cannot be moved or deleted; new tags can still be created |
+| `dependabot-alerts` | `PUT vulnerability-alerts` | Alerts on known-vulnerable dependencies; no code changes |
+| `dependabot-updates` | `PUT automated-security-fixes` | Dependabot opens fix pull requests; nothing merges without a person |
+| `actions-selected` | Allowed actions `selected`, GitHub-owned and verified allowed (existing patterns kept) | Workflows using an action outside that set stop running until it is allowed |
+| `delete-branch-on-merge` | `delete_branch_on_merge: true` | Head branches are deleted after merge (restorable) |
+| `wiki-off` | `has_wiki: false` | Wiki tab hidden; content is kept |
+
+**Consider items** (change who can push or merge, or how; applied only when named, never part of the default set):
+
+| Id | Change | Consequence |
+|---|---|---|
+| `ruleset-main-pr` | Ruleset "require pull request on main": `pull_request` rule, 0 approvals | Direct pushes to the default branch are blocked, including doc commits |
+| `merge-commit-only` | Merge commits only; squash and rebase off | Keeps the original author line on fork pull requests; squash and rebase merges no longer offered |
+| `forking-off` | `allow_forking: false` (private repos only; GitHub does not allow it on public repos) | No new forks |
+
+A setting whose current value cannot be read (unknown, or not available on this plan) is listed under "Not proposed" and is not applied if named.
 
 **Beyond these checks:** [GitHub hygiene for shared repositories](../../docs/github-hygiene-for-shared-repos.md) covers what this posture check measures for you and what only a person can set (email privacy and two-factor are not readable through the API).
 
