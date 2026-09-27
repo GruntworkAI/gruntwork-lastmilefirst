@@ -137,8 +137,12 @@ def _describe_posture(posture) -> str:
     return gp.describe(posture) if gp else ""
 
 
-def audit_repo(repo_path: Optional[Path] = None) -> str:
-    """Run full audit on a single repo. Returns formatted report."""
+def audit_repo(repo_path: Optional[Path] = None, propose: bool = False) -> str:
+    """Run full audit on a single repo. Returns formatted report.
+
+    `propose` adds the itemized delta from github_protections.propose();
+    it reads only, and nothing is written without --apply.
+    """
     cwd = repo_path or Path.cwd()
     lines = [f"Audit: {cwd.name}", "=" * 50]
 
@@ -158,6 +162,17 @@ def audit_repo(repo_path: Optional[Path] = None) -> str:
             lines.append("  WARNING: This repo is publicly accessible!")
         lines.append("")
         lines.append(_describe_posture(posture))
+
+        # Per-call checks (plan 2026-09-26-001, U3): about eight more calls,
+        # so they run here and never at session start.
+        gp = _load_github_protections()
+        if gp is not None:
+            audit = gp.audit_posture(repo_path=cwd)
+            lines.append("")
+            lines.append(gp.describe_audit(audit))
+            if propose:
+                lines.append("")
+                lines.append(gp.describe_proposal(audit, gp.propose(audit)))
 
     # 2. .gitignore gaps
     missing, present = check_gitignore(cwd)
@@ -186,10 +201,30 @@ def audit_repo(repo_path: Optional[Path] = None) -> str:
     return "\n".join(lines)
 
 
-def audit_github_account() -> str:
+def apply_to_repo(ids: List[str], repo_path: Optional[Path] = None) -> Tuple[int, str]:
+    """--apply: a fresh audit, then exactly the named items. Returns
+    (exit_code, report). Unknown ids write nothing and exit 2."""
+    gp = _load_github_protections()
+    if gp is None:
+        return 1, "Apply: github_protections unavailable; nothing applied."
+    outcome = gp.apply(None, ids, repo_path=repo_path or Path.cwd())
+    code = 2 if outcome.get("error") else 0
+    if any(r["outcome"] == "not applied" for r in outcome.get("results") or []):
+        code = 1
+    return code, gp.describe_apply(outcome)
+
+
+def _deep_progress(i: int, total: int, repo: str) -> None:
+    print(f"  deep audit {i}/{total}: {repo}", file=sys.stderr, flush=True)
+
+
+def audit_github_account(deep: bool = False) -> str:
     """
     Audit all public repos across user's GitHub account and orgs.
     Uses gh CLI to enumerate repos.
+
+    `deep` runs the per-call checks on every listed repo: about eight API
+    calls per repo, plus one per ruleset, with a running count on stderr.
     """
     lines = ["GitHub Account Public Repo Audit", "=" * 50]
 
@@ -247,6 +282,8 @@ def audit_github_account() -> str:
             lines.append(f"  - {name}")
         lines.append("\n  Change visibility: gh repo edit <repo> --visibility private")
 
+    deep_repos = [r.get("nameWithOwner") for r in repos if r.get("nameWithOwner")]
+
     # Also check org repos
     try:
         result = subprocess.run(
@@ -281,9 +318,22 @@ def audit_github_account() -> str:
                                 name = repo.get("nameWithOwner", "")
                                 pushed = repo.get("pushedAt", "")[:10]
                                 lines.append(f"  {name:<43} {pushed}")
+                                if name and name not in deep_repos:
+                                    deep_repos.append(name)
                 except (subprocess.TimeoutExpired, json.JSONDecodeError):
                     continue
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
+
+    if deep:
+        gp = _load_github_protections()
+        if gp is None:
+            lines.append("\nPer-call checks: github_protections unavailable; skipped.")
+        else:
+            lines.append(
+                f"\nPer-call checks on {len(deep_repos)} repo(s)"
+                f" (about {8 * len(deep_repos)} API calls, plus one per ruleset):"
+            )
+            lines.extend(gp.deep_audit(deep_repos, progress=_deep_progress))
 
     return "\n".join(lines)
