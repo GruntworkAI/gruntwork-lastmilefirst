@@ -355,6 +355,8 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 | `/run-plugin-inventory` | Show installed plugins with versions and usage stats |
 | `/run-todos-summary` | Aggregate todos across all projects in an org |
 
+For repositories that people and coding agents both push to, [GitHub hygiene for shared repositories](docs/github-hygiene-for-shared-repos.md) lists the account and repository settings to set, which ones `/run-scan-secrets` checks for you, and which ones only a person can set.
+
 ## Public Expert Agents
 
 The plugin includes 16 AI expert personas you can consult when you need specialized knowledge. These are **public experts** - built into the plugin and available to everyone.
