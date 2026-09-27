@@ -170,11 +170,25 @@ Both are **free on public repositories**, and both can be off — repository-lev
 | `--all` | Account-wide pass over every public repo, including ones never cloned |
 | Session start | ACTION REQUIRED when the current public repo is missing a protection |
 
+**Repository settings, read from the same API call.** The response that carries the two protections also carries the settings below. They are cached with the posture at session start and printed in `--audit`, but they are policy choices rather than faults, so none of them is alerted on. Each reads **unknown** when the field is absent from the response.
+
+| Setting | Source field(s) | Where it appears |
+|---|---|---|
+| Merge methods allowed | `allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge` | `--audit` only, not alerted |
+| Auto-merge | `allow_auto_merge` | `--audit` only, not alerted |
+| Delete branch on merge | `delete_branch_on_merge` | `--audit` only, not alerted |
+| Forking | `allow_forking` | `--audit` only, not alerted |
+| Wiki, Discussions, Projects | `has_wiki`, `has_discussions`, `has_projects` | `--audit` only, not alerted |
+| Dependabot security updates | `security_and_analysis.dependabot_security_updates` (admin only) | `--audit` only, not alerted |
+| Web commit sign-off required | `web_commit_signoff_required` | `--audit` only, not alerted |
+
+These are readable without admin and are shown for private repos too; only the two protections above are skipped on private repos.
+
 **Three states, not two.** GitHub omits the `security_and_analysis` block entirely for callers without admin on a repo. Absence is treated as **unknown**, never as *disabled* — otherwise the check would fire on every contributor for every repo they do not own. Unknown is always silent.
 
 **What is deliberately not checked:**
 
-- **Private repos** — secret scanning there requires paid GitHub Secret Protection, so an alert would be permanently unfixable. They short-circuit before any API call.
+- **Private repos** — secret scanning there requires paid GitHub Secret Protection, so an alert would be permanently unfixable. They short-circuit after the one `gh api` call (visibility and posture arrive together).
 - **Forks and repos without admin access** — you cannot change those settings, so they are not your finding.
 - **`non_provider_patterns` and `validity_checks`** — tier-gated, so they read `disabled` forever on a free public repo. Shown in `--audit`, never alerted on. Generic-pattern detection is what this plugin's own `lmf-*` rules cover.
 
@@ -187,6 +201,8 @@ gh api -X PATCH repos/OWNER/REPO \
 ```
 
 **Accounts** for the `--all` pass are derived from each org's identity contract (`<org>/.claude/org.json` → `identity.github_account`), so a new org is picked up automatically. Listing another account's *public* repos works from any authenticated identity, so this never calls `gh auth switch` — which is machine-global and would silently repoint every other shell.
+
+**Beyond these checks:** [GitHub hygiene for shared repositories](../../docs/github-hygiene-for-shared-repos.md) covers what this posture check measures for you and what only a person can set (email privacy and two-factor are not readable through the API).
 
 ## Secret Format Libraries
 

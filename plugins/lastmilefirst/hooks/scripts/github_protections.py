@@ -40,6 +40,36 @@ TIER_GATED_FIELDS = (
     "secret_scanning_validity_checks",
 )
 
+# Repository settings read from the same payload at no extra cost. They are
+# policy choices, not faults, so they are cached and shown in --audit and
+# describe() but never alerted on (plan 2026-09-26-001, D2). Unlike
+# security_and_analysis, these are visible to any caller who can read the
+# repo, so they are parsed for private repos too.
+ON = "on"
+OFF = "off"
+
+# (label, payload key), in the order they print.
+MERGE_METHOD_FIELDS = (
+    ("squash", "allow_squash_merge"),
+    ("merge", "allow_merge_commit"),
+    ("rebase", "allow_rebase_merge"),
+)
+FEATURE_FIELDS = (
+    ("wiki", "has_wiki"),
+    ("discussions", "has_discussions"),
+    ("projects", "has_projects"),
+)
+SETTINGS_FIELDS = (
+    "visibility",
+    "merge_methods",
+    "allow_auto_merge",
+    "delete_branch_on_merge",
+    "allow_forking",
+    "features",
+    "dependabot_security_updates",
+    "web_commit_signoff_required",
+)
+
 
 def _run_gh(args, cwd: Optional[Path], timeout: int):
     """Run a gh command. Returns CompletedProcess, or None if gh is unusable."""
@@ -55,15 +85,69 @@ def _run_gh(args, cwd: Optional[Path], timeout: int):
         return None
 
 
-def parse_posture(payload: Dict[str, Any]) -> Dict[str, str]:
+def _on_off(value: Any) -> str:
+    """A boolean payload field as on/off; anything else is UNKNOWN."""
+    if value is True:
+        return ON
+    if value is False:
+        return OFF
+    return UNKNOWN
+
+
+def parse_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Repository settings from a repos/{owner}/{repo} payload.
+
+    Every value is JSON-serializable (it is cached in Overwatch state).
+    Absent or malformed fields are UNKNOWN, never a guessed default.
+    `merge_methods` is the list of allowed methods, or UNKNOWN if any of the
+    three flags is missing, because a partial list would misreport.
+    """
+    visibility = payload.get("visibility")
+    flags = [payload.get(key) for _, key in MERGE_METHOD_FIELDS]
+    if all(isinstance(f, bool) for f in flags):
+        merge_methods: Any = [
+            label for (label, _), f in zip(MERGE_METHOD_FIELDS, flags) if f
+        ]
+    else:
+        merge_methods = UNKNOWN
+
+    sa = payload.get("security_and_analysis")
+    dependabot = UNKNOWN
+    if isinstance(sa, dict):
+        entry = sa.get("dependabot_security_updates")
+        if isinstance(entry, dict) and entry.get("status") in (ENABLED, DISABLED):
+            dependabot = entry["status"]
+
+    return {
+        "visibility": (
+            visibility.upper() if isinstance(visibility, str) and visibility else UNKNOWN
+        ),
+        "merge_methods": merge_methods,
+        "allow_auto_merge": _on_off(payload.get("allow_auto_merge")),
+        "delete_branch_on_merge": _on_off(payload.get("delete_branch_on_merge")),
+        "allow_forking": _on_off(payload.get("allow_forking")),
+        "features": {
+            label: _on_off(payload.get(key)) for label, key in FEATURE_FIELDS
+        },
+        "dependabot_security_updates": dependabot,
+        "web_commit_signoff_required": _on_off(
+            payload.get("web_commit_signoff_required")
+        ),
+    }
+
+
+def parse_posture(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Extract posture from a repos/{owner}/{repo} payload.
 
     Absent or malformed `security_and_analysis` yields UNKNOWN for every
-    field rather than DISABLED — see module docstring.
+    security field rather than DISABLED — see module docstring. The
+    repository settings from parse_settings() are included alongside; the
+    security keys and their values are unchanged by that addition.
     """
+    settings = parse_settings(payload)
     sa = payload.get("security_and_analysis")
     if not isinstance(sa, dict):
-        return dict(_UNKNOWN_POSTURE)
+        return {**_UNKNOWN_POSTURE, **settings}
 
     def status_of(key: str) -> str:
         entry = sa.get(key)
@@ -78,6 +162,7 @@ def parse_posture(payload: Dict[str, Any]) -> Dict[str, str]:
     }
     for field in TIER_GATED_FIELDS:
         posture[field] = status_of(field)
+    posture.update(settings)
     return posture
 
 
@@ -98,6 +183,8 @@ def fetch_posture(
 
     Returns a dict that is always safe to read:
         {repo, visibility, scanning, push_protection, reason}
+    plus the parse_settings() fields whenever the payload was readable
+    (callers reading an older cached entry must tolerate their absence).
     """
     endpoint = f"repos/{repo}" if repo else "repos/{owner}/{repo}"
     result = _run_gh(["gh", "api", endpoint], repo_path, timeout)
@@ -123,6 +210,12 @@ def fetch_posture(
         return base
 
     base["repo"] = payload.get("full_name") or repo
+    # Settings are readable at any visibility, so record them before the
+    # private short-circuit; the visibility key keeps its existing
+    # None-when-absent semantics below.
+    settings = parse_settings(payload)
+    settings.pop("visibility")
+    base.update(settings)
     visibility = str(payload.get("visibility", "")).upper() or None
     base["visibility"] = visibility
 
@@ -130,7 +223,9 @@ def fetch_posture(
         base["reason"] = "private repo — GitHub secret scanning requires a paid tier"
         return base
 
-    base.update(parse_posture(payload))
+    posture = parse_posture(payload)
+    posture.pop("visibility")
+    base.update(posture)
     if base["scanning"] == UNKNOWN and base["push_protection"] == UNKNOWN:
         base["reason"] = "no admin access to this repo"
     return base
@@ -176,8 +271,62 @@ def posture_alert(posture: Dict[str, Any]) -> Optional[str]:
     )
 
 
+def describe_settings(posture: Dict[str, Any]) -> str:
+    """Repository-settings block for --audit. Measurements only; empty when
+    nothing was read (gh failed, or an older cache entry without them)."""
+    def shown(value: Any) -> str:
+        return UNKNOWN if value is None else str(value)
+
+    methods = posture.get("merge_methods")
+    features = posture.get("features")
+    if not isinstance(features, dict):
+        features = {}
+
+    values = [
+        methods,
+        posture.get("allow_auto_merge"),
+        posture.get("delete_branch_on_merge"),
+        posture.get("allow_forking"),
+        *features.values(),
+        posture.get("dependabot_security_updates"),
+        posture.get("web_commit_signoff_required"),
+    ]
+    if all(v in (None, UNKNOWN) for v in values):
+        return ""
+
+    if isinstance(methods, list):
+        methods_text = ", ".join(methods) if methods else "none"
+    else:
+        methods_text = shown(methods)
+
+    lines = [
+        "Repository settings (--audit only, not alerted on):",
+        f"  Merge methods allowed:         {methods_text}",
+        f"  Auto-merge:                    {shown(posture.get('allow_auto_merge'))}",
+        f"  Delete branch on merge:        {shown(posture.get('delete_branch_on_merge'))}",
+        f"  Forking:                       {shown(posture.get('allow_forking'))}",
+    ]
+    for label, _ in FEATURE_FIELDS:
+        name = f"{label.capitalize()}:"
+        lines.append(f"  {name:<30} {shown(features.get(label))}")
+    lines.append(
+        f"  Dependabot security updates:   {shown(posture.get('dependabot_security_updates'))}"
+    )
+    lines.append(
+        f"  Web commit sign-off required:  {shown(posture.get('web_commit_signoff_required'))}"
+    )
+    return "\n".join(lines)
+
+
 def describe(posture: Dict[str, Any]) -> str:
-    """Multi-line human-readable block for --audit output."""
+    """Multi-line human-readable block for --audit output: the protection
+    block, then the repository-settings block when any setting was read."""
+    head = _describe_protections(posture)
+    settings = describe_settings(posture)
+    return f"{head}\n{settings}" if settings else head
+
+
+def _describe_protections(posture: Dict[str, Any]) -> str:
     if posture.get("visibility") != "PUBLIC":
         return f"GitHub protections: not applicable ({posture.get('reason')})"
 
