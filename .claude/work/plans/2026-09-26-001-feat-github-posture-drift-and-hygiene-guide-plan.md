@@ -1,6 +1,6 @@
 ---
-title: GitHub posture drift in Overwatch, and a hygiene guide for shared repositories
-version: 1.1
+title: GitHub posture drift in Overwatch, a gated apply, and a hygiene guide for shared repositories
+version: 1.2
 date: 2026-09-26
 status: proposed
 type: feat
@@ -11,8 +11,16 @@ refs:
   - ~/Code/gruntwork/gruntwork-stack-wisdom/stack-wisdom/github-account-and-repo-hygiene.md (the private checklist, v1.0)
 ---
 
-# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.1)
+# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.2)
 
+> **v1.2 (2026-09-26).** D1 revised from "report, never change" to a gated apply, after the four
+> fixes were applied by hand to the plugin repo with an itemized approval and a re-read, and the
+> same set fit the other two public marketplaces unchanged. The API calls were the trivial part;
+> the judgment was in what to leave out (a pull-request requirement would have broken direct doc
+> commits; merge methods are needed as they are; Projects could not be read). So the skill
+> proposes an itemized delta with a consequence per item, applies only what the user selects in
+> that session, and reads every setting back. New unit U3b. Title updated.
+>
 > **v1.1 (2026-09-26).** Dry run of every planned endpoint by hand against this repo, read-only.
 > All behave as the Design assumes: `vulnerability-alerts` 404 means off; `rulesets` returns an
 > empty list; classic branch protection returns a 404 whose message is "Branch not protected",
@@ -68,9 +76,15 @@ warned about.
 
 ## Decisions
 
-**D1. Report, never change.** The plugin reads settings and says what it measured. It never
-PATCHes a setting. The one existing exception stays as it is: `enable_command()` prints a command
-the user can run. Nothing new prints a command.
+**D1. Measure by default; apply only what the user selects, in that session, never at session
+start.** `--audit` reports measurements. `--audit --propose` adds an itemized delta: each item names
+the setting, the value it would take, the reason, and the consequence ("blocks force pushes to
+main; direct pushes still work"). `--apply` takes the item ids the user chose and applies exactly
+those, then re-reads every setting and prints before and after. The default proposal never
+includes anything that changes who can push or merge (a pull-request requirement, merge methods,
+collaborator changes); those are listed under "consider" with their consequence and are applied
+only if named. This is the critique / rewrite-on-authorization / LFG shape the prose lenses use.
+`enable_command()` folds into the proposal as one item.
 
 **D2. Session start alerts do not grow.** The two alerts that exist (secret scanning off, push
 protection off, on a public repo) remain the only session-start alerts from this module. The new
@@ -167,6 +181,26 @@ prints measurements per D4. Wire into `scan_secrets.py --audit` and `--audit --g
 `.claude-plugin/marketplace.json` gets the Desktop consequence clause when no tag ruleset
 matches; a live read-only run against this repo pasted into the PR.
 
+### U3b. Gated apply
+
+`--audit --propose` and `--apply <ids>` in `scan_secrets.py`, backed by one function per setting
+in `github_protections.py` (rulesets on the default branch and on `v*` tags, Dependabot alerts and
+security updates, Actions allowed-actions class, delete-branch-on-merge, wiki off). Each apply
+function is a thin wrapper over the PATCH, PUT, or POST call and returns the re-read value. The
+proposal logic is where the tests go: a repo with all three merge methods and fork PRs in its
+history does not get a merge-method item in the default set; a repo whose default branch already
+has a ruleset does not get a duplicate; a repo the caller does not admin gets no proposal and a
+one-line reason. Idempotent: applying an item that is already in place is a no-op that says so.
+
+Baseline for the default set, applied by hand 2026-09-26 to all three public marketplaces with
+Fish's approval: rulesets `protect main` (deletion, non_fast_forward; no PR requirement) and
+`protect release tags` (`refs/tags/v*`, update + deletion); Dependabot alerts and security updates
+on; Actions `selected` with GitHub-owned and verified allowed; delete-branch-on-merge on; wiki off.
+
+*Accept:* fixture tests for the proposal logic; `--apply` with no ids does nothing; every applied
+item is re-read and the before and after printed; applying the default set to a repo already at
+the baseline reports six no-ops and changes nothing.
+
 ### U4. The guide
 
 `docs/github-hygiene-for-shared-repos.md` plus the two links. Generalize from the private
@@ -225,7 +259,6 @@ changed.
 
 ## Deferred
 
-- A `--fix` that applies settings. D1 says never; revisit only if a user asks for it twice.
 - Organization-level settings. Both accounts here are user accounts; write the org section when
   there is an org to test against.
 - Email privacy and two-factor status. Not readable through the API; they stay in the guide.
