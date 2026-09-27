@@ -1,8 +1,8 @@
 ---
 title: GitHub posture drift in Overwatch, a gated apply, and a hygiene guide for shared repositories
-version: 1.3
+version: 1.4
 date: 2026-09-26
-status: in-progress
+status: built
 type: feat
 component: plugins/lastmilefirst/hooks/scripts/github_protections.py, skills/scan-secrets, docs/
 target_version: 0.35.0
@@ -11,8 +11,19 @@ refs:
   - ~/Code/gruntwork/gruntwork-stack-wisdom/stack-wisdom/github-account-and-repo-hygiene.md (the private checklist, v1.0)
 ---
 
-# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.3)
+# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.4)
 
+> **v1.4 (2026-09-27).** Built on `feat/github-posture-drift`, PR pending. Suites: hooks 236 (63
+> before), review-claude 47, review-org 10, audit-plugin 189. Live, read-only: `--audit --propose`
+> on all three marketplaces reproduces the hand-applied baseline with an empty default proposal;
+> `--audit --github --deep` on the GruntworkAI account covered 6 public repos in 27 seconds and
+> found griffith and ai-team unprotected (no rulesets, Dependabot off, Actions all), plus the
+> third-party compound-engineering fork. Deviations from the plan as written: the default set is
+> seven ids, not six (Dependabot alerts and security updates are separate items); `forking-off`
+> is proposed on private repos only, since GitHub does not allow it off on public ones; the
+> plan-gated 403 is detected by message text and has not been checked against a live free-plan
+> private repo. U5 (release) follows merge.
+>
 > **v1.3 (2026-09-27).** Build started on `feat/github-posture-drift`. Order: U1 and U2 together
 > (tests, then fields), U4 in parallel, then U3 and U3b, then U5.
 >
