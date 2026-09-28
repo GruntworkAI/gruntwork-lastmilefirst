@@ -169,3 +169,17 @@ def test_rollup_shows_nested_rows_under_their_client(org: Path) -> None:
     text = review_org.format_text(rollup, Path("/tmp/state.json"))
     assert "  northwind/: 2 project directories" in text
     assert "Without one: acme-scratch, northwind/docs" in text
+
+
+def test_rollup_reports_a_layout_issue_from_an_empty_client_directory(org: Path) -> None:
+    client = org / "contoso"
+    _write(client / ".claude-workspace", "type: client\n")
+    _write(client / ".claude" / "org.json", "{}")
+
+    rollup = review_org.build_rollup(org, None, now=NOW, commit_ts=lambda _p: 0)
+
+    assert not [p for p in rollup["projects"] if p.get("client") == "contoso"]
+    assert len(rollup["layout"]) == 1
+    assert rollup["layout"][0].startswith("ACTION REQUIRED:")
+    assert "acme/contoso" in rollup["layout"][0]
+    assert "Layout: ACTION REQUIRED:" in review_org.format_text(rollup, Path("/tmp/state.json"))

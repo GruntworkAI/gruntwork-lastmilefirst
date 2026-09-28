@@ -369,3 +369,22 @@ def test_iter_repos_skips_the_client_directory_itself(workspace):
     make_repo(client / "web")
     make_repo(org / "practice")
     assert audit_identity.iter_repos(org) == [client / "web", org / "practice"]
+
+
+def test_iter_repos_includes_a_client_directory_that_is_itself_a_repo(workspace):
+    """A layout defect, but its commits still need auditing, as the flat org/dir."""
+    org = workspace / "acme"
+    client = mark_client(org / "northwind")
+    make_repo(client)
+    make_repo(client / "web")
+    assert audit_identity.iter_repos(org) == [client, client / "web"]
+    assert audit_identity.repo_label(org, client) == "acme/northwind"
+
+
+def test_drift_audits_a_client_directory_that_is_a_repo(workspace):
+    org = write_org(workspace / "acme", "acme", ACME)
+    client = mark_client(org / "northwind")
+    make_repo(client, name="acme-dev", email="someone-else@example.com")
+    messages = [f.message for f in severities(audit_identity.drift_findings(workspace), ERROR)]
+    assert len(messages) == 1
+    assert messages[0].startswith("acme/northwind commits as someone-else@example.com")

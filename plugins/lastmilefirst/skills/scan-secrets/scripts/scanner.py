@@ -543,6 +543,56 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
         config_path.unlink(missing_ok=True)
 
 
+def _load_workspace_loader():
+    """The workspace layout loader from hooks/scripts, or None if it cannot load.
+
+    The hooks directory is optional to the scanner (the per-project state
+    update below soft-fails the same way), so a missing or broken loader must
+    not stop a scan.
+    """
+    hooks_scripts = Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
+    if str(hooks_scripts) not in sys.path:
+        sys.path.insert(0, str(hooks_scripts))
+    try:
+        import workspace_types  # type: ignore
+        return workspace_types
+    except Exception:
+        return None
+
+
+def _find_workspace_repos(ws: Path) -> Tuple[List[Tuple[str, Path]], Optional[str]]:
+    """Git repos under the workspace as (key, path), plus an optional note.
+
+    With the loader: `<org>/<repo>`, plus `<org>/<client>/<repo>` under a
+    directory marked `type: client`, keyed by the path relative to the
+    workspace (the key Overwatch reads). A client directory that is itself a
+    repo is included as the flat `<org>/<dir>`, so it is still scanned.
+
+    Without the loader: the depth-2 walk, and a note saying client
+    directories are not being descended.
+    """
+    loader = _load_workspace_loader()
+    repos: List[Tuple[str, Path]] = []
+    orgs = [d for d in sorted(ws.iterdir()) if d.is_dir() and not d.name.startswith(".")]
+
+    if loader is None:
+        for org_dir in orgs:
+            for repo in sorted(org_dir.iterdir()):
+                if repo.is_dir() and not repo.name.startswith(".") and (repo / ".git").exists():
+                    repos.append((f"{org_dir.name}/{repo.name}", repo))
+        note = ("Note: the workspace layout loader could not be imported, so client "
+                "directories are not being descended; only <org>/<repo> is scanned.")
+        return repos, note
+
+    for org_dir in orgs:
+        found = [(p.key, p.path) for p in loader.iter_projects(org_dir)
+                 if (p.path / ".git").exists()]
+        found.extend((f"{org_dir.name}/{c.name}", c) for c in loader.iter_containers(org_dir)
+                     if (c / ".git").exists())
+        repos.extend(sorted(found))
+    return repos, None
+
+
 def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     """
     Walk workspace finding git repos and scan each.
@@ -561,21 +611,7 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     if not ws.exists():
         return 1, f"Workspace not found: {ws}"
 
-    hooks_scripts = Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
-    if str(hooks_scripts) not in sys.path:
-        sys.path.insert(0, str(hooks_scripts))
-    from workspace_types import iter_projects  # type: ignore
-
-    # Find git repos: <org>/<repo>, plus <org>/<client>/<repo> under a
-    # directory marked `type: client`. Keyed by the path relative to the
-    # workspace, which is the key Overwatch reads.
-    repos: List[Tuple[str, Path]] = []
-    for depth1 in sorted(ws.iterdir()):
-        if not depth1.is_dir() or depth1.name.startswith("."):
-            continue
-        for project in iter_projects(depth1):
-            if (project.path / ".git").exists():
-                repos.append((project.key, project.path))
+    repos, layout_note = _find_workspace_repos(ws)
 
     if not repos:
         return 0, f"No git repos found in {ws}"
@@ -589,7 +625,10 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     except (ImportError, Exception):
         pass
 
-    lines = [f"Scanning {len(repos)} repos in {ws}...\n"]
+    lines = []
+    if layout_note:
+        lines.append(layout_note)
+    lines.append(f"Scanning {len(repos)} repos in {ws}...\n")
     total_findings = 0
     now = int(time.time())
 

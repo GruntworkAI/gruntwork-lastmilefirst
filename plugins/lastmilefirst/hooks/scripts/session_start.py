@@ -19,7 +19,15 @@ from typing import Any, Callable, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from github_protections import fetch_posture, posture_alert
-from workspace_types import iter_projects
+# The workspace layout loader imports the marker parser from organize-orgs.
+# If that chain fails, degrade to the flat <org>/<project> walk and say so,
+# rather than losing the whole session-start report.
+try:
+    from workspace_types import ISSUE_SEVERITY, iter_projects, layout_issues
+except Exception:
+    ISSUE_SEVERITY = {}
+    iter_projects = None
+    layout_issues = None
 from overwatch import (
     load_state,
     update_scoped_state,
@@ -494,19 +502,33 @@ def check_claude_md() -> Optional[str]:
     return None
 
 
-def check_overwatch_guidance() -> Optional[str]:
-    """Check if any CLAUDE.md in the hierarchy contains Overwatch response guidance."""
-    search_paths = [
-        Path("CLAUDE.md"),           # Project level
-        Path.home() / "Code" / "CLAUDE.md",  # Top-level workspace
-    ]
+def check_overwatch_guidance(
+    cwd: Optional[Path] = None,
+    config: Optional[Dict] = None,
+    home: Optional[Path] = None,
+) -> Optional[str]:
+    """Check if any CLAUDE.md in the hierarchy contains Overwatch response guidance.
 
-    # Walk up to find org-level CLAUDE.md (parent of current project)
-    cwd = Path.cwd()
-    if cwd.parent != cwd:
-        org_claude = cwd.parent / "CLAUDE.md"
-        if org_claude not in search_paths:
-            search_paths.insert(1, org_claude)
+    Looks at the project's CLAUDE.md, the client directory's (for a nested
+    project), the org's, and the workspace's. The org is found with
+    `resolve_context`, not by position, so a project inside a client
+    directory still finds its org CLAUDE.md. `cwd`, `config`, and `home`
+    exist for tests.
+    """
+    cwd = cwd or Path.cwd()
+    home = home or Path.home()
+    search_paths = [cwd / "CLAUDE.md"]
+
+    if config is None:
+        config = _load_organize_config() or {}
+    ctx = resolve_context(cwd)
+    workspace = config.get("workspace")
+    if workspace and ctx.get("org"):
+        org_dir = Path(workspace) / ctx["org"]
+        if ctx.get("client"):
+            search_paths.append(org_dir / ctx["client"] / "CLAUDE.md")
+        search_paths.append(org_dir / "CLAUDE.md")
+    search_paths.append(home / "Code" / "CLAUDE.md")  # Top-level workspace
 
     keywords = ["overwatch", "overwatch alert", "overwatch response"]
 
@@ -643,6 +665,24 @@ def _get_last_commit_ts(repo_path: Path) -> int:
     return 0
 
 
+def _org_projects(org_dir: Path):
+    """(path, state key, label) for each project in an org.
+
+    Uses the workspace loader when it imported; otherwise the flat walk.
+    """
+    if iter_projects is not None:
+        for project in iter_projects(org_dir):
+            yield project.path, project.key, project.label
+        return
+    try:
+        children = sorted(org_dir.iterdir())
+    except OSError:
+        return
+    for child in children:
+        if child.is_dir() and not child.name.startswith("."):
+            yield child, f"{org_dir.name}/{child.name}", child.name
+
+
 def check_workspace_summary(
     config: Dict,
     full: bool = False,
@@ -655,9 +695,11 @@ def check_workspace_summary(
 
     Projects come from the workspace loader, so a project inside a client
     directory is counted and labeled `client/project`, and the client
-    directory itself is not. A loader note (a client directory nested in
-    another) becomes a NOTE line; a defect (a client directory carrying
-    org.json) becomes an ACTION REQUIRED line.
+    directory itself is not. Each layout issue at a client directory
+    (`workspace_types.layout_issues`) becomes one line labeled by
+    ISSUE_SEVERITY: org.json in a client directory is ACTION REQUIRED, a
+    client directory that is a repo is a WARNING, a nested one is a NOTE.
+    These are reported whether or not the client directory has children.
 
     Freshness alerts (stale_*) are gated on project activity: a repo with
     no commits since its last action is not flagged, even after the time
@@ -689,20 +731,25 @@ def check_workspace_summary(
     stale_organized = []
     missing_claude_md = []
 
+    if iter_projects is None:
+        layout_alerts.append(
+            "NOTE: the workspace layout loader could not be imported, so client "
+            "directories are not descended; projects are read as <org>/<project>."
+        )
+
     for org_name in config.get("orgs", []):
         org_dir = workspace / org_name
         if not org_dir.is_dir():
             continue
 
-        for project in iter_projects(org_dir):
-            if project.defect:
-                layout_alerts.append(f"ACTION REQUIRED: {project.defect}")
-            if project.note:
-                layout_alerts.append(f"NOTE: {project.note}")
+        # Layout issues come from the container itself, so a client
+        # directory with no children still reports them.
+        if layout_issues is not None:
+            for issue in layout_issues(org_dir):
+                severity = ISSUE_SEVERITY.get(issue.kind, "NOTE")
+                layout_alerts.append(f"{severity}: {issue.message}")
 
-            project_dir = project.path
-            project_key = project.key
-            project_label = project.label
+        for project_dir, project_key, project_label in _org_projects(org_dir):
             total += 1
 
             project_state = state.get("projects", {}).get(project_key, {})
@@ -979,7 +1026,7 @@ def main() -> None:
         alerts.append(claude_md_alert)
 
     # Check 10: Overwatch response guidance
-    guidance_alert = check_overwatch_guidance()
+    guidance_alert = check_overwatch_guidance(config=config)
     if guidance_alert:
         alerts.append(guidance_alert)
 

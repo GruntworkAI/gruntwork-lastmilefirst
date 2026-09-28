@@ -94,3 +94,66 @@ def test_audit_report_indents_client_rows_under_the_org(workspace, capsys):
     assert "\n  northwind/\n    ✗ docs MISSING" in out
     assert "\n  contoso/\n    ✗ docs MISSING" in out
     assert "\n  ✗ acme-practice MISSING" in out
+
+
+# --- review fixes -----------------------------------------------------------------
+
+def run_main(workspace, tmp_path, monkeypatch, *argv):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"workspace": str(workspace), "orgs": ["acme"]}))
+    monkeypatch.setattr(organize_claude, "CONFIG_PATH", config_path)
+    monkeypatch.setattr("sys.argv", ["organize_claude.py", *argv])
+    organize_claude.main()
+
+
+def test_scaffold_project_by_client_label(workspace, tmp_path, monkeypatch):
+    run_main(workspace, tmp_path, monkeypatch, "--scaffold-project", "northwind/docs")
+    assert (workspace / "acme" / "northwind" / "docs" / "CLAUDE.md").exists()
+    assert not (workspace / "acme" / "contoso" / "docs" / "CLAUDE.md").exists()
+
+
+def test_scaffold_project_by_unique_leaf_name(workspace, tmp_path, monkeypatch):
+    mark_client(workspace / "acme" / "fabrikam")
+    (workspace / "acme" / "fabrikam" / "site").mkdir()
+    run_main(workspace, tmp_path, monkeypatch, "--scaffold-project", "site")
+    assert (workspace / "acme" / "fabrikam" / "site" / "CLAUDE.md").exists()
+
+
+def test_scaffold_project_with_an_ambiguous_leaf_name_writes_nothing(workspace, tmp_path,
+                                                                     monkeypatch, capsys):
+    run_main(workspace, tmp_path, monkeypatch, "--scaffold-project", "docs")
+    out = capsys.readouterr().out
+    assert "acme/contoso/docs, acme/northwind/docs" in out
+    assert not (workspace / "acme" / "northwind" / "docs" / "CLAUDE.md").exists()
+    assert not (workspace / "acme" / "contoso" / "docs" / "CLAUDE.md").exists()
+
+
+def test_scaffold_project_not_found_names_the_label_form(workspace, tmp_path, monkeypatch, capsys):
+    run_main(workspace, tmp_path, monkeypatch, "--scaffold-project", "nope")
+    out = capsys.readouterr().out
+    assert "Project 'nope' not found" in out
+    assert "client/project" in out
+
+
+def test_parse_project_mapping_keeps_two_clients_docs_rows(tmp_path):
+    md = tmp_path / "CLAUDE.md"
+    md.write_text(
+        "| Project | Path |\n|---|---|\n"
+        "| docs | ~/Code/acme/northwind/docs |\n"
+        "| docs | ~/Code/acme/contoso/docs |\n"
+    )
+    mapping = organize_claude.parse_project_mapping(md)
+    assert mapping == {
+        "~/Code/acme/northwind/docs": "docs",
+        "~/Code/acme/contoso/docs": "docs",
+    }
+
+
+def test_missing_mapping_label_strips_the_orgs_own_prefix(workspace, tmp_path, monkeypatch, capsys):
+    (workspace / "CLAUDE.md").write_text(
+        "| Project | Path |\n|---|---|\n| other | ~/Code/acme/other |\n"
+    )
+    run_main(workspace, tmp_path, monkeypatch, "--update-mappings")
+    out = capsys.readouterr().out
+    assert f"| practice | {workspace / 'acme' / 'acme-practice'} |" in out
+    assert "| northwind/docs |" in out

@@ -48,7 +48,9 @@ from archetypes import (
 _HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
 if str(_HOOKS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_HOOKS_SCRIPTS))
-from workspace_types import is_container, iter_projects  # noqa: E402
+from workspace_types import is_container, iter_containers  # noqa: E402
+# find_projects: (label, path, has_claude_md) per project, shared with organize-claude.
+from workspace_types import find_claude_md_projects as find_projects  # noqa: E402
 
 # Heading extraction. A section counts as present when a real ATX heading
 # contains its name — NOT when the name appears anywhere in the file. The old
@@ -384,27 +386,6 @@ def find_org_directories(workspace: Path, orgs: list[str]) -> list[tuple[str, Pa
     return results
 
 
-def find_projects(org_path: Path) -> list[tuple[str, Path, bool]]:
-    """
-    Find all projects in an org directory, descending through client directories.
-    Returns: list of (project_name, path, has_claude_md), where project_name is
-    `client/project` for a project inside a client directory.
-    """
-    return [
-        (p.label, p.path, (p.path / "CLAUDE.md").exists())
-        for p in iter_projects(org_path)
-    ]
-
-
-def find_containers(org_path: Path) -> list[str]:
-    """Names of the client directories directly inside an org."""
-    try:
-        children = sorted(org_path.iterdir())
-    except OSError:
-        return []
-    return [c.name for c in children if not c.name.startswith(".") and is_container(c)]
-
-
 # --tier choices. "workspace" is the user-facing name for the top tier; the code
 # still calls it "user" internally (template names, report keys), so map here.
 TIER_CHOICES = ("workspace", "user", "org", "client", "project")
@@ -579,11 +560,28 @@ def check_inventory(content: str, level: str, disk_names: list[str],
     result["status"] = "ok"
     result["row_count"] = len(rows)
     result["unlisted"] = [n for n in disk_names if not any(_name_in_row(n, r) for r in rows)]
-    known = list(disk_names) + list(containers)
     result["not_on_disk"] = [
-        _row_label(r) for r in rows if not any(_name_in_row(n, r) for n in known)
+        _row_label(r) for r in rows
+        if not any(_name_in_row(n, r) for n in disk_names)
+        and not any(_container_in_row(c, r) for c in containers)
     ]
     return result
+
+
+def _container_in_row(container: str, row: str) -> bool:
+    """True when a row names the client directory itself.
+
+    `container` is the directory's path relative to the workspace
+    (`org/client`). A row with a path matches only when that path is the
+    container's own path, so a stale row for a project that used to sit
+    inside the container (`~/Code/org/client/gone`) is still "not on disk".
+    A row with no path matches by the container's bare name.
+    """
+    paths = [t.rstrip("/") for t in _PATH_TOKEN.findall(row)]
+    if paths:
+        name = container.rsplit("/", 1)[-1]
+        return any(p.endswith(f"/{container}") or p == f"./{name}" for p in paths)
+    return _name_in_row(container.rsplit("/", 1)[-1], row)
 
 
 def disk_projects(file_path: Path, level: str, orgs: list[str]) -> list[str]:
@@ -605,12 +603,12 @@ def disk_projects(file_path: Path, level: str, orgs: list[str]) -> list[str]:
 
 
 def disk_containers(file_path: Path, level: str, orgs: list[str]) -> list[str]:
-    """Client directory names, which may have a row without being a project."""
+    """Client directories as `org/client`, which may have a row without being a project."""
     base = file_path.parent
     if level == "org":
-        return find_containers(base)
+        return [f"{base.name}/{c.name}" for c in iter_containers(base)]
     if level == "user":
-        return [name for org in orgs for name in find_containers(base / org)]
+        return [f"{org}/{c.name}" for org in orgs for c in iter_containers(base / org)]
     return []
 
 
@@ -852,6 +850,14 @@ def main():
                 if "/" in proj_name:
                     review["label"] = f"{proj_name}/CLAUDE.md"
                 all_reviews["project"].append(review)
+
+    # Client directories: chained in single-file mode, but the walk has no
+    # expected-section list for them yet (plan 2026-09-28-001, D6).
+    for org_name, org_path, _ in org_info:
+        for container in iter_containers(org_path):
+            if (container / "CLAUDE.md").is_file():
+                print(f"\nClient tier: {org_name}/{container.name}/CLAUDE.md is not reviewed "
+                      f"in the walk yet (use --file to see its tier chain and overlaps)")
 
     # Show reports
     user_gaps = []

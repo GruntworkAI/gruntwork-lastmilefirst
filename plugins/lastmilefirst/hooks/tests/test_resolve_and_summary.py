@@ -76,6 +76,12 @@ def test_path_outside_any_configured_org_resolves_to_nothing(workspace, tmp_path
     assert ctx == {"org": None, "project": None, "client": None}
 
 
+def test_resolve_context_falls_back_to_flat_without_the_loader(workspace, monkeypatch):
+    monkeypatch.setitem(sys.modules, "workspace_types", None)
+    ctx = overwatch.resolve_context(workspace / "flat" / "alpha" / "src")
+    assert ctx == {"org": "flat", "project": "flat/alpha", "client": None}
+
+
 def test_update_project_state_writes_the_nested_key(workspace, state_dir):
     overwatch.update_project_state("last_review", NOW, workspace / "acme" / "northwind" / "docs")
     state = overwatch.load_state()
@@ -194,3 +200,56 @@ def test_nested_client_directory_is_a_note(workspace):
     lines = summary(workspace, {"projects": {}})
     notes = [l for l in lines if l.startswith("NOTE:")]
     assert len(notes) == 1 and "acme/northwind/web" in notes[0]
+
+
+def test_client_directory_with_org_json_and_no_children_is_still_reported(workspace):
+    """The defect used to ride on the first child, so an empty container never reported it."""
+    mark(workspace / "acme" / "contoso")
+    (workspace / "acme" / "contoso" / ".claude").mkdir()
+    (workspace / "acme" / "contoso" / ".claude" / "org.json").write_text("{}")
+    lines = summary(workspace, {"projects": {}})
+    flagged = [l for l in lines if l.startswith("ACTION REQUIRED:")]
+    assert len(flagged) == 1 and "acme/contoso" in flagged[0]
+
+
+def test_client_directory_that_is_a_repo_is_a_warning(workspace):
+    (workspace / "acme" / "northwind" / ".git").mkdir()
+    lines = summary(workspace, {"projects": {}})
+    warned = [l for l in lines if l.startswith("WARNING:") and "acme/northwind" in l]
+    assert len(warned) == 1 and "should not be a repo" in warned[0]
+
+
+def test_summary_degrades_to_the_flat_walk_without_the_loader(workspace, monkeypatch):
+    monkeypatch.setattr(session_start, "iter_projects", None)
+    monkeypatch.setattr(session_start, "layout_issues", None)
+    lines = summary(workspace, {"projects": {}})
+    assert lines[0].startswith("NOTE:") and "not descended" in lines[0]
+    # acme/northwind, acme/practice, flat/alpha: the container counts as a project.
+    assert "WORKSPACE REPORT (3 projects)" in lines
+
+
+# --- Overwatch guidance lookup --------------------------------------------------
+
+def guidance(workspace, cwd, home):
+    config = {"workspace": str(workspace), "orgs": ["flat", "acme"]}
+    return session_start.check_overwatch_guidance(cwd=cwd, config=config, home=home)
+
+
+def test_guidance_in_the_org_claude_md_is_found_from_a_nested_project(workspace, tmp_path):
+    home = tmp_path / "home"  # no ~/Code/CLAUDE.md here
+    (workspace / "acme" / "CLAUDE.md").write_text("## Overwatch response\n")
+    assert guidance(workspace, workspace / "acme" / "northwind" / "web", home) is None
+
+
+def test_guidance_missing_everywhere_is_reported_from_a_nested_project(workspace, tmp_path):
+    home = tmp_path / "home"
+    # The client directory's parent-of-project position used to be read as the org.
+    (workspace / "acme" / "northwind" / "CLAUDE.md").write_text("# northwind\n")
+    alert = guidance(workspace, workspace / "acme" / "northwind" / "web", home)
+    assert alert and alert.startswith("ACTION REQUIRED")
+
+
+def test_guidance_in_the_client_claude_md_counts(workspace, tmp_path):
+    home = tmp_path / "home"
+    (workspace / "acme" / "northwind" / "CLAUDE.md").write_text("Overwatch alerts: act on them.\n")
+    assert guidance(workspace, workspace / "acme" / "northwind" / "web", home) is None

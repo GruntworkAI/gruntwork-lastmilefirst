@@ -59,7 +59,7 @@ from overwatch import (  # noqa: E402
     _ensure_v2,
 )
 
-from workspace_types import iter_projects  # noqa: E402
+from workspace_types import ISSUE_SEVERITY, find_projects, iter_projects, layout_issues  # noqa: E402
 
 try:
     from archetypes import detect_archetype  # noqa: E402
@@ -111,7 +111,7 @@ def last_commit_ts(repo: Path) -> int:
 
 
 def project_dirs(org_dir: Path) -> List[Path]:
-    return [p.path for p in iter_projects(org_dir)]
+    return find_projects(org_dir)
 
 
 def _action_status(last: int, last_commit: int, threshold_days: int, now: int) -> Dict[str, Any]:
@@ -138,11 +138,15 @@ def build_rollup(
     org_state = (state or {}).get("orgs", {}).get(org_key, {})
 
     projects = []
-    layout = []
+    # Reported from each client directory itself, so one with no children
+    # still shows its problems.
+    layout = [
+        f"{ISSUE_SEVERITY.get(issue.kind, 'NOTE')}: {issue.message}"
+        for issue in layout_issues(org_dir)
+    ]
     for project in iter_projects(org_dir):
         pdir = project.path
         key = project.key
-        layout.extend(line for line in (project.defect, project.note) if line)
         pstate = projects_state.get(key, {})
         claude_md = pdir / "CLAUDE.md"
         has_claude = claude_md.is_file()

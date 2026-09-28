@@ -408,7 +408,18 @@ def resolve_context(cwd: Optional[Path] = None) -> Dict[str, Optional[str]]:
     scripts_dir = str(Path(__file__).parent)
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
-    from workspace_types import resolve
+    try:
+        from workspace_types import resolve
+    except Exception:
+        # Loader unavailable: fall back to the flat <org>/<project> reading.
+        try:
+            parts = cwd_resolved.relative_to(workspace_resolved).parts
+        except ValueError:
+            return empty
+        if not parts or parts[0] not in config.get("orgs", []):
+            return empty
+        key = f"{parts[0]}/{parts[1]}" if len(parts) > 1 else None
+        return {"org": parts[0], "project": key, "client": None}
 
     ctx = resolve(cwd_resolved, workspace_resolved, config.get("orgs", []))
     return {"org": ctx.org, "project": ctx.key, "client": ctx.client}

@@ -81,14 +81,20 @@ python3 -m venv .venv && .venv/bin/pip install pytest
 
 ## Testing
 
-Four suites, run from `plugins/lastmilefirst/`:
+Eight suites, each run on its own from `plugins/lastmilefirst/`:
 
 ```bash
-../../.venv/bin/pytest skills/review-claude/tests/    # section matching, tier detection, cross-tier
-../../.venv/bin/pytest skills/review-org/tests/       # project roll-up from Overwatch state
-../../.venv/bin/pytest skills/audit-plugin/tests/     # plugin analyzer
-../../.venv/bin/pytest hooks/tests/                   # Overwatch update check
+../../.venv/bin/pytest -q hooks/tests/                   # Overwatch, session start, workspace layout loader
+../../.venv/bin/pytest -q skills/organize-orgs/tests/    # identity contract hook and audit
+../../.venv/bin/pytest -q skills/review-org/tests/       # project roll-up from Overwatch state
+../../.venv/bin/pytest -q skills/review-claude/tests/    # section matching, tier detection, cross-tier
+../../.venv/bin/pytest -q skills/scan-secrets/tests/     # scanner, formats, hook installer
+../../.venv/bin/pytest -q skills/todos-summary/tests/    # todo aggregation
+../../.venv/bin/pytest -q skills/organize-claude/tests/  # CLAUDE.md audit and scaffolding
+../../.venv/bin/pytest -q skills/audit-plugin/tests/     # plugin analyzer
 ```
+
+`skills/review-voice/tests/` holds hand-run test cases, not pytest.
 
 Each suite carries its own `conftest.py` doing the `sys.path` inserts, because the skills ship as
 loose scripts rather than packaged modules.
@@ -101,7 +107,7 @@ you hit this again.
 | Issue | Symptom | Cause / fix |
 |-------|---------|-------------|
 | **No repo-level venv exists by default** | `pytest` not found; you conclude the repo has no tests. It has 254. | Every other Python project here has a `.venv` or Poetry env; this one has neither checked in. Create it per Development Environment above. Found 2026-07-30 while adding the first review-claude tests. |
-| **The three suites can't be run in one command** | `ImportPathMismatchError` / "Plugin already registered under a different name" when you point pytest at more than one suite. | All three `tests/` dirs carry an `__init__.py`, so each is a package literally named `tests` and they collide on import. Run them separately (see Testing above). Tracked as issue #12; `--import-mode=importlib` does not fix it. |
+| **The suites can't be run in one command** | `ImportPathMismatchError` / "Plugin already registered under a different name" when you point pytest at more than one suite. | All eight pytest `tests/` dirs carry an `__init__.py`, so each is a package literally named `tests` and they collide on import. Run them separately (see Testing above). Tracked as issue #12; `--import-mode=importlib` does not fix it. |
 | **Editing the cache instead of source** | Changes vanish on the next `/plugin update`. | Source is `~/Code/gruntwork/gruntwork-lastmilefirst/plugins/lastmilefirst/`. `~/.claude/plugins/cache/…` is install output — correct to *run* from, never to edit. Always `git pull` before starting. |
 | **Adding a persona requires four files, not one** | New expert works via one entry point, missing from another. | README, the `run-consult-expert` command, `skills/consult-expert/SKILL.md`, and the persona file must be touched **together**. Drift found 2026-05-21: SKILL.md was missing 6 Key Hires and pointed at the wrong persona path (fixed in `ca4ee22`). |
 
