@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-28
+
+Versions 0.32.0 through 0.35.0 are recorded in the GitHub releases for this repository and were not added here.
+
+### Added
+
+- **workspace: client directories.** A directory inside an org can carry a `.claude-workspace` marker with `type: client`, meaning it groups the projects for one counterparty and is not a project itself. Every walker (Overwatch's workspace summary, the `--all` secret scan, todos-summary, review-org, review-claude, organize-claude, and the identity audit) descends through it, and nested projects are keyed `org/client/project` in Overwatch state. One shared loader, `hooks/scripts/workspace_types.py`, owns discovery. Layout problems (a client directory carrying its own `org.json`, one that is itself a git repo, a client inside a client) are reported from the container itself. The marker vocabulary is documented in one place, the organize-orgs skill.
+- **overwatch: `update_state.py rename --from --to`.** Moves a project's state to a new key after a directory move or rename, refusing when the target already has state. Closes the gap where any rename orphaned a project's history.
+- **scan-secrets: `public-only` rule tag.** A rule carrying this tag fires only in repositories whose visibility is public. Intended for names and terms that are allowed inside private repos but must never reach a public one; the terms themselves belong in the user's org rules file, never in the plugin. When visibility cannot be determined the rule fires and the output says why.
+- **review-claude: `client` tier.** A CLAUDE.md in a client directory classifies as its own tier, and a nested project's chain is project, client, org. No expected-section list yet; the walk reports client files as not reviewed rather than as missing.
+
+### Fixed
+
+- **organize-claude:** the project-mapping check compares by path, so two clients can each hold a `docs` project; the missing-project hint uses the org's own prefix instead of a hardcoded one; `--scaffold-project` accepts a leaf name or `client/project`.
+- **session-start:** Overwatch guidance lookup finds the org CLAUDE.md through the resolved context instead of assuming the parent directory is the org.
+- **tests and plans:** fixtures and examples in tracked files use generic placeholders throughout.
+
 ## [0.31.0] - 2026-09-08
 
 ### Added
