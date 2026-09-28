@@ -45,7 +45,7 @@ def write_org(org_dir: Path, name: str, identity: dict | None) -> Path:
 CONTRACT = {
     "github_account": "outsideshot",
     "git_user_name": "outsideshot",
-    "git_email": "outsideshot@gmail.com",
+    "git_email": "22780578+outsideshot@users.noreply.github.com",
     "owns_remotes": ["outsideshot"],
     "enforcement": "block",
 }
@@ -79,7 +79,7 @@ def check(repo: Path, workspace: Path):
     [
         ("git@github.com:GruntworkAI/repo.git", "GruntworkAI"),
         ("git@github-personal:outsideshot/repo.git", "outsideshot"),
-        ("https://github.com/andyfish3/heather-thomason-2026.git", "andyfish3"),
+        ("https://github.com/upstream-owner/campaign-site.git", "upstream-owner"),
         ("ssh://git@github.com/owner/repo.git", "owner"),
         ("https://github.com/owner/repo", "owner"),
         ("/some/local/path", None),
@@ -92,9 +92,9 @@ def test_remote_owner_parsing(url, expected):
 
 def test_host_alias_does_not_change_owner():
     """The alias picks an SSH key; it says nothing about who owns the repo."""
-    via_alias = check_identity.remote_owner("git@github-personal:andyfish3/site.git")
-    via_host = check_identity.remote_owner("git@github.com:andyfish3/site.git")
-    assert via_alias == via_host == "andyfish3"
+    via_alias = check_identity.remote_owner("git@github-personal:upstream-owner/site.git")
+    via_host = check_identity.remote_owner("git@github.com:upstream-owner/site.git")
+    assert via_alias == via_host == "upstream-owner"
 
 
 # --------------------------------------------------------------------------
@@ -148,7 +148,7 @@ def test_incomplete_contract_blocks(workspace):
 def test_matching_identity_passes(workspace):
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(workspace / "outsideshot" / "site",
-                     name="outsideshot", email="outsideshot@gmail.com")
+                     name="outsideshot", email="22780578+outsideshot@users.noreply.github.com")
     result = check(repo, workspace)
     assert result.status == "ok", result.problems
 
@@ -160,14 +160,14 @@ def test_wrong_email_blocks_and_gives_the_command(workspace):
     result = check(repo, workspace)
     assert result.status == "blocked"
     assert any("admin@gruntwork.ai" in p for p in result.problems)
-    assert any('git config user.email "outsideshot@gmail.com"' in r
+    assert any('git config user.email "22780578+outsideshot@users.noreply.github.com"' in r
                for r in result.remedies)
 
 
 def test_wrong_name_blocks(workspace):
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(workspace / "outsideshot" / "site",
-                     name="GruntworkAI", email="outsideshot@gmail.com")
+                     name="GruntworkAI", email="22780578+outsideshot@users.noreply.github.com")
     result = check(repo, workspace)
     assert result.status == "blocked"
     assert any("Commit name" in p for p in result.problems)
@@ -209,16 +209,16 @@ def test_nearest_contract_wins(workspace):
 def test_unclaimed_remote_owner_is_allowed(workspace):
     """Collaborating on someone else's repo is normal and must stay silent.
 
-    The campaign case: the repo is owned by andyfish3, nobody claims that
+    The campaign case: the repo is owned by upstream-owner, nobody claims that
     owner, and the commit identity is correct. An allowlist would block this.
     """
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(
         workspace / "outsideshot" / "site",
-        name="outsideshot", email="outsideshot@gmail.com",
+        name="outsideshot", email="22780578+outsideshot@users.noreply.github.com",
         remotes={
             "origin": "git@github-personal:outsideshot/site.git",
-            "upstream": "git@github-personal:andyfish3/site.git",
+            "upstream": "git@github-personal:upstream-owner/site.git",
         },
     )
     result = check(repo, workspace)
@@ -231,7 +231,7 @@ def test_remote_claimed_by_another_account_blocks(workspace):
     write_org(workspace / "gruntwork", "gruntwork", STUDIO)
     repo = make_repo(
         workspace / "outsideshot" / "site",
-        name="outsideshot", email="outsideshot@gmail.com",
+        name="outsideshot", email="22780578+outsideshot@users.noreply.github.com",
         remotes={"origin": "git@github.com:GruntworkAI/thing.git"},
     )
     result = check(repo, workspace)
@@ -260,7 +260,7 @@ def test_no_remote_yet_is_fine(workspace):
     """A freshly `git init`-ed repo has no remote and must not be blocked."""
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(workspace / "outsideshot" / "fresh",
-                     name="outsideshot", email="outsideshot@gmail.com")
+                     name="outsideshot", email="22780578+outsideshot@users.noreply.github.com")
     assert check(repo, workspace).status == "ok"
 
 
@@ -297,7 +297,7 @@ def test_gh_check_is_advisory_only(workspace, monkeypatch):
     """A mismatched gh account warns but never blocks — it cannot affect the commit."""
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(workspace / "outsideshot" / "site",
-                     name="outsideshot", email="outsideshot@gmail.com")
+                     name="outsideshot", email="22780578+outsideshot@users.noreply.github.com")
     monkeypatch.setattr(check_identity, "gh_active_account", lambda: "GruntworkAI")
     result = check_identity.evaluate(cwd=repo, workspace_root=workspace, check_gh=True)
     assert result.status == "warned"
@@ -377,7 +377,7 @@ def test_pre_commit_mode_suppresses_the_gh_advisory(workspace, monkeypatch, caps
     """
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(workspace / "outsideshot" / "site",
-                     name="outsideshot", email="outsideshot@gmail.com")
+                     name="outsideshot", email="22780578+outsideshot@users.noreply.github.com")
     monkeypatch.setattr(check_identity, "gh_active_account", lambda: "GruntworkAI")
     monkeypatch.chdir(repo)
 
@@ -392,7 +392,7 @@ def test_non_hook_mode_still_reports_the_gh_advisory(workspace, monkeypatch, cap
     """Read deliberately rather than mid-commit, the advisory is still useful."""
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     repo = make_repo(workspace / "outsideshot" / "site",
-                     name="outsideshot", email="outsideshot@gmail.com")
+                     name="outsideshot", email="22780578+outsideshot@users.noreply.github.com")
     monkeypatch.setattr(check_identity, "gh_active_account", lambda: "GruntworkAI")
     monkeypatch.chdir(repo)
 

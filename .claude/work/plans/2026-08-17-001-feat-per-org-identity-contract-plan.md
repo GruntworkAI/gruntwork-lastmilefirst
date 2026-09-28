@@ -61,7 +61,7 @@ Added to each governed org's `.claude/org.json`:
 "identity": {
   "github_account": "outsideshot",
   "git_user_name": "outsideshot",
-  "git_email": "outsideshot@gmail.com",
+  "git_email": "22780578+outsideshot@users.noreply.github.com",
   "owns_remotes": ["outsideshot"],
   "ssh_host_alias": "github-personal",
   "enforcement": "block"
@@ -78,7 +78,7 @@ The first draft of this field was `allowed_remote_owners`, validated as "the rem
 
 | Case | Remote owner | Correct identity | Allowlist semantics |
 |---|---|---|---|
-| Campaign repo as shared | `andyfish3` | outsideshot | ❌ blocks |
+| Campaign repo as shared | `upstream-owner` | outsideshot | ❌ blocks |
 | Fork with an `upstream` remote | you + them | you | ❌ blocks on upstream |
 | OSS contribution | `facebook` | (yours) | ❌ blocks |
 | Client repo in the client's org | client | studio | ❌ blocks |
@@ -94,7 +94,7 @@ One row in five. A check that is wrong more often than right gets overridden int
 | Claimed by **another** org | **block** — genuine cross-context leakage |
 | Claimed by **no** org | **pass** — identity check still applies |
 
-Every row of the table above resolves correctly. The campaign repo under `andyfish3` passes because nothing claims `andyfish3`, while commit identity stays enforced. Pushing a `GruntworkAI`-claimed remote from `~/Code/outsideshot/` still blocks — the error actually worth catching.
+Every row of the table above resolves correctly. The campaign repo under `upstream-owner` passes because nothing claims `upstream-owner`, while commit identity stays enforced. Pushing a `GruntworkAI`-claimed remote from `~/Code/outsideshot/` still blocks — the error actually worth catching.
 
 **Consequence for the whole design: identity is the blocking check; remote owner is only a cross-context guard.** Attribution — whose name and email land on the commit — is the invariant. Where it pushes is a separate question, and unclaimed remotes are normal rather than suspicious. This stays safe as a blocking check precisely because *absence* never fires it; only an explicit competing claim does.
 
@@ -249,8 +249,8 @@ Phases 0–1 remove the immediate risk on their own. 2–5 are the compounding p
 
 ## 11. Open decisions
 
-1. **Campaign repo on GitHub** — the draft lives at `andyfish3/heather-thomason-2026`, shared with `outsideshot`. Options: work in Andy's repo as a collaborator; fork to `outsideshot`; or clone and push to an `outsideshot`-owned repo (history and Andy's authorship carry over either way). **Fork vs. clean copy hinges on whether Andy keeps contributing** — a hard copy diverges immediately and reconciling later is painful. Under revised §3 semantics all three work without contract changes, since `andyfish3` is unclaimed.
-2. **Repo name** — `~/Code/outsideshot/heather-thomason-2026`.
+1. **Campaign repo on GitHub** — the draft lives at `upstream-owner/campaign-site`, shared with `outsideshot`. Options: work in the upstream owner's repo as a collaborator; fork to `outsideshot`; or clone and push to an `outsideshot`-owned repo (history and the upstream owner's authorship carry over either way). **Fork vs. clean copy hinges on whether the upstream owner keeps contributing** — a hard copy diverges immediately and reconciling later is painful. Under revised §3 semantics all three work without contract changes, since `upstream-owner` is unclaimed.
+2. **Repo name** — `~/Code/outsideshot/campaign-site`.
 3. **`ssh_host_alias`** — adopt §8(a) now, or accept the push-layer gap until Phase 5?
 4. **Data classification** — campaign work can carry voter/donor data with real handling constraints. The `gruntwork` org CLAUDE.md has a Data Classification section; `outsideshot` likely needs its own rather than inheriting studio defaults. Settle in Phase 0 while the file is being written.
 5. **Workspace-types spec** — this plan's interim rule (`org.json` presence = governed) unblocks enforcement now, but the spec is the proper resolver and is still awaiting review. Promote it to Phase 6, or fold it in earlier?
@@ -269,7 +269,7 @@ Four corrections the build surfaced. Each is already reflected above.
 
 4. **The dispatcher needed a `CHECKS_RUN` counter.** Globbing to the plugin *root* instead of to a specific script means the root can resolve while the check scripts are missing — a state that would pass every commit in silence and read as coverage. The old single-purpose hook could not have this bug, because its glob targeted the script itself. Regression test added.
 
-**`.claude-workspace` markers for `every/` and `drafts/` were deliberately skipped** (Fish, 2026-08-18): `drafts/` contains no git repos at all and `every/` contains one third-party clone that is never committed to. Blast radius is a repo nobody commits in. The markers remain correct for the workspace-types spec, just not urgent.
+**`.claude-workspace` markers for `every/` and `drafts/` were deliberately skipped** (workspace owner, 2026-08-18): `drafts/` contains no git repos at all and `every/` contains one third-party clone that is never committed to. Blast radius is a repo nobody commits in. The markers remain correct for the workspace-types spec, just not urgent.
 
 ---
 

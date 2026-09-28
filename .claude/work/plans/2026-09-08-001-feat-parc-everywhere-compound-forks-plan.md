@@ -32,7 +32,7 @@ are all things a Compound step could do and does not.
 Third, wisdom is written once and never resurfaced. A lesson that recurs is a procedure that never
 got written down, and nothing today notices the recurrence.
 
-## Decisions taken (Fish, 2026-09-08)
+## Decisions taken (workspace owner, 2026-09-08)
 
 1. **DPV is retired. PARC is the one name**, in the skill, in CLAUDE.md, and in the app
    settings. The settings carry a copy of the rules, the same pattern as Voice.
@@ -142,7 +142,7 @@ retrieved at close, against the work just done, is what sticks. So Compound open
 questions, in this order, before the fork table:
 
 1. **Did we apply an old lesson?** Search wisdom and knowledge with the session as the query
-   (project, files touched, prompts, skills used) and surface the matches. Fish confirms which
+   (project, files touched, prompts, skills used) and surface the matches. The workspace owner confirms which
    were used. Each confirmation writes `last_applied:` with the date on the entry. That date is
    the spaced-repetition ledger: applied last week needs nothing, never applied in six months is
    forgotten or dead, and the weekly review (U8) decides which.

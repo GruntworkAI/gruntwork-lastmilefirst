@@ -18,14 +18,14 @@ target_version: 0.19.0
 > else in v1.0 verified accurate.
 
 > **v1.2 build log (2026-07-28):** Executed on branch `feature/scan-secrets-gitleaks-modernization`.
-> **Scope decisions with Fish:** ship **Phase 1 + Phase 3 as 0.19.0**; **Phase 2 (seam) deferred** as
+> **Scope decisions with the workspace owner:** ship **Phase 1 + Phase 3 as 0.19.0**; **Phase 2 (seam) deferred** as
 > an optional testability/clarity refactor (NOT a portability play — verified no cheap second backend
 > exists: only Betterleaks keeps the gitleaks TOML, and it barely tests the seam; TruffleHog/Titus/
 > detect-secrets all require re-authoring the custom rules); **Phase 4 → GitHub issue** (TruffleHog +
 > rule-translation, community-contributable).
 > **Coverage fix folded in (was out of scope in v1.0/v1.1):** verification revealed the merged config
 > loaded **only** the custom `lmf-*` rules — no `[extend]`, so gitleaks defaults (AWS/GitHub/Stripe/…)
-> were **never scanned**. Fish chose to fix it now: `format_loader.write_merged_config` now emits
+> were **never scanned**. The workspace owner chose to fix it now: `format_loader.write_merged_config` now emits
 > `[extend]\nuseDefault = true`, so scans run defaults **+** custom formats.
 > **Verified (real gitleaks 8.30.1, scratch repos):** `detect`≡`git` (identical findings, regression-
 > clean); staged scan blocks + redacts; malformed config fails closed; version gate parses/compares;

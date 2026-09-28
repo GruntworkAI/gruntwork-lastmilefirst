@@ -2,7 +2,7 @@
 title: Workspace Directory Type Taxonomy
 status: draft
 date: 2026-05-02
-author: Fish (with Claude)
+author: workspace owner (with Claude)
 audience: lastmilefirst plugin contributors
 related:
   - skills/overwatch
@@ -27,16 +27,16 @@ related:
 
 Today the lastmilefirst plugin treats every directory under the user's workspace root (`~/Code/`) as an "org" subject to the same hygiene standards: each org needs a `CLAUDE.md`, each project needs a `CLAUDE.md`, and everything gets secret-scanned.
 
-That assumption breaks for two real cases already in Fish's workspace:
+That assumption breaks for two real cases already in the workspace:
 
 - **`~/Code/drafts/`** — a personal scratch directory for draft artifacts. Not an org. Not a place where org/project CLAUDE.md or review hygiene applies.
-- **`~/Code/every/`** — a container for cloned external (third-party) repos pulled down for local use. Fish doesn't maintain those projects, so the project-level CLAUDE.md requirement does not apply. Secret scanning *does* still apply (a leak from Fish's local copy is still Fish's leak), but other hygiene checks should be skipped.
+- **`~/Code/every/`** — a container for cloned external (third-party) repos pulled down for local use. The workspace owner doesn't maintain those projects, so the project-level CLAUDE.md requirement does not apply. Secret scanning *does* still apply (a leak from the local copy is still the workspace owner's leak), but other hygiene checks should be skipped.
 
 Today both cases produce false-positive Overwatch alerts ("project missing CLAUDE.md", "needs review") that the user has to mentally filter every session. The system should encode the distinction instead of forcing the user to.
 
 ## Goals
 
-1. **One taxonomy** that covers Fish's current four directory types and is extensible to client engagements that come and go.
+1. **One taxonomy** that covers the workspace's current four directory types and is extensible to client engagements that come and go.
 2. **Per-directory marker file** at the org root so the convention travels with the directory and survives across machines / cloud-sync / future workspace moves (the LMF-stack epic is in flight; org dirs may move to `~/work/code/`).
 3. **Skill-by-skill behavior changes** so the four affected skills (overwatch, scan-secrets, organize-claude, organize-orgs) all honor the marker.
 4. **Backward-compatible default** — no marker = treat as Studio, so existing orgs (gruntwork, lastmilefirst.ai) continue to work without any change.
@@ -51,9 +51,9 @@ Today both cases produce false-positive Overwatch alerts ("project missing CLAUD
 
 | Type | Examples | What it is | CLAUDE.md required? | Secret scan? | Review hygiene? |
 |------|----------|------------|---------------------|--------------|-----------------|
-| **Studio** *(default)* | `gruntwork/`, `lastmilefirst.ai/` | Original work owned and shipped by Fish | Yes (org + project) | Yes | Yes |
-| **Client** | (formerly `Waterfield/`) | Engagement-based work; Fish owns the work product while engaged | Yes while active; archived when paused | Yes | Yes |
-| **External** | `every/` | Cloned third-party code Fish does not maintain | No | Yes (local-leak risk is still real) | No |
+| **Studio** *(default)* | `gruntwork/`, `lastmilefirst.ai/` | Original work owned and shipped by the workspace owner | Yes (org + project) | Yes | Yes |
+| **Client** | (e.g. a paused client org) | Engagement-based work; the workspace owner owns the work product while engaged | Yes while active; archived when paused | Yes | Yes |
+| **External** | `every/` | Cloned third-party code the workspace owner does not maintain | No | Yes (local-leak risk is still real) | No |
 | **Scratch** | `drafts/` | Personal working surface, ephemeral artifacts | No | No (configurable) | No |
 
 **Studio is the default** so that any org without a marker behaves exactly as it does today.
@@ -177,7 +177,7 @@ User reviews; we adjust the spec. No code changes.
 - Update `organize-claude` `scan_orgs` + the missing-CLAUDE.md count surface
 - Update `overwatch` summary builder + state-file schema bump (v3 format if the per-org additions warrant it — otherwise additive fields under v2)
 
-### Phase 3 — drop markers in Fish's workspace
+### Phase 3 — drop markers in the workspace
 
 - `~/Code/drafts/.claude-workspace` → `type: scratch`
 - `~/Code/every/.claude-workspace` → `type: external`
@@ -194,14 +194,14 @@ User reviews; we adjust the spec. No code changes.
 
 ## Open questions
 
-1. **Should `studio` and `client` collapse to one type?** They have identical hygiene defaults today. Keeping them separate gives Client a `status: paused | archived` field that matters for the Waterfield-style on-again / off-again pattern. Lean: keep separate; the cost is one enum value.
+1. **Should `studio` and `client` collapse to one type?** They have identical hygiene defaults today. Keeping them separate gives Client a `status: paused | archived` field that matters for a paused client org's on-again / off-again pattern. Lean: keep separate; the cost is one enum value.
 2. **Should the marker also live at the *user* level** (`~/Code/.claude-workspace`) for declaring workspace-wide defaults? Probably yes long-term, but out of scope here — the existing `~/Code/CLAUDE.md` already serves this purpose informally.
 3. **Should `claude_md: optional` be removed?** It's a middle ground that could just collapse to `skip`. Lean: keep, in case future archetypes need a "we'd like one but it's not flagged as missing" middle state.
-4. **External + secret-scan: do we want to scan history or only current tree?** Currently `--all` scans full history. For an external clone where Fish doesn't control the upstream, history scan is noise (any past leak is the upstream's problem). But: the local copy *includes* the history, and a leaked credential in history is still a credential. Lean: full history; document the rationale.
+4. **External + secret-scan: do we want to scan history or only current tree?** Currently `--all` scans full history. For an external clone where the workspace owner doesn't control the upstream, history scan is noise (any past leak is the upstream's problem). But: the local copy *includes* the history, and a leaked credential in history is still a credential. Lean: full history; document the rationale.
 
 ## Risks
 
-- **Marker drift across machines.** If Fish has the same workspace on multiple machines and the marker is in `.gitignore` or not synced, behavior diverges. Mitigation: document that markers should be either committed (for Studio/Client orgs that have their own git repo) or kept in a synced location.
+- **Marker drift across machines.** If the workspace owner has the same workspace on multiple machines and the marker is in `.gitignore` or not synced, behavior diverges. Mitigation: document that markers should be either committed (for Studio/Client orgs that have their own git repo) or kept in a synced location.
 - **Forward-compat with LMF-stack restructure.** The active LMF-stack epic (per memory) plans to move `~/Code/` → `~/work/{code,stack}/`. Markers move with their directories — no special handling needed, but the spec should mention this so the eventual move planner doesn't need to special-case marker handling.
 - **Plugin install/update path.** Markers are user-data, not plugin-shipped. Plugin updates must never overwrite or touch them. (Same model as `org_secret_formats.toml`.)
 
