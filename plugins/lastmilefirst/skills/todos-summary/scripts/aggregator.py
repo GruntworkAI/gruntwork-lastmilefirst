@@ -8,12 +8,14 @@ them with metadata for filtering and display.
 Terminology (consistent with organize-claude):
 - Workspace: The root directory (e.g., ~/Code) - security boundary
 - Org: A subdirectory grouping related projects (e.g., personal, client-work)
-- Project: A single project directory within an org
+- Project: A single project directory within an org, or within a directory
+  inside the org marked `type: client` (labeled `client/project`)
 """
 
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +27,11 @@ WORKSPACE_CONFIG = Path.home() / ".claude" / "workspace-config.json"
 CACHE_DIR = Path.home() / ".claude" / "cache"
 CACHE_FILE = CACHE_DIR / "todo-aggregator.json"
 CACHE_TTL_SECONDS = 300  # 5 minutes
+
+# The workspace layout loader lives with the hook scripts. It is imported inside
+# discover_projects, not here: session_start imports this module with its own
+# directory pushed onto sys.path and pops it afterward.
+HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
 
 
 @dataclass
@@ -167,17 +174,21 @@ class TodoAggregator:
         return None
 
     def discover_projects(self, org: OrgConfig) -> List[Path]:
-        """Discover all projects in an org that have .claude/work/todos."""
+        """Discover all projects in an org that have .claude/work/todos.
+
+        Descends one level through a directory marked `type: client`.
+        """
         projects = []
 
         if not org.path.exists():
             return projects
 
-        for item in sorted(org.path.iterdir()):
-            if not item.is_dir():
-                continue
-            if item.name.startswith("."):
-                continue
+        if str(HOOKS_SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(HOOKS_SCRIPTS))
+        from workspace_types import iter_projects
+
+        for project in iter_projects(org.path):
+            item = project.path
             if item.name in self.exclude_patterns:
                 continue
 
@@ -317,7 +328,8 @@ class TodoAggregator:
             projects = self.discover_projects(org_config)
 
             for project_path in projects:
-                project_name = project_path.name
+                # "project", or "client/project" inside a client directory.
+                project_name = "/".join(project_path.relative_to(org_config.path).parts)
                 todos_dir = project_path / ".claude" / "work" / "todos"
 
                 for todo_file in todos_dir.glob("*.md"):

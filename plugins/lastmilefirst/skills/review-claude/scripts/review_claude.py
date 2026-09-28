@@ -43,6 +43,13 @@ from archetypes import (
     infer_archetype_from_content,
 )
 
+# The workspace layout loader lives with the hook scripts (it decides which
+# directories are projects, and which are client directories holding them).
+_HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
+if str(_HOOKS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_SCRIPTS))
+from workspace_types import is_container, iter_projects  # noqa: E402
+
 # Heading extraction. A section counts as present when a real ATX heading
 # contains its name — NOT when the name appears anywhere in the file. The old
 # whole-file substring test passed on prose, fenced code samples, and (worst)
@@ -264,8 +271,9 @@ def show_review_report(reviews: list[dict], level: str) -> list[dict]:
             print(f"\n  {path.name}: FILE MISSING")
             continue
 
-        # Build label with archetype info for project-level
-        label = f"{path.parent.name}/{path.name}"
+        # Build label with archetype info for project-level. A project inside
+        # a client directory carries a "client/project/CLAUDE.md" label.
+        label = review.get("label") or f"{path.parent.name}/{path.name}"
         if level == "project":
             if archetype:
                 label += f" [{archetype.capitalize()}]"
@@ -378,35 +386,47 @@ def find_org_directories(workspace: Path, orgs: list[str]) -> list[tuple[str, Pa
 
 def find_projects(org_path: Path) -> list[tuple[str, Path, bool]]:
     """
-    Find all projects in an org directory.
-    Returns: list of (project_name, path, has_claude_md)
+    Find all projects in an org directory, descending through client directories.
+    Returns: list of (project_name, path, has_claude_md), where project_name is
+    `client/project` for a project inside a client directory.
     """
-    results = []
-    for item in sorted(org_path.iterdir()):
-        if item.is_dir() and not item.name.startswith("."):
-            claude_md = item / "CLAUDE.md"
-            results.append((item.name, item, claude_md.exists()))
-    return results
+    return [
+        (p.label, p.path, (p.path / "CLAUDE.md").exists())
+        for p in iter_projects(org_path)
+    ]
+
+
+def find_containers(org_path: Path) -> list[str]:
+    """Names of the client directories directly inside an org."""
+    try:
+        children = sorted(org_path.iterdir())
+    except OSError:
+        return []
+    return [c.name for c in children if not c.name.startswith(".") and is_container(c)]
 
 
 # --tier choices. "workspace" is the user-facing name for the top tier; the code
 # still calls it "user" internally (template names, report keys), so map here.
-TIER_CHOICES = ("workspace", "user", "org", "project")
-_TIER_TO_LEVEL = {"workspace": "user", "user": "user", "org": "org", "project": "project"}
-_LEVEL_TO_TIER = {"user": "workspace", "org": "org", "project": "project"}
+TIER_CHOICES = ("workspace", "user", "org", "client", "project")
+_TIER_TO_LEVEL = {"workspace": "user", "user": "user", "org": "org", "client": "client", "project": "project"}
+_LEVEL_TO_TIER = {"user": "workspace", "org": "org", "client": "client", "project": "project"}
 
 
 def classify_tier(file_path: Path, workspace: Path) -> tuple[str, str]:
     """
-    Classify a CLAUDE.md as user, org, or project level, and say how.
+    Classify a CLAUDE.md as user, org, client, or project level, and say how.
 
-    Returns (level, reason). An org declares itself with `.claude/org.json`, and
-    that is checked first because it holds at any depth. Position relative to the
-    workspace root is the fallback, since orgs without org.json are supported.
+    Returns (level, reason). A client directory (one level inside an org, with a
+    `.claude-workspace` marker of `type: client`) is checked first, so that one
+    wrongly carrying org.json still reads as a client. An org declares itself
+    with `.claude/org.json`, and that holds at any depth. Position relative to
+    the workspace root is the fallback, since orgs without org.json are supported.
     Callers must pass an unresolved path: resolving a symlinked CLAUDE.md moves it
     to wherever its source lives, and the position test then runs on the wrong path.
     """
     parent = file_path.parent
+    if parent.parent.parent == workspace and is_container(parent):
+        return "client", "found .claude-workspace type: client"
     if (parent / ".claude" / "org.json").is_file():
         return "org", "found .claude/org.json"
 
@@ -529,7 +549,8 @@ def _row_label(row: str) -> str:
     return first.strip("`* ") or row
 
 
-def check_inventory(content: str, level: str, disk_names: list[str]) -> dict:
+def check_inventory(content: str, level: str, disk_names: list[str],
+                    containers: tuple = ()) -> dict:
     """
     Compare a tier's project table with the directories on disk.
 
@@ -537,7 +558,10 @@ def check_inventory(content: str, level: str, disk_names: list[str]) -> dict:
     (section present, no table rows), or "ok". For "ok", also `unlisted`
     (directories no row names) and `not_on_disk` (rows naming no directory).
     A directory counts as listed when its name appears anywhere in a row, as a
-    bare name, inside a path, or as a [name](path) link.
+    bare name, inside a path, or as a [name](path) link. A project inside a
+    client directory is named `client/project`, so it counts as listed only by
+    its full path. A row naming only a client directory (`containers`) is not
+    "not on disk", but it does not list the projects inside it.
     """
     section_name = INVENTORY_SECTION.get(level)
     result = {"status": "absent", "section": section_name, "disk_count": len(disk_names),
@@ -555,14 +579,18 @@ def check_inventory(content: str, level: str, disk_names: list[str]) -> dict:
     result["status"] = "ok"
     result["row_count"] = len(rows)
     result["unlisted"] = [n for n in disk_names if not any(_name_in_row(n, r) for r in rows)]
+    known = list(disk_names) + list(containers)
     result["not_on_disk"] = [
-        _row_label(r) for r in rows if not any(_name_in_row(n, r) for n in disk_names)
+        _row_label(r) for r in rows if not any(_name_in_row(n, r) for n in known)
     ]
     return result
 
 
 def disk_projects(file_path: Path, level: str, orgs: list[str]) -> list[str]:
-    """Project directory names the inventory is compared against."""
+    """Project directory names the inventory is compared against.
+
+    `client/project` for a project inside a client directory.
+    """
     base = file_path.parent
     if level == "org":
         return [name for name, _path, _ in find_projects(base)]
@@ -573,6 +601,16 @@ def disk_projects(file_path: Path, level: str, orgs: list[str]) -> list[str]:
             if org_path.is_dir():
                 names.extend(name for name, _path, _ in find_projects(org_path))
         return names
+    return []
+
+
+def disk_containers(file_path: Path, level: str, orgs: list[str]) -> list[str]:
+    """Client directory names, which may have a row without being a project."""
+    base = file_path.parent
+    if level == "org":
+        return find_containers(base)
+    if level == "user":
+        return [name for org in orgs for name in find_containers(base / org)]
     return []
 
 
@@ -609,15 +647,38 @@ def format_inventory(result: dict, level: str, verbose: bool = True) -> list[str
 
 
 def tier_files(file_path: Path, level: str, workspace: Path) -> list[tuple[str, Path]]:
-    """The file under review and the files above it, highest tier first."""
+    """The file under review and the files above it, highest tier first.
+
+    Walks up from the file to the org (the directory directly under the
+    workspace), picking up a client directory on the way, so a nested project
+    chains workspace, org, client, project.
+    """
     if level == "user":
         return [("workspace", file_path)]
     files = [("workspace", workspace / "CLAUDE.md")]
     if level == "org":
         files.append(("org", file_path))
-    else:
-        files.append(("org", file_path.parent.parent / "CLAUDE.md"))
-        files.append(("project", file_path))
+        return files
+
+    own_dir = file_path.parent
+    above: list[tuple[str, Path]] = []
+    org_dir = None
+    for ancestor in own_dir.parents:
+        if ancestor == workspace:
+            break
+        if ancestor.parent == workspace:
+            org_dir = ancestor
+            break
+        if is_container(ancestor):
+            above.append(("client", ancestor / "CLAUDE.md"))
+    if org_dir is None:
+        # Not under the workspace: keep the old fixed-depth guess.
+        org_dir = own_dir.parent
+        above = []
+
+    files.append(("org", org_dir / "CLAUDE.md"))
+    files.extend(reversed(above))
+    files.append(("client" if level == "client" else "project", file_path))
     return files
 
 
@@ -650,7 +711,8 @@ def _walk_inventory_line(review: dict, level: str, orgs: list[str]) -> str:
     if not review["content"]:
         return ""
     path = review["path"]
-    result = check_inventory(review["content"], level, disk_projects(path, level, orgs))
+    result = check_inventory(review["content"], level, disk_projects(path, level, orgs),
+                             disk_containers(path, level, orgs))
     return format_inventory(result, level, verbose=False)[0]
 
 
@@ -659,7 +721,8 @@ def print_cross_tier(file_path: Path, level: str, workspace: Path, orgs: list[st
     content = file_path.read_text()
     print()
     if level in INVENTORY_SECTION:
-        result = check_inventory(content, level, disk_projects(file_path, level, orgs))
+        result = check_inventory(content, level, disk_projects(file_path, level, orgs),
+                                 disk_containers(file_path, level, orgs))
         for line in format_inventory(result, level):
             print(f"  {line}")
     for line in overlap_report(tier_files(file_path, level, workspace), file_path):
@@ -668,6 +731,11 @@ def print_cross_tier(file_path: Path, level: str, workspace: Path, orgs: list[st
 
 def review_single_sections(file_path: Path, level: str, suggest: bool) -> None:
     """Single-file mode: the section check (unchanged by the cross-tier pass)."""
+    if level == "client":
+        # No expected-section list for the client tier yet (plan 2026-09-28-001, D6).
+        print(f"\n  {file_path.name}: client tier has no expected-section list yet; section check skipped.")
+        return
+
     # For project-level, detect archetype first
     archetype = None
     if level == "project" and file_path.exists():
@@ -781,6 +849,8 @@ def main():
                 claude_path = proj_path / "CLAUDE.md"
                 # Pass default sections; review_claude_md will detect archetype and override
                 review = review_claude_md(claude_path, get_expected_sections("project"), "project")
+                if "/" in proj_name:
+                    review["label"] = f"{proj_name}/CLAUDE.md"
                 all_reviews["project"].append(review)
 
     # Show reports

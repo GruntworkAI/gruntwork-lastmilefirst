@@ -31,6 +31,10 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
+# The workspace layout loader lives with the hook scripts; see its docstring.
+_HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
+if str(_HOOKS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_SCRIPTS))
 
 from check_identity import (  # noqa: E402
     DEFAULT_WORKSPACE_ROOT,
@@ -43,6 +47,7 @@ from check_identity import (  # noqa: E402
     workspace_type,
     UNGOVERNED_TYPES,
 )
+from workspace_types import iter_projects  # noqa: E402
 
 ERROR = "error"
 WARNING = "warning"
@@ -100,12 +105,14 @@ def is_git_repo(path: Path) -> bool:
 
 
 def iter_repos(org_dir: Path) -> Iterable[Path]:
-    """Git repos directly under an org. One level only — repos don't nest."""
-    try:
-        children = sorted(org_dir.iterdir())
-    except OSError:
-        return []
-    return [c for c in children if c.is_dir() and is_git_repo(c)]
+    """Git repos under an org: its direct children, and the children of a
+    directory marked `type: client`. Repos themselves do not nest."""
+    return [p.path for p in iter_projects(org_dir) if is_git_repo(p.path)]
+
+
+def repo_label(org_dir: Path, repo: Path) -> str:
+    """`org/repo`, or `org/client/repo` for a repo inside a client directory."""
+    return "/".join((org_dir.name, *repo.relative_to(org_dir).parts))
 
 
 # --------------------------------------------------------------------------
@@ -286,14 +293,14 @@ def drift_findings(workspace_root: Optional[Path] = None) -> list[Finding]:
             if actual_email != identity["git_email"]:
                 findings.append(Finding(
                     ERROR, name,
-                    f"{org_dir.name}/{repo.name} commits as "
+                    f"{repo_label(org_dir, repo)} commits as "
                     f"{actual_email or '(unset)'}, expected {identity['git_email']}.",
                     f'git -C {repo} config user.email "{identity["git_email"]}"',
                 ))
             if actual_name != identity["git_user_name"]:
                 findings.append(Finding(
                     ERROR, name,
-                    f"{org_dir.name}/{repo.name} commits as name "
+                    f"{repo_label(org_dir, repo)} commits as name "
                     f"{actual_name or '(unset)'}, expected {identity['git_user_name']}.",
                     f'git -C {repo} config user.name "{identity["git_user_name"]}"',
                 ))
@@ -306,7 +313,7 @@ def drift_findings(workspace_root: Optional[Path] = None) -> list[Finding]:
                 if claiming and account not in claiming:
                     findings.append(Finding(
                         ERROR, name,
-                        f"{org_dir.name}/{repo.name} remote '{remote_name}' points "
+                        f"{repo_label(org_dir, repo)} remote '{remote_name}' points "
                         f"at {owner}/, claimed by {', '.join(sorted(claiming))}, "
                         f"but the org is governed by {account}.",
                         "Move the repo, or correct the remote.",
