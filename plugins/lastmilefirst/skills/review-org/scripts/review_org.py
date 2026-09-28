@@ -15,7 +15,9 @@ creating the file when it is missing.
 "Project directory" and the threshold rule match Overwatch's workspace summary
 in session_start.py, so the two never disagree about the same project:
 
-- every non-hidden subdirectory of the org counts as a project directory;
+- every non-hidden subdirectory of the org counts as a project directory,
+  except a directory marked `type: client`, whose children count instead
+  (shown as `client/project`, grouped under the client);
 - an action past its threshold only counts when the repo has commits since
   that action ran, since a repo that has not changed has nothing new to check.
 
@@ -56,6 +58,8 @@ from overwatch import (  # noqa: E402
     SECRET_SCAN_THRESHOLD_DAYS,
     _ensure_v2,
 )
+
+from workspace_types import iter_projects  # noqa: E402
 
 try:
     from archetypes import detect_archetype  # noqa: E402
@@ -107,10 +111,7 @@ def last_commit_ts(repo: Path) -> int:
 
 
 def project_dirs(org_dir: Path) -> List[Path]:
-    return sorted(
-        p for p in org_dir.iterdir()
-        if p.is_dir() and not p.name.startswith(".")
-    )
+    return [p.path for p in iter_projects(org_dir)]
 
 
 def _action_status(last: int, last_commit: int, threshold_days: int, now: int) -> Dict[str, Any]:
@@ -137,8 +138,11 @@ def build_rollup(
     org_state = (state or {}).get("orgs", {}).get(org_key, {})
 
     projects = []
-    for pdir in project_dirs(org_dir):
-        key = f"{org_key}/{pdir.name}"
+    layout = []
+    for project in iter_projects(org_dir):
+        pdir = project.path
+        key = project.key
+        layout.extend(line for line in (project.defect, project.note) if line)
         pstate = projects_state.get(key, {})
         claude_md = pdir / "CLAUDE.md"
         has_claude = claude_md.is_file()
@@ -154,7 +158,8 @@ def build_rollup(
             for field, _label, thr in PROJECT_ACTIONS
         }
         projects.append({
-            "name": pdir.name,
+            "name": project.label,
+            "client": project.client,
             "key": key,
             "has_claude_md": has_claude,
             "archetype": archetype,
@@ -176,6 +181,7 @@ def build_rollup(
         "generated_at": now,
         "org_record": org_record,
         "projects": projects,
+        "layout": layout,
     }
 
 
@@ -204,6 +210,21 @@ def format_text(rollup: Dict[str, Any], state_file: Path) -> str:
             f"Overwatch state: no readable file at {state_file}, so every action reads as none on record"
         )
     lines.append("")
+
+    for line in rollup.get("layout", []):
+        lines.append(f"Layout: {line}")
+    if rollup.get("layout"):
+        lines.append("")
+
+    clients: Dict[str, int] = {}
+    for p in projects:
+        if p.get("client"):
+            clients[p["client"]] = clients.get(p["client"], 0) + 1
+    if clients:
+        lines.append("Client directories (their projects are listed as client/project)")
+        for client, count in clients.items():
+            lines.append(f"  {client}/: {count} project director{'y' if count == 1 else 'ies'}")
+        lines.append("")
 
     lines.append("Org record")
     for field, label in ORG_ACTIONS:

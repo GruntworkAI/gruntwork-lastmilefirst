@@ -414,3 +414,24 @@ def test_blocking_problems_still_print_in_hook_mode(workspace, monkeypatch, caps
     assert code == 1
     assert "BLOCKED" in captured.err
     assert "gh's active account" not in captured.err
+
+
+ACME = {
+    "github_account": "acme-dev",
+    "git_user_name": "acme-dev",
+    "git_email": "dev@acme.example",
+    "owns_remotes": ["acme-dev"],
+    "enforcement": "block",
+}
+
+
+def test_repo_under_a_client_directory_is_governed_by_the_org(workspace):
+    """The hook walks up through a `type: client` directory to the org's contract."""
+    write_org(workspace / "acme", "acme", ACME)
+    client = workspace / "acme" / "northwind"
+    client.mkdir()
+    (client / ".claude-workspace").write_text("type: client\n", encoding="utf-8")
+    repo = make_repo(client / "web", name="acme-dev", email="dev@acme.example")
+    assert check(repo, workspace).status == "ok"
+    wrong = make_repo(client / "docs", name="acme-dev", email="someone-else@example.com")
+    assert check(wrong, workspace).status == "blocked"
