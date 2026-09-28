@@ -325,8 +325,17 @@ themselves belong in your org rules file (`org_secret_formats.toml`), never in
 the plugin.
 
 Every mode that reports findings applies it the same way (the default scan,
-`--pre-commit`, and `--all` for each repo), using the visibility `gh` reports
-for that repo:
+`--pre-commit`, and `--all` for each repo). Visibility comes from the repo's
+own git config first, then from what `gh` reports for the active account:
+
+```bash
+git config lastmilefirst.visibility private   # or public, internal
+```
+
+Declare it in any repo owned by an account other than the one `gh` usually
+has active. The `gh` active account is machine-global, and a private repo it
+cannot see reads as unknown, which applies the rules. The declared value is a
+local claim and settles it without a network call.
 
 | Visibility | Findings from `public-only` rules |
 |------------|-----------------------------------|
