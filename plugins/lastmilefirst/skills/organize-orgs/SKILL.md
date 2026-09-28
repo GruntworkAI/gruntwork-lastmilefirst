@@ -261,7 +261,8 @@ account* blocks. Claims key on account rather than org directory, so two
 workspace orgs sharing one account is not a conflict.
 
 Directories marked `external` or `scratch` in a `.claude-workspace` marker carry
-no identity obligation and are skipped everywhere.
+no identity obligation, so the hook and the audit skip them. See
+[Workspace Markers](#workspace-markers).
 
 ### Operatives Repo
 
@@ -293,6 +294,82 @@ Creates `[org]-stack-wisdom/` with:
 ```
 
 README explains wisdom vs. knowledge and the compound loop.
+
+## Workspace Markers
+
+This section is the one place the marker vocabulary is documented. Other skills
+link here rather than restating it.
+
+A `.claude-workspace` file in a directory says what kind of directory it is.
+Only its `type:` line is read, line by line rather than as YAML, because the
+pre-commit hook must not depend on PyYAML. A missing or unreadable marker means
+the default: an ordinary, governed directory.
+
+| `type` | Where it goes | What it does |
+|---|---|---|
+| `studio` | an org | Nothing beyond the default. Useful for being explicit. |
+| `external` | any directory | Cloned third-party code. The identity checks (the pre-commit hook and `audit_identity.py`) skip it and everything below it. |
+| `scratch` | any directory | Personal working files. The identity checks skip it and everything below it. |
+| `client` | one level inside an org | A client directory: a container for one counterparty's projects. Its children are projects; it is not one. |
+
+Only the identity checks honor `external` and `scratch`. Overwatch, the secret
+scan, and the review and organize skills treat those directories like any other.
+
+### Client directories
+
+An advisory org's unit of work is often the counterparty rather than the repo.
+One client can bring several repos at once (an engagement workspace, a clone of
+their code, a deliverable that becomes code), and a client directory keeps them
+together:
+
+```
+~/Code/acme/
+├── .claude/org.json               # the org's contract governs everything below
+├── practice/                      # project, key acme/practice
+└── northwind/                     # client directory (not a project)
+    ├── .claude-workspace          # type: client
+    ├── CLAUDE.md                  # optional, reviewed as tier "client"
+    ├── web/                       # project, key acme/northwind/web
+    └── docs/                      # project, key acme/northwind/docs
+```
+
+The rules:
+
+- **Nested only.** `type: client` is recognized one level inside an org and
+  nowhere else. A marker at the top level does nothing. A client that is a
+  whole org is an ordinary org with its own `org.json` and needs no marker.
+- **One level.** A client directory inside a client directory is treated as a
+  project, and Overwatch prints a note saying so.
+- **No `org.json` in a client directory.** The org's contract governs the repos
+  inside it, and the pre-commit hook walks up through the client directory to
+  find it. A client directory carrying `.claude/org.json` is flagged as
+  ACTION REQUIRED at session start, even when the client directory is empty.
+  Remove the file.
+- **Not a repo itself.** A client directory that is a git repo is flagged as a
+  WARNING. Overwatch and review-org do not track its own contents as a
+  project; the secret scan and identity audit still cover it as the flat
+  `org/client` repo. Move its files into a project inside it.
+- **No state of its own.** Overwatch keys projects by their path relative to
+  the workspace (`acme/northwind/web`). The client directory itself has no
+  record: `update_state.py` run from inside it says "container directory, not
+  tracked."
+- **Names are the org's business.** The plugin does not care what a client
+  directory is called. An org that wants pseudonyms for counterparties writes
+  that rule in its own CLAUDE.md.
+
+A marker may also carry `status: active | paused | archived` for a client
+directory. It is recorded for later use; nothing reads it yet.
+
+**Moving a repo into a client directory** changes its Overwatch key, so its
+history would read as "never scanned" until the next sweep. Move the record
+with it:
+
+```bash
+python3 ~/.claude/plugins/marketplaces/gruntwork-lastmilefirst/plugins/lastmilefirst/hooks/scripts/update_state.py rename --from acme/web --to acme/northwind/web
+```
+
+`rename` refuses when the new key already has a record, so nothing is
+overwritten. It works for any directory rename, not only this one.
 
 ## Integration
 

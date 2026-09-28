@@ -21,7 +21,7 @@ So: **running signal→voice in sequence without judgment over-smooths texture.*
 
 ## review-voice: the tell taxonomy
 
-Two tiers. Tier 1 is the crude stuff. **Tier 2 is the value** — fingerprints that survive *because* the writer is skilled, so they catch tightened prose (Fish's and Claude's included).
+Two tiers. Tier 1 is the crude stuff. **Tier 2 is the value** — fingerprints that survive *because* the writer is skilled, so they catch tightened prose (the workspace owner's and Claude's included).
 
 ### Tier 1 — crude tells (catch lazy drafts)
 - **Lexical over-representation** — *delves* (~25× human rate), *showcasing*, *underscores*, plus comprehensive/notably/crucial/pivotal/leverage/robust/seamless. Evidence: Kobak et al. 2025. Flag **density vs a human baseline**, never a lone instance — and never moralize the word (it marks provenance/RLHF, not bad writing).
@@ -53,7 +53,7 @@ The literature is unanimous on one thing: every robust marker is a **rate/varian
 
 ### Anti-false-positive guards (non-negotiable, all evidence-backed)
 - **Plainness is not a tell.** GPT detectors flag 61%+ of non-native-English essays as AI (Liang et al. 2023). Low perplexity / small vocabulary / short sentences can be authentically human. Never flag simplicity.
-- **Em-dashes are folklore.** No study establishes em-dash *presence* as a discriminator; it's a legitimate heavy human habit (Fish's). Only ever consider frequency density, never a single mark.
+- **Em-dashes are folklore.** No study establishes em-dash *presence* as a discriminator; it's a legitimate heavy human habit (the workspace owner's). Only ever consider frequency density, never a single mark.
 - **Single tell ≠ verdict.** Density and low variance are the signals; one instance is noise.
 - **Provenance ≠ quality.** Over-represented words mark how the text was made, not that it's bad. Flag the pattern; don't moralize.
 - **We are not gaming detectors.** Explicit non-goal: no tuning against GPTZero et al. Detector scores are evadable and degrade under paraphrase/RLHF (arXiv 2503.17965). The prose reads human because it is better.
@@ -120,7 +120,7 @@ Not touched: `consult-expert` routing (Ripley already routed; new skill auto-dis
 - All three version sites read 0.18.0; v0.18.0 release cut after merge.
 
 ## Decision log (2026-07-26)
-Name `review-voice`. Tier 1 lean. Tier 2 = Fish's five + 3b. Gated default + LFG, both skills. P1 synthesis-first reframe adopted. P2 method split adopted. P3 de-dup adopted. P4 register exemption adopted. P5 Ripley-voice exemption adopted. Research augmentation folded in (below).
+Name `review-voice`. Tier 1 lean. Tier 2 = the workspace owner's five + 3b. Gated default + LFG, both skills. P1 synthesis-first reframe adopted. P2 method split adopted. P3 de-dup adopted. P4 register exemption adopted. P5 Ripley-voice exemption adopted. Research augmentation folded in (below).
 
 ---
 

@@ -59,6 +59,14 @@ sidesteps Claude Code's unreliable local marketplace-cache refresh.
 3. **Stop hook** suggests committing if changes were made
 4. **State file** at `~/.claude/lastmilefirst/overwatch-state.json` tracks timestamps
 
+Projects are keyed by their path relative to the workspace: `org/project`, or
+`org/client/project` for a project inside a client directory (see
+[Workspace Markers](../organize-orgs/SKILL.md#workspace-markers)). The workspace
+summary lists nested projects as `client/project`. A client directory has no
+record of its own, and one carrying `.claude/org.json` is an ACTION REQUIRED
+line. After moving or renaming a project directory, move its record with
+`update_state.py rename --from <old key> --to <new key>`.
+
 ## Commands That Update State
 
 When you run these commands, overwatch records the timestamp:
@@ -104,11 +112,11 @@ When `/run-overwatch check` is called:
 
 ## Org Infrastructure Check
 
-This check ensures the current org has proper infrastructure for operatives and stack-wisdom.
+This check ensures each configured org has proper infrastructure for operatives and stack-wisdom.
 
 ### What It Checks
 
-1. **Discover current org**: Walk up from cwd to find org root (directory with CLAUDE.md that's a direct child of workspace)
+1. **Find the orgs**: Every org in the organize-claude config's `orgs` list, at `<workspace>/<org>`, whichever directory the session started in. Orgs come from the config, never from walking up the tree, so a client directory is never taken for an org
 2. **Check org.json**: Does `[org]/.claude/org.json` exist?
 3. **Check operatives repo**: Does `[org]/[org]-operatives/` exist (or path from org.json)?
 4. **Check stack-wisdom repo**: Does `[org]/[org]-stack-wisdom/` exist (or path from org.json)?
@@ -136,9 +144,9 @@ This will:
 ### Detection Algorithm
 
 ```
-1. Find workspace root (e.g., ~/Code/)
-2. Find current org (parent directory that's direct child of workspace)
-3. If no org detected, skip check (user may be at workspace level)
+1. Read the workspace root and the orgs list from the organize-claude config
+2. Skip an org whose directory does not exist
+3. For each remaining org:
 4. Check for [org]/.claude/org.json
 5. If org.json exists:
    - Read operatives.repo and stack_wisdom.repo settings

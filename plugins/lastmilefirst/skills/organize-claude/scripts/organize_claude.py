@@ -5,7 +5,9 @@ CLAUDE Configuration Organization Tool
 Audits, validates, and scaffolds CLAUDE.md files across the workspace hierarchy:
 - Workspace level: {workspace}/CLAUDE.md (security boundary)
 - Org level: {workspace}/{org}/CLAUDE.md (optional)
-- Project level: {workspace}/{org}/{project}/CLAUDE.md
+- Project level: {workspace}/{org}/{project}/CLAUDE.md, or
+  {workspace}/{org}/{client}/{project}/CLAUDE.md inside a directory marked
+  `type: client` (the client directory itself is never scaffolded)
 
 Always shows what will happen and asks for confirmation before any changes.
 """
@@ -25,6 +27,14 @@ from archetypes import (
     get_template_name_for_archetype,
     format_archetype_choices,
 )
+
+# The workspace layout loader lives with the hook scripts (it decides which
+# directories are projects, and which are client directories holding them).
+_HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
+if str(_HOOKS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_SCRIPTS))
+# find_projects: (label, path, has_claude_md) per project, shared with review-claude.
+from workspace_types import find_claude_md_projects as find_projects  # noqa: E402
 
 # Config file location
 CONFIG_PATH = Path.home() / ".config" / "organize-claude" / "config.json"
@@ -257,23 +267,30 @@ def find_org_directories(workspace: Path, orgs: list[str]) -> list[tuple[str, Pa
     return results
 
 
-def find_projects(org_path: Path) -> list[tuple[str, Path, bool]]:
+def short_name(name: str, org_name: str) -> str:
+    """Mapping-table name for a project: drop an `<org>-` prefix on flat repos.
+
+    A project inside a client directory keeps its `client/project` name, with
+    no prefix assumption.
     """
-    Find all projects in an org directory.
-    Returns: list of (project_name, path, has_claude_md)
-    """
-    results = []
-    for item in sorted(org_path.iterdir()):
-        if item.is_dir() and not item.name.startswith("."):
-            claude_md = item / "CLAUDE.md"
-            results.append((item.name, item, claude_md.exists()))
-    return results
+    if "/" in name:
+        return name
+    return name.removeprefix(f"{org_name}-")
+
+
+def _org_of(path: Path, workspace: Path) -> str:
+    """The org directory a project path sits in, or "" when outside the workspace."""
+    rel = _relative(path, workspace.expanduser().resolve())
+    return rel.split("/", 1)[0] if rel else ""
 
 
 def parse_project_mapping(claude_md_path: Path) -> dict[str, str]:
     """
     Parse project directory mapping table from user-level CLAUDE.md.
-    Returns: dict of project_name -> directory_path
+    Returns: dict of directory_path -> project_name.
+
+    Keyed by path, because names are not unique once client directories
+    exist: two clients' `docs` rows would otherwise collapse into one.
     """
     mapping = {}
     if not claude_md_path.exists():
@@ -288,28 +305,65 @@ def parse_project_mapping(claude_md_path: Path) -> dict[str, str]:
         project_name = match.group(1).strip()
         project_path = match.group(2).strip()
         if project_name.lower() not in ("project", "name", "---"):
-            mapping[project_name] = project_path
+            mapping[project_path] = project_name
 
     return mapping
 
 
+def _relative(path: Path, workspace: Path) -> Optional[str]:
+    try:
+        return path.expanduser().resolve().relative_to(workspace).as_posix()
+    except (ValueError, OSError):
+        return None
+
+
 def validate_project_mapping(
-    mapping: dict[str, str], actual_projects: list[tuple[str, Path, bool]]
+    mapping: dict[str, str],
+    actual_projects: list[tuple[str, Path, bool]],
+    workspace: Optional[Path] = None,
 ) -> tuple[list[str], list[tuple[str, Path]]]:
     """
     Validate project mapping against actual directories.
     Returns: (in_mapping_not_disk, on_disk_not_mapping)
+
+    `mapping` is the table as `name -> path`, or as a list of `(name, path)`
+    rows (what `parse_project_mapping`'s path-keyed dict becomes, so rows
+    sharing a name are all kept).
+
+    With `workspace`, a row and a directory match when the row's path and the
+    directory are the same path relative to the workspace, so two client
+    directories each holding a `docs` repo stay distinct. A row whose path is
+    not under the workspace, and every row when `workspace` is omitted, is
+    matched by name as before.
     """
-    actual_names = {p[0] for p in actual_projects}
-    mapped_names = set(mapping.keys())
+    rows = list(mapping.items()) if isinstance(mapping, dict) else list(mapping)
+    if workspace is None:
+        mapped_paths: dict[str, str] = {}
+        by_name = dict(rows)
+    else:
+        workspace = workspace.expanduser().resolve()
+        mapped_paths = {}
+        by_name = {}
+        for name, path in rows:
+            rel = _relative(Path(path), workspace)
+            if rel is None:
+                by_name[name] = path
+            else:
+                mapped_paths[rel] = name
 
-    # In mapping but not on disk
-    in_mapping_not_disk = [name for name in mapped_names if name not in actual_names]
+    actual_rels = set()
+    actual_names = set()
+    on_disk_not_mapping = []
+    for name, path, _has_claude in actual_projects:
+        rel = _relative(path, workspace) if workspace is not None else None
+        actual_rels.add(rel)
+        actual_names.add(name)
+        if rel in mapped_paths or name in by_name:
+            continue
+        on_disk_not_mapping.append((name, path))
 
-    # On disk but not in mapping
-    on_disk_not_mapping = [
-        (p[0], p[1]) for p in actual_projects if p[0] not in mapped_names
-    ]
+    in_mapping_not_disk = [name for rel, name in mapped_paths.items() if rel not in actual_rels]
+    in_mapping_not_disk += [name for name in by_name if name not in actual_names]
 
     return in_mapping_not_disk, on_disk_not_mapping
 
@@ -487,16 +541,25 @@ def show_audit_report(
         print(f"\nPROJECT COVERAGE: {org_name}/ ({total} projects)")
         print("-" * 60)
 
+        current_client = None
         for proj_name, proj_path, has_claude in projects:
+            # A project inside a client directory prints indented under a
+            # `client/` line, which is shown once per client.
+            client, _, leaf = proj_name.rpartition("/")
+            if client != current_client:
+                current_client = client
+                if client:
+                    print(f"  {client}/")
+            indent = "    " if client else "  "
             if has_claude:
                 # Check for nested CLAUDE.md files
                 nested = list(proj_path.rglob("CLAUDE.md"))
                 if len(nested) > 1:
-                    print(f"  ✓ {proj_name} ({len(nested)} files)")
+                    print(f"{indent}✓ {leaf} ({len(nested)} files)")
                 else:
-                    print(f"  ✓ {proj_name}")
+                    print(f"{indent}✓ {leaf}")
             else:
-                print(f"  ✗ {proj_name} MISSING")
+                print(f"{indent}✗ {leaf} MISSING")
 
         print(f"\nCoverage: {has_claude_count}/{total} ({pct:.0f}%)")
 
@@ -516,10 +579,37 @@ def show_audit_report(
         if on_disk_not_mapping:
             print("\nProjects on disk but missing from mapping:")
             for name, path in on_disk_not_mapping:
-                short_name = name.replace("gruntwork-", "")
-                print(f"  ✗ {short_name} → add: | {short_name} | {path} |")
+                label = short_name(name, _org_of(path, workspace))
+                print(f"  ✗ {label} → add: | {label} | {path} |")
         else:
             print("\nProjects on disk but missing from mapping: (none)")
+
+
+def find_scaffold_target(all_projects: dict[str, list], wanted: str):
+    """The project `--scaffold-project` names, or a message saying why not.
+
+    `wanted` matches a project's label (`project`, or `client/project` in a
+    client directory) or its leaf directory name. An exact label match wins;
+    a leaf name shared by projects in two client directories is ambiguous.
+    Returns (org_name, label, path, has_claude_md), or a message string.
+    """
+    by_label = []
+    by_leaf = []
+    for org_name, projects in all_projects.items():
+        for proj_name, proj_path, has_claude in projects:
+            entry = (org_name, proj_name, proj_path, has_claude)
+            if proj_name == wanted:
+                by_label.append(entry)
+            elif proj_path.name == wanted:
+                by_leaf.append(entry)
+    matches = by_label or by_leaf
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        labels = ", ".join(sorted(f"{org}/{label}" for org, label, _p, _h in matches))
+        return f"Project '{wanted}' matches more than one directory ({labels}). Pass the client/project form."
+    return (f"Project '{wanted}' not found. Name it as the audit lists it: `project`, "
+            f"or `client/project` for a project inside a client directory.")
 
 
 def main():
@@ -612,10 +702,12 @@ def main():
     all_project_list = []
     for org_name, projects in all_projects.items():
         for proj_name, proj_path, has_claude in projects:
-            short_name = proj_name.replace(f"{org_name}-", "")
-            all_project_list.append((short_name, proj_path, has_claude))
+            all_project_list.append((short_name(proj_name, org_name), proj_path, has_claude))
 
-    mapping_validation = validate_project_mapping(mapping, all_project_list) if mapping else None
+    mapping_rows = [(name, path) for path, name in mapping.items()]
+    mapping_validation = (
+        validate_project_mapping(mapping_rows, all_project_list, workspace) if mapping else None
+    )
 
     # Show audit report (always)
     show_audit_report(workspace, user_claude, org_info, all_projects, mapping_validation)
@@ -655,15 +747,15 @@ def main():
         return
 
     if args.scaffold_project:
-        for org_name, projects in all_projects.items():
-            for proj_name, proj_path, has_claude in projects:
-                if proj_name == args.scaffold_project:
-                    if has_claude:
-                        print(f"\n  {proj_name}/CLAUDE.md already exists.")
-                    else:
-                        scaffold_project_claude_md(proj_path, proj_name, org_name, args.archetype)
-                    return
-        print(f"\n  Project '{args.scaffold_project}' not found.")
+        match = find_scaffold_target(all_projects, args.scaffold_project)
+        if isinstance(match, str):
+            print(f"\n  {match}")
+            return
+        org_name, proj_name, proj_path, has_claude = match
+        if has_claude:
+            print(f"\n  {proj_name}/CLAUDE.md already exists.")
+        else:
+            scaffold_project_claude_md(proj_path, proj_path.name, org_name, args.archetype)
         return
 
     # Execute bulk actions if flags were given
@@ -679,14 +771,14 @@ def main():
     if do_projects and missing_projects:
         print("\nScaffolding project-level CLAUDE.md files...")
         for org_name, proj_name, proj_path in missing_projects:
-            scaffold_project_claude_md(proj_path, proj_name, org_name)
+            scaffold_project_claude_md(proj_path, proj_path.name, org_name)
         acted = True
 
     if do_mappings and has_mapping_gaps:
         print("\nMissing project mappings (add to ~/Code/CLAUDE.md):")
         for name, path in mapping_validation[1]:
-            short_name = name.replace("gruntwork-", "")
-            print(f"  | {short_name} | {path} |")
+            label = short_name(name, _org_of(path, workspace))
+            print(f"  | {label} | {path} |")
         acted = True
 
     if acted:

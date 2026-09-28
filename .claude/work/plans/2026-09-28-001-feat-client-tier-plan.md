@@ -1,8 +1,8 @@
 ---
 title: Client tier — a counterparty directory between org and project
-version: 1.1
+version: 1.2
 date: 2026-09-28
-status: draft
+status: built
 type: feat
 component: hooks/scripts/workspace_types.py (new), hooks/scripts/overwatch.py, hooks/scripts/session_start.py, hooks/scripts/update_state.py, skills/scan-secrets/scripts/scanner.py, skills/todos-summary/scripts/aggregator.py, skills/review-org/scripts/review_org.py, skills/review-claude/scripts/review_claude.py, skills/organize-claude/scripts/organize_claude.py, skills/organize-orgs/scripts/audit_identity.py
 target_version: 0.36.0
@@ -12,8 +12,10 @@ refs:
   - plugins/lastmilefirst/skills/organize-orgs/scripts/check_identity.py (the marker parser, `workspace_type`, 153-174; the loader imports it)
 ---
 
-# Client tier — a counterparty directory between org and project (v1.1)
+# Client tier — a counterparty directory between org and project (v1.2)
 
+> **v1.2 (2026-09-28).** Built and released as 0.36.0. Two things changed in the build: the `note` and `defect` fields on `Project` became a separate `layout_issues(org_dir)` reported from the container itself, so an empty container still reports; and a container that is itself a git repo is still scanned and audited as a flat `org/dir` project, with a warning. A `public-only` scan-rule tag shipped in the same release, outside this plan.
+>
 > **v1.1 (2026-09-28).** After review. `client` is now nested-only (D1); the loader imports the existing parser instead of duplicating it (D4); a client directory has no state scope and its CLAUDE.md is chained but not tracked (D6); the adoption unit is generic, with the concrete steps kept in the adopting org's private repo (U6); two walkers added to the inventory (organize-claude's mapping validation, review-claude's inventory check); test injection points named.
 >
 > **v1.0 (2026-09-28).** First draft, written the day the practice's first client engagement was set up and the two-tier layout turned out to have no place for the counterparty.

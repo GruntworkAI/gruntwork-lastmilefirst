@@ -323,3 +323,68 @@ def test_main_json_output_is_parseable(workspace, capsys):
     audit_identity.main(["--cheap", "--json", "--workspace-root", str(workspace)])
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["severity"] == ERROR
+
+
+# --------------------------------------------------------------------------
+# client directories (plan 2026-09-28-001, U3)
+# --------------------------------------------------------------------------
+
+ACME = {
+    "github_account": "acme-dev",
+    "git_user_name": "acme-dev",
+    "git_email": "dev@acme.example",
+    "owns_remotes": ["acme-dev"],
+    "enforcement": "block",
+}
+
+
+def mark_client(directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / ".claude-workspace").write_text("type: client\n", encoding="utf-8")
+    return directory
+
+
+def test_repo_only_under_a_client_directory_still_makes_an_unregistered_org(workspace):
+    """Before the loader, a repo one level down was invisible and the org read as empty."""
+    client = mark_client(workspace / "newthing" / "northwind")
+    make_repo(client / "web")
+    findings = audit_identity.cheap_findings(workspace)
+    assert len(severities(findings, ERROR)) == 1
+    assert "no identity contract" in findings[0].message
+
+
+def test_drift_finds_a_wrong_identity_repo_under_a_client_directory(workspace):
+    org = write_org(workspace / "acme", "acme", ACME)
+    client = mark_client(org / "northwind")
+    make_repo(client / "web", name="acme-dev", email="someone-else@example.com")
+    findings = audit_identity.drift_findings(workspace)
+    messages = [f.message for f in severities(findings, ERROR)]
+    assert len(messages) == 1
+    assert messages[0].startswith("acme/northwind/web commits as someone-else@example.com")
+
+
+def test_iter_repos_skips_the_client_directory_itself(workspace):
+    org = workspace / "acme"
+    client = mark_client(org / "northwind")
+    make_repo(client / "web")
+    make_repo(org / "practice")
+    assert audit_identity.iter_repos(org) == [client / "web", org / "practice"]
+
+
+def test_iter_repos_includes_a_client_directory_that_is_itself_a_repo(workspace):
+    """A layout defect, but its commits still need auditing, as the flat org/dir."""
+    org = workspace / "acme"
+    client = mark_client(org / "northwind")
+    make_repo(client)
+    make_repo(client / "web")
+    assert audit_identity.iter_repos(org) == [client, client / "web"]
+    assert audit_identity.repo_label(org, client) == "acme/northwind"
+
+
+def test_drift_audits_a_client_directory_that_is_a_repo(workspace):
+    org = write_org(workspace / "acme", "acme", ACME)
+    client = mark_client(org / "northwind")
+    make_repo(client, name="acme-dev", email="someone-else@example.com")
+    messages = [f.message for f in severities(audit_identity.drift_findings(workspace), ERROR)]
+    assert len(messages) == 1
+    assert messages[0].startswith("acme/northwind commits as someone-else@example.com")

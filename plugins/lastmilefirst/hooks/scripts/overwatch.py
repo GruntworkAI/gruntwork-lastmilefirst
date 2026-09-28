@@ -379,37 +379,50 @@ def _load_organize_config() -> Optional[Dict[str, Any]]:
 def resolve_context(cwd: Optional[Path] = None) -> Dict[str, Optional[str]]:
     """
     Derive org name and project key from CWD and workspace config.
-    Returns {"org": "gruntwork", "project": "gruntwork/gruntwork-leamo"}
-    or {"org": None, "project": None} if outside a recognized workspace.
+    Returns {"org": "gruntwork", "project": "gruntwork/gruntwork-leamo", "client": None}
+    or all None if outside a recognized workspace.
+
+    The project key is the path relative to the workspace, so a project inside
+    a client directory is keyed "org/client/project". From inside the client
+    directory itself the result has the org and the client and no project: a
+    client directory has no state of its own (plan 2026-09-28-001, D6).
     """
+    empty: Dict[str, Optional[str]] = {"org": None, "project": None, "client": None}
     cwd = cwd or Path.cwd()
     config = _load_organize_config()
     if not config:
-        return {"org": None, "project": None}
+        return empty
 
     workspace = Path(config.get("workspace", ""))
     if not workspace.is_dir():
-        return {"org": None, "project": None}
+        return empty
 
     # Resolve symlinks for reliable comparison
     try:
         cwd_resolved = cwd.resolve()
         workspace_resolved = workspace.resolve()
     except OSError:
-        return {"org": None, "project": None}
+        return empty
 
+    # Imported here so that importing overwatch stays free of sys.path changes.
+    scripts_dir = str(Path(__file__).parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
     try:
-        rel = cwd_resolved.relative_to(workspace_resolved)
-    except ValueError:
-        return {"org": None, "project": None}
+        from workspace_types import resolve
+    except Exception:
+        # Loader unavailable: fall back to the flat <org>/<project> reading.
+        try:
+            parts = cwd_resolved.relative_to(workspace_resolved).parts
+        except ValueError:
+            return empty
+        if not parts or parts[0] not in config.get("orgs", []):
+            return empty
+        key = f"{parts[0]}/{parts[1]}" if len(parts) > 1 else None
+        return {"org": parts[0], "project": key, "client": None}
 
-    parts = rel.parts
-    orgs = config.get("orgs", [])
-
-    org = parts[0] if len(parts) >= 1 and parts[0] in orgs else None
-    project_key = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 and org else None
-
-    return {"org": org, "project": project_key}
+    ctx = resolve(cwd_resolved, workspace_resolved, config.get("orgs", []))
+    return {"org": ctx.org, "project": ctx.key, "client": ctx.client}
 
 
 def update_project_state(field: str, value: Any, cwd: Optional[Path] = None) -> None:

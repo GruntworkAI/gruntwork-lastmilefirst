@@ -15,7 +15,7 @@ This is a foundational architecture change that affects conventions, data migrat
 ## Problem Statement / Motivation
 
 **Current state is ad-hoc and inconsistent:**
-- `gruntwork-stack-wisdom` already acts as a universal repo — it holds CLAUDE.md sources for gruntwork, lastmilefirst.ai, AND contoso — but its internal structure doesn't reflect this
+- `gruntwork-stack-wisdom` already acts as a universal repo — it holds CLAUDE.md sources for gruntwork, lastmilefirst.ai, AND a paused client org — but its internal structure doesn't reflect this
 - Flat, encoded directory naming (`org-gw-claude-file/`, `project-lmf-advisors-claude-file/`) is opaque and hard to navigate
 - `organize-orgs` expects per-org repos (`{org}-stack-wisdom`, `{org}-operatives`) that don't exist and haven't been created
 - Operatives repos are expected but have never been set up for any org

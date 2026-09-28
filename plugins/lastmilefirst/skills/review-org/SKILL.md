@@ -37,7 +37,7 @@ For the org repos, read `org.json` first. An org can opt out of either repo with
 
 The org CLAUDE.md check reports the file's sections against the org template. Comparing the file's Projects table with the directories on disk, and its tools section with the workspace file, belongs to `review-claude` and is not in it yet. Report only what the script prints.
 
-`review_org.py` is read-only. It reads the Overwatch state file and never writes it. It counts every non-hidden directory in the org as a project directory and applies the Overwatch thresholds the same way session start does: an action past its threshold counts only when the repo has commits since it last ran. A project with no commits at all is listed separately. Pass `--json` to get the per-project data.
+`review_org.py` is read-only. It reads the Overwatch state file and never writes it. It counts every non-hidden directory in the org as a project directory, except a client directory, whose children count instead and are shown as `client/project` under a short per-client summary (see [Workspace Markers](../organize-orgs/SKILL.md#workspace-markers)). It applies the Overwatch thresholds the same way session start does: an action past its threshold counts only when the repo has commits since it last ran. A project with no commits at all is listed separately. Pass `--json` to get the per-project data.
 
 ## The Report
 

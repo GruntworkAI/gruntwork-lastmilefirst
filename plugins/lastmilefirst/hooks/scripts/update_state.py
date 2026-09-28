@@ -6,8 +6,14 @@ Updates the Overwatch state file with scoped timestamps.
 Usage:
   update_state.py <action> [--scope project|org|global] [--key KEY]
   update_state.py status [--all]
+  update_state.py rename --from OLD_KEY --to NEW_KEY [--scope project|org]
 
 Actions: review, organize, secret_scan, review_claude, review_org, plugin_check, status
+
+Project keys are paths relative to the workspace: "org/project", or
+"org/client/project" for a project inside a client directory. `rename` moves a
+key's timestamps to a new key after a directory is moved or renamed, and
+refuses when the new key already has state.
 
 Default scope per action:
   review, organize, secret_scan, review_claude -> project (auto-detected from CWD)
@@ -26,10 +32,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from overwatch import (
+    _load_state_unlocked,
+    _save_state_unlocked,
+    file_lock,
+    get_lock_file,
     load_state,
     resolve_context,
     update_scoped_state,
 )
+
+CONTAINER_MESSAGE = "container directory, not tracked"
 
 # Default scope for each action
 DEFAULT_SCOPES = {
@@ -85,15 +97,39 @@ def print_status(show_all: bool = False) -> None:
             proj_data = state.get("projects", {}).get(ctx["project"], {})
             print_scope(f"project/{ctx['project']}", proj_data)
 
-        if not ctx["org"] and not ctx["project"]:
+        if ctx.get("client") and not ctx["project"]:
+            print(f"  {ctx['org']}/{ctx['client']}: {CONTAINER_MESSAGE}")
+        elif not ctx["org"] and not ctx["project"]:
             print("  (not in a recognized project — use --all to see everything)")
+
+
+def rename_key(scope: str, old: str, new: str) -> str:
+    """Move the state stored under `old` to `new` within a scope.
+
+    Returns an empty string on success, or the reason it refused. Refuses when
+    `old` has no state or `new` already has some, so nothing is overwritten.
+    """
+    if old == new:
+        return "the two keys are the same"
+    with file_lock(get_lock_file()):
+        state = _load_state_unlocked()
+        entries = state.setdefault(scope, {})
+        if old not in entries:
+            return f"no state under {scope}/{old}"
+        if new in entries:
+            return f"{scope}/{new} already has state; not overwriting it"
+        entries[new] = entries.pop(old)
+        _save_state_unlocked(state)
+    return ""
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Update Overwatch state")
-    parser.add_argument("action", help="Action: review, organize, secret_scan, review_claude, review_org, plugin_check, status")
+    parser.add_argument("action", help="Action: review, organize, secret_scan, review_claude, review_org, plugin_check, status, rename")
     parser.add_argument("--scope", choices=["project", "org", "global"], help="Override default scope")
-    parser.add_argument("--key", help="Explicit scope key (org name or org/project)")
+    parser.add_argument("--key", help="Explicit scope key (org name, org/project, or org/client/project)")
+    parser.add_argument("--from", dest="from_key", help="rename: the key to move")
+    parser.add_argument("--to", dest="to_key", help="rename: the new key")
     parser.add_argument("--all", action="store_true", dest="show_all", help="Show all scopes (status only)")
     args = parser.parse_args()
 
@@ -101,8 +137,21 @@ def main() -> None:
         print_status(show_all=args.show_all)
         return
 
+    if args.action == "rename":
+        if not args.from_key or not args.to_key:
+            parser.error("rename needs --from and --to")
+        if args.scope == "global":
+            parser.error("rename works on the project or org scope")
+        scope = "orgs" if args.scope == "org" else "projects"
+        refused = rename_key(scope, args.from_key, args.to_key)
+        if refused:
+            print(f"Error: {refused}.", file=sys.stderr)
+            sys.exit(1)
+        print(f"Overwatch: moved {scope}/{args.from_key} to {scope}/{args.to_key}")
+        return
+
     if args.action not in DEFAULT_SCOPES:
-        parser.error(f"Unknown action: {args.action}. Use: {', '.join(DEFAULT_SCOPES.keys())}, status")
+        parser.error(f"Unknown action: {args.action}. Use: {', '.join(DEFAULT_SCOPES.keys())}, status, rename")
 
     # Determine scope
     if args.scope:
@@ -124,7 +173,11 @@ def main() -> None:
             key = ctx["org"]
 
         if not key:
-            print(f"Error: not in a recognized {scope[:-1]}. Use --key to specify explicitly.", file=sys.stderr)
+            if scope == "projects" and ctx.get("client"):
+                print(f"Error: {ctx['org']}/{ctx['client']} is a {CONTAINER_MESSAGE}. "
+                      f"Run this from a project inside it, or use --key.", file=sys.stderr)
+            else:
+                print(f"Error: not in a recognized {scope[:-1]}. Use --key to specify explicitly.", file=sys.stderr)
             sys.exit(1)
 
     now = int(time.time())

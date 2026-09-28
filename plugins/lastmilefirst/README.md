@@ -135,6 +135,28 @@ Every archetype also expects **Dev Gotchas** — traps for someone changing the 
 
 If no config exists, the plugin uses conventions: `[org]-operatives/` and `[org]-stack-wisdom/`.
 
+**Client directories.** In an advisory org the unit of work is often the
+counterparty rather than the repo, and one client can bring several repos at
+once. A directory one level inside an org with a `.claude-workspace` marker of
+`type: client` holds them together. Its children are projects (keyed
+`org/client/project` in Overwatch), the directory itself is not one, and the
+org's `org.json` governs everything inside it:
+
+```
+~/Code/advisory/                     # Org
+├── .claude/org.json
+├── practice-notes/                  # Project
+└── northwind/                       # Client directory (type: client)
+    ├── engagement/                  # Project: advisory/northwind/engagement
+    └── their-app/                   # Project: advisory/northwind/their-app
+```
+
+Every walker (Overwatch, the `--all` secret scan, todos, the review and
+organize skills, and the identity audit) descends one level through a client
+directory. The marker vocabulary and the rules for client directories are
+documented once, in the organize-orgs skill under
+[Workspace Markers](skills/organize-orgs/SKILL.md#workspace-markers).
+
 ### Project Structure
 
 The plugin enforces a standard structure that both humans and Claude can navigate:

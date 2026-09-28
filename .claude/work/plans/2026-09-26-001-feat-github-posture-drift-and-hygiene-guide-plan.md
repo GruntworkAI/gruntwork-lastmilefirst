@@ -211,7 +211,7 @@ has a ruleset does not get a duplicate; a repo the caller does not admin gets no
 one-line reason. Idempotent: applying an item that is already in place is a no-op that says so.
 
 Baseline for the default set, applied by hand 2026-09-26 to all three public marketplaces with
-Fish's approval: rulesets `protect main` (deletion, non_fast_forward; no PR requirement) and
+The workspace owner's approval: rulesets `protect main` (deletion, non_fast_forward; no PR requirement) and
 `protect release tags` (`refs/tags/v*`, update + deletion); Dependabot alerts and security updates
 on; Actions `selected` with GitHub-owned and verified allowed; delete-branch-on-merge on; wiki off.
 
