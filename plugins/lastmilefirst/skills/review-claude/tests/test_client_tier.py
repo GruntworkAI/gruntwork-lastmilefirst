@@ -163,3 +163,57 @@ def test_full_walk_labels_a_nested_project_with_its_client(workspace, monkeypatc
     assert "northwind/web/CLAUDE.md" in out
     # The client directory's own file has no expected sections, so the walk skips it.
     assert "  northwind/CLAUDE.md" not in out
+
+
+# --- review fixes -----------------------------------------------------------------
+
+def test_stale_row_under_a_client_directory_is_not_on_disk(workspace):
+    table = ORG_TABLE + "| gone | ~/Code/acme/northwind/gone |\n"
+    claude_md = make_claude_md(workspace / "acme", table)
+    result = check_inventory(
+        table, "org",
+        disk_projects(claude_md, "org", []),
+        disk_containers(claude_md, "org", []),
+    )
+    assert result["not_on_disk"] == ["gone"]
+
+
+def test_row_with_the_client_directorys_own_path_counts_as_on_disk(workspace):
+    table = ORG_TABLE + "| northwind (all) | ~/Code/acme/northwind/ |\n"
+    claude_md = make_claude_md(workspace / "acme", table)
+    result = check_inventory(
+        table, "org",
+        disk_projects(claude_md, "org", []),
+        disk_containers(claude_md, "org", []),
+    )
+    assert result["not_on_disk"] == []
+
+
+def test_workspace_tier_stale_nested_row_is_not_on_disk(workspace):
+    ws_md = make_claude_md(workspace, "# Workspace\n\n## Project Directory Mapping\n\n"
+                           "| Project | Path |\n|---|---|\n"
+                           "| web | ~/Code/acme/northwind/web |\n"
+                           "| old | ~/Code/acme/northwind/old |\n")
+    result = check_inventory(ws_md.read_text(), "user", disk_projects(ws_md, "user", ["acme"]),
+                             disk_containers(ws_md, "user", ["acme"]))
+    assert result["not_on_disk"] == ["old"]
+
+
+def test_full_walk_says_the_client_tier_is_not_reviewed(workspace, monkeypatch, capsys):
+    make_claude_md(workspace / "acme" / "northwind", "# Northwind\n")
+    config = {"workspace": str(workspace), "orgs": ["acme"]}
+    monkeypatch.setattr(review_claude, "load_config", lambda: config)
+    monkeypatch.setattr("sys.argv", ["review_claude.py"])
+    review_claude.main()
+    out = capsys.readouterr().out
+    lines = [l for l in out.splitlines() if l.startswith("Client tier:")]
+    assert lines == ["Client tier: acme/northwind/CLAUDE.md is not reviewed in the walk yet "
+                     "(use --file to see its tier chain and overlaps)"]
+
+
+def test_full_walk_is_silent_about_a_client_directory_without_a_claude_md(workspace, monkeypatch, capsys):
+    config = {"workspace": str(workspace), "orgs": ["acme"]}
+    monkeypatch.setattr(review_claude, "load_config", lambda: config)
+    monkeypatch.setattr("sys.argv", ["review_claude.py"])
+    review_claude.main()
+    assert "Client tier:" not in capsys.readouterr().out

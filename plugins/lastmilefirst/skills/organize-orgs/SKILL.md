@@ -343,7 +343,12 @@ The rules:
 - **No `org.json` in a client directory.** The org's contract governs the repos
   inside it, and the pre-commit hook walks up through the client directory to
   find it. A client directory carrying `.claude/org.json` is flagged as
-  ACTION REQUIRED at session start. Remove the file.
+  ACTION REQUIRED at session start, even when the client directory is empty.
+  Remove the file.
+- **Not a repo itself.** A client directory that is a git repo is flagged as a
+  WARNING. Overwatch and review-org do not track its own contents as a
+  project; the secret scan and identity audit still cover it as the flat
+  `org/client` repo. Move its files into a project inside it.
 - **No state of its own.** Overwatch keys projects by their path relative to
   the workspace (`acme/northwind/web`). The client directory itself has no
   record: `update_state.py` run from inside it says "container directory, not

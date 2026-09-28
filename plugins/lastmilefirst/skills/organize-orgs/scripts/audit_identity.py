@@ -47,7 +47,7 @@ from check_identity import (  # noqa: E402
     workspace_type,
     UNGOVERNED_TYPES,
 )
-from workspace_types import iter_projects  # noqa: E402
+from workspace_types import iter_containers, iter_projects  # noqa: E402
 
 ERROR = "error"
 WARNING = "warning"
@@ -106,8 +106,14 @@ def is_git_repo(path: Path) -> bool:
 
 def iter_repos(org_dir: Path) -> Iterable[Path]:
     """Git repos under an org: its direct children, and the children of a
-    directory marked `type: client`. Repos themselves do not nest."""
-    return [p.path for p in iter_projects(org_dir) if is_git_repo(p.path)]
+    directory marked `type: client`.
+
+    A client directory that is itself a git repo is a layout defect (reported
+    by `workspace_types.layout_issues`), but its commits still need auditing,
+    so it is included too, labeled as a flat `org/dir` repo."""
+    repos = [p.path for p in iter_projects(org_dir) if is_git_repo(p.path)]
+    repos.extend(c for c in iter_containers(org_dir) if is_git_repo(c))
+    return sorted(repos)
 
 
 def repo_label(org_dir: Path, repo: Path) -> str:

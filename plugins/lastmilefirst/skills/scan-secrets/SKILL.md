@@ -63,7 +63,10 @@ client directory (`~/Code/<org>/<client>/<repo>`), then scans each. A client
 directory is one marked `type: client`; see
 [Workspace Markers](../organize-orgs/SKILL.md#workspace-markers). Each repo's
 scan is recorded under its path relative to `~/Code/`, which is the key
-Overwatch reads.
+Overwatch reads. A client directory that is itself a repo (a layout mistake
+Overwatch warns about) is still scanned, as `<org>/<client>`. If the workspace
+layout loader cannot be imported, the walk falls back to `~/Code/<org>/<repo>`
+only and prints a line saying client directories are not being descended.
 
 **Run:**
 ```bash

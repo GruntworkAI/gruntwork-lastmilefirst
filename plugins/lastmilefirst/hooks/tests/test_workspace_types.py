@@ -62,7 +62,7 @@ def test_flat_org_yields_every_non_hidden_directory(workspace):
     projects = list(wt.iter_projects(workspace / "flat"))
     assert [p.key for p in projects] == ["flat/alpha", "flat/beta"]
     assert [p.label for p in projects] == ["alpha", "beta"]
-    assert all(p.client is None and p.note is None and p.defect is None for p in projects)
+    assert all(p.client is None for p in projects)
 
 
 def test_container_yields_its_children_not_itself(workspace):
@@ -76,15 +76,59 @@ def test_container_yields_its_children_not_itself(workspace):
 def test_container_inside_container_is_a_project_with_a_note(workspace):
     (project,) = wt.iter_projects(workspace / "nested")
     assert project.key == "nested/outer/inner"
-    assert project.note and "only one level" in project.note.lower()
-    assert project.defect is None
+    (issue,) = wt.layout_issues(workspace / "nested")
+    assert issue.kind == "nested-container"
+    assert issue.path == workspace / "nested" / "outer" / "inner"
+    assert "only one level" in issue.message.lower()
 
 
 def test_container_with_org_json_is_flagged_once_and_still_descended(workspace):
     projects = list(wt.iter_projects(workspace / "broken"))
     assert [p.key for p in projects] == ["broken/contoso/one", "broken/contoso/two"]
-    assert "org.json" in projects[0].defect
-    assert projects[1].defect is None
+    (issue,) = wt.layout_issues(workspace / "broken")
+    assert issue.kind == "container-org-json"
+    assert issue.path == workspace / "broken" / "contoso"
+    assert "org.json" in issue.message
+
+
+def test_container_with_org_json_and_no_children_still_reports(tmp_path):
+    org = tmp_path / "Code" / "solo"
+    mark(org / "empty")
+    (org / "empty" / ".claude").mkdir()
+    (org / "empty" / ".claude" / "org.json").write_text("{}")
+    assert list(wt.iter_projects(org)) == []
+    assert [i.kind for i in wt.layout_issues(org)] == ["container-org-json"]
+
+
+def test_container_that_is_a_repo_is_a_layout_issue(workspace):
+    (workspace / "acme" / "northwind" / ".git").mkdir()
+    (issue,) = wt.layout_issues(workspace / "acme")
+    assert issue.kind == "container-is-repo"
+    assert issue.path == workspace / "acme" / "northwind"
+    assert "should not be a repo" in issue.message
+    # Still a container: its children are the projects, it is not one.
+    assert "acme/northwind" not in keys(workspace / "acme")
+
+
+def test_healthy_layout_has_no_issues(workspace):
+    assert wt.layout_issues(workspace / "acme") == []
+    assert wt.layout_issues(workspace / "flat") == []
+
+
+def test_every_issue_kind_has_a_severity(workspace):
+    (workspace / "acme" / "northwind" / ".git").mkdir()
+    kinds = {i.kind for org in ("acme", "nested", "broken") for i in wt.layout_issues(workspace / org)}
+    assert kinds == set(wt.ISSUE_SEVERITY)
+
+
+def test_iter_containers_and_find_projects(workspace):
+    assert list(wt.iter_containers(workspace / "acme")) == [workspace / "acme" / "northwind"]
+    assert list(wt.iter_containers(workspace / "flat")) == []
+    assert wt.find_projects(workspace / "acme") == [
+        workspace / "acme" / "northwind" / "docs",
+        workspace / "acme" / "northwind" / "web",
+        workspace / "acme" / "practice",
+    ]
 
 
 def test_loader_never_filters(workspace):

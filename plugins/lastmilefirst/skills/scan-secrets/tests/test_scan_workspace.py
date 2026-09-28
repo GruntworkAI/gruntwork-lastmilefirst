@@ -76,3 +76,30 @@ def test_scan_records_the_nested_key(workspace, scanned):
     projects = overwatch.load_state()["projects"]
     assert set(projects) == {"acme/northwind/web", "acme/practice", "flat/alpha"}
     assert projects["acme/northwind/web"]["last_secret_scan"] > 0
+
+
+def test_client_directory_that_is_a_repo_is_scanned_as_a_flat_project(workspace, scanned):
+    """A container that is itself a repo is a layout defect, but its commits
+    still get scanned, keyed as the flat org/dir project."""
+    (workspace / "acme" / "northwind" / ".git").mkdir()
+
+    _, report = scanner.scan_workspace(workspace)
+
+    assert workspace / "acme" / "northwind" in scanned
+    assert workspace / "acme" / "northwind" / "web" in scanned
+    assert "acme/northwind: clean" in report
+    assert "acme/northwind" in overwatch.load_state()["projects"]
+
+
+def test_walk_falls_back_to_depth_two_when_the_loader_cannot_import(workspace, scanned, monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "workspace_types", None)  # import raises ImportError
+
+    code, report = scanner.scan_workspace(workspace)
+
+    assert code == 0
+    assert "client directories are not being descended" in report
+    assert workspace / "acme" / "practice" in scanned
+    assert workspace / "flat" / "alpha" in scanned
+    assert workspace / "acme" / "northwind" / "web" not in scanned
