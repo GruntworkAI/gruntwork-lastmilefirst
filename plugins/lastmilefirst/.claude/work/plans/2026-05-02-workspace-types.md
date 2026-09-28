@@ -13,6 +13,16 @@ related:
 
 # Workspace Directory Type Taxonomy
 
+> **Amended 2026-09-28** by the repo-root plan `.claude/work/plans/2026-09-28-001-feat-client-tier-plan.md` (decision D1).
+> `type: client` now means a client directory one level inside an org: a container whose
+> children are projects (keyed `org/client/project`), not a top-level org type. It is
+> recognized only at that depth; a marker at the top level does nothing, and a client that is
+> a whole org is an ordinary org with its own `org.json` and no marker. The `status: active |
+> paused | archived` field carries over unchanged for client directories and is not read yet.
+> The type-defaults table (`claude_md`, `secret_scan`, `review` per type) is still unbuilt.
+> Where this spec and that plan disagree about `client`, the plan wins. The marker vocabulary
+> as built is documented in `skills/organize-orgs/SKILL.md` under Workspace Markers.
+
 ## Problem
 
 Today the lastmilefirst plugin treats every directory under the user's workspace root (`~/Code/`) as an "org" subject to the same hygiene standards: each org needs a `CLAUDE.md`, each project needs a `CLAUDE.md`, and everything gets secret-scanned.
@@ -207,3 +217,4 @@ User reviews; we adjust the spec. No code changes.
 ## Change log
 
 - **2026-05-02:** Draft v0 written.
+- **2026-09-28:** Amended: `client` is nested-only (see the note at the top).

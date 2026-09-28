@@ -81,7 +81,7 @@ python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/C
 # Generate suggestions for a specific file
 python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/gruntwork/project/CLAUDE.md --suggest
 
-# Override tier detection for a specific file (workspace, org, or project; "user" still works as an alias for workspace)
+# Override tier detection for a specific file (workspace, org, client, or project; "user" still works as an alias for workspace)
 python3 ${SKILL_ROOT}/scripts/review_claude.py --file ~/Code/CLAUDE.md --tier workspace
 ```
 
@@ -192,6 +192,13 @@ tier. At the workspace tier it is informational, because a mapped project may ex
 without being cloned here. If the section exists but has no table the script can read, it says
 "could not read the table" instead of reporting every directory as unlisted. If the section is
 absent, it says so in one line and skips the check.
+
+A client directory (see [Workspace Markers](../organize-orgs/SKILL.md#workspace-markers)) adds
+one tier. Its own CLAUDE.md reviews as tier `client`, which has no expected-section list yet, so
+only the overlap map runs for it. A project inside it chains workspace, org, client, project. In
+the inventory, a nested project is named `client/project` and counts as listed only when a row
+carries its full path; a row naming just the client directory is not a finding, but it does not
+list the projects inside it either.
 
 The full-workspace walk adds the inventory as one line per workspace and org file and leaves the
 section findings as they were. The overlap list and the contradiction reading run only in

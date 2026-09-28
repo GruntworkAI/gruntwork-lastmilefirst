@@ -37,7 +37,16 @@ Manages Claude configuration across your development workspace. Currently handle
 |-------|----------|---------|-----------|
 | Workspace | `~/Code/CLAUDE.md` | Workspace-wide settings, security boundary, project mapping | Yes |
 | Org | `~/Code/{org}/CLAUDE.md` | Org-specific conventions, tech stack, deployment patterns | Optional |
-| Project | `~/Code/{org}/{project}/CLAUDE.md` | Project-specific commands, architecture, gotchas | Recommended |
+| Client | `~/Code/{org}/{client}/CLAUDE.md` | Notes shared by one counterparty's projects | Optional, never scaffolded |
+| Project | `~/Code/{org}/{project}/CLAUDE.md`, or `~/Code/{org}/{client}/{project}/CLAUDE.md` inside a client directory | Project-specific commands, architecture, gotchas | Recommended |
+
+A client directory is one marked `type: client`, one level inside an org (see
+[Workspace Markers](../organize-orgs/SKILL.md#workspace-markers)). The audit
+finds the projects inside it and lists them indented under a `client/` line, the
+mapping check compares by path relative to `~/Code/` (so two clients' `docs`
+repos stay distinct), and scaffolding never writes into the client directory
+itself. In the workspace mapping, a nested project's row points at its full
+path, e.g. `| web | ~/Code/acme/northwind/web |`.
 
 ## What This Skill Does
 

@@ -59,6 +59,14 @@ sidesteps Claude Code's unreliable local marketplace-cache refresh.
 3. **Stop hook** suggests committing if changes were made
 4. **State file** at `~/.claude/lastmilefirst/overwatch-state.json` tracks timestamps
 
+Projects are keyed by their path relative to the workspace: `org/project`, or
+`org/client/project` for a project inside a client directory (see
+[Workspace Markers](../organize-orgs/SKILL.md#workspace-markers)). The workspace
+summary lists nested projects as `client/project`. A client directory has no
+record of its own, and one carrying `.claude/org.json` is an ACTION REQUIRED
+line. After moving or renaming a project directory, move its record with
+`update_state.py rename --from <old key> --to <new key>`.
+
 ## Commands That Update State
 
 When you run these commands, overwatch records the timestamp:
@@ -108,7 +116,7 @@ This check ensures the current org has proper infrastructure for operatives and 
 
 ### What It Checks
 
-1. **Discover current org**: Walk up from cwd to find org root (directory with CLAUDE.md that's a direct child of workspace)
+1. **Discover current org**: Walk up from cwd to find org root (directory with CLAUDE.md that's a direct child of workspace). A client directory between the project and the org is walked through, never taken for the org
 2. **Check org.json**: Does `[org]/.claude/org.json` exist?
 3. **Check operatives repo**: Does `[org]/[org]-operatives/` exist (or path from org.json)?
 4. **Check stack-wisdom repo**: Does `[org]/[org]-stack-wisdom/` exist (or path from org.json)?
@@ -137,7 +145,7 @@ This will:
 
 ```
 1. Find workspace root (e.g., ~/Code/)
-2. Find current org (parent directory that's direct child of workspace)
+2. Find current org (the ancestor that's a direct child of workspace, passing through any client directory)
 3. If no org detected, skip check (user may be at workspace level)
 4. Check for [org]/.claude/org.json
 5. If org.json exists:
