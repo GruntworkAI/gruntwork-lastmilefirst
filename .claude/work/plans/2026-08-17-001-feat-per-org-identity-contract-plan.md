@@ -269,7 +269,7 @@ Four corrections the build surfaced. Each is already reflected above.
 
 4. **The dispatcher needed a `CHECKS_RUN` counter.** Globbing to the plugin *root* instead of to a specific script means the root can resolve while the check scripts are missing — a state that would pass every commit in silence and read as coverage. The old single-purpose hook could not have this bug, because its glob targeted the script itself. Regression test added.
 
-**`.claude-workspace` markers for `every/` and `drafts/` were deliberately skipped** (Fish, 2026-08-18): `drafts/` contains no git repos at all and `every/` contains one third-party clone that is never committed to. Blast radius is a repo nobody commits in. The markers remain correct for the workspace-types spec, just not urgent.
+**`.claude-workspace` markers for `every/` and `drafts/` were deliberately skipped** (workspace owner, 2026-08-18): `drafts/` contains no git repos at all and `every/` contains one third-party clone that is never committed to. Blast radius is a repo nobody commits in. The markers remain correct for the workspace-types spec, just not urgent.
 
 ---
 

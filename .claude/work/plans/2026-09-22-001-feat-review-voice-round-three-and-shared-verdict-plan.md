@@ -132,7 +132,7 @@ They are the one exception to the skill's density method.
 source order but no engagement layer and no accretion.)*
 
 1. **Standing rules (the author).** Canonical home is the author's user-level `CLAUDE.md`, in
-   its `## Voice` section. For Fish that is `~/Code/CLAUDE.md`: the four retired phrases, the
+   its `## Voice` section. For the workspace owner that is `~/Code/CLAUDE.md`: the four retired phrases, the
    sincerity-badge rule, the negative-universal rule, and the eight moves. In Claude Code this
    file is already in context, so reading it costs nothing. On Desktop and in Cowork the same
    rules live in the app's stored preferences and writing settings, mirrored from the same
@@ -217,7 +217,7 @@ aloud) belongs in `review-voice` and is built here.
 **D7. Two outside-repo edits ride along.** The sentence in `~/Code/CLAUDE.md` claiming the eight
 moves are "numbered the same way in the voice guide and the review-voice skill" is false: the
 skill's tell numbers do not match the move numbers, and move 2 maps to two rows. The mapping that
-is true already lives in the Fish voice guide. The sentence gets corrected, not the tables. The
+is true already lives in the workspace owner's voice guide. The sentence gets corrected, not the tables. The
 Desktop-trigger question from July stays open and is not in scope.
 
 ## Design: findings and verdict
