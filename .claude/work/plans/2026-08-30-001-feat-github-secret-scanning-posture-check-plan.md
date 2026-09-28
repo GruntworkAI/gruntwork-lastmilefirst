@@ -103,7 +103,7 @@ Fixtures for the `gh api` JSON:
 
 ## Resolved: `--all` covers the whole account
 
-**Decision (Fish, 2026-08-30): `--all` should check every public repo on the account, not only the ones cloned locally.** The motivating gap would have been missed by a clone-only sweep if that repo had happened not to be checked out, and posture is a property of the repo on GitHub rather than of the working copy.
+**Decision (workspace owner, 2026-08-30): `--all` should check every public repo on the account, not only the ones cloned locally.** The motivating gap would have been missed by a clone-only sweep if that repo had happened not to be checked out, and posture is a property of the repo on GitHub rather than of the working copy.
 
 Implications:
 

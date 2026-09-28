@@ -20,7 +20,7 @@ from audit_identity import ERROR, INFO, WARNING
 CONTRACT = {
     "github_account": "outsideshot",
     "git_user_name": "outsideshot",
-    "git_email": "outsideshot@gmail.com",
+    "git_email": "22780578+outsideshot@users.noreply.github.com",
     "owns_remotes": ["outsideshot"],
     "enforcement": "block",
 }
@@ -74,7 +74,7 @@ def severities(findings, severity):
 
 def test_complete_contract_is_clean(workspace):
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT,
-              claude_md="Commits as outsideshot / outsideshot@gmail.com")
+              claude_md="Commits as outsideshot / 22780578+outsideshot@users.noreply.github.com")
     assert audit_identity.cheap_findings(workspace) == []
 
 
@@ -155,7 +155,7 @@ def test_two_orgs_one_account_is_not_a_conflict(workspace):
 
 def test_no_owns_remotes_is_informational_only(workspace):
     write_org(workspace / "org", "org", {**CONTRACT, "owns_remotes": []},
-              claude_md="outsideshot outsideshot@gmail.com")
+              claude_md="outsideshot 22780578+outsideshot@users.noreply.github.com")
     findings = audit_identity.cheap_findings(workspace)
     assert not severities(findings, ERROR)
     assert severities(findings, INFO)
@@ -224,8 +224,8 @@ def test_drift_detects_wrong_email_in_existing_repo(workspace):
 def test_drift_is_clean_when_repos_comply(workspace):
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     make_repo(workspace / "outsideshot" / "site",
-              name="outsideshot", email="outsideshot@gmail.com",
-              remotes={"upstream": "git@github.com:andyfish3/site.git"})
+              name="outsideshot", email="22780578+outsideshot@users.noreply.github.com",
+              remotes={"upstream": "git@github.com:upstream-owner/site.git"})
     assert audit_identity.drift_findings(workspace) == []
 
 
@@ -233,7 +233,7 @@ def test_drift_flags_cross_context_remote(workspace):
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT)
     write_org(workspace / "gruntwork", "gruntwork", STUDIO)
     make_repo(workspace / "outsideshot" / "site",
-              name="outsideshot", email="outsideshot@gmail.com",
+              name="outsideshot", email="22780578+outsideshot@users.noreply.github.com",
               remotes={"origin": "git@github.com:GruntworkAI/thing.git"})
     findings = audit_identity.drift_findings(workspace)
     assert any("claimed by GruntworkAI" in f.message for f in findings)
@@ -289,7 +289,7 @@ def test_liveness_probes_each_account_once(workspace):
 def test_cheap_findings_spawns_no_subprocesses(workspace, monkeypatch):
     """Session start shares a 10-second budget; this path must stay filesystem-only."""
     write_org(workspace / "outsideshot", "outsideshot", CONTRACT,
-              claude_md="outsideshot outsideshot@gmail.com")
+              claude_md="outsideshot 22780578+outsideshot@users.noreply.github.com")
     for i in range(5):
         make_repo(workspace / "outsideshot" / f"repo{i}")
 
@@ -312,7 +312,7 @@ def test_main_exits_nonzero_on_error(workspace, capsys):
 
 def test_main_exits_zero_when_clean(workspace, capsys):
     write_org(workspace / "org", "org", CONTRACT,
-              claude_md="outsideshot outsideshot@gmail.com")
+              claude_md="outsideshot 22780578+outsideshot@users.noreply.github.com")
     code = audit_identity.main(["--cheap", "--workspace-root", str(workspace)])
     assert code == 0
     assert "all orgs clean" in capsys.readouterr().out
@@ -323,3 +323,68 @@ def test_main_json_output_is_parseable(workspace, capsys):
     audit_identity.main(["--cheap", "--json", "--workspace-root", str(workspace)])
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["severity"] == ERROR
+
+
+# --------------------------------------------------------------------------
+# client directories (plan 2026-09-28-001, U3)
+# --------------------------------------------------------------------------
+
+ACME = {
+    "github_account": "acme-dev",
+    "git_user_name": "acme-dev",
+    "git_email": "dev@acme.example",
+    "owns_remotes": ["acme-dev"],
+    "enforcement": "block",
+}
+
+
+def mark_client(directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / ".claude-workspace").write_text("type: client\n", encoding="utf-8")
+    return directory
+
+
+def test_repo_only_under_a_client_directory_still_makes_an_unregistered_org(workspace):
+    """Before the loader, a repo one level down was invisible and the org read as empty."""
+    client = mark_client(workspace / "newthing" / "northwind")
+    make_repo(client / "web")
+    findings = audit_identity.cheap_findings(workspace)
+    assert len(severities(findings, ERROR)) == 1
+    assert "no identity contract" in findings[0].message
+
+
+def test_drift_finds_a_wrong_identity_repo_under_a_client_directory(workspace):
+    org = write_org(workspace / "acme", "acme", ACME)
+    client = mark_client(org / "northwind")
+    make_repo(client / "web", name="acme-dev", email="someone-else@example.com")
+    findings = audit_identity.drift_findings(workspace)
+    messages = [f.message for f in severities(findings, ERROR)]
+    assert len(messages) == 1
+    assert messages[0].startswith("acme/northwind/web commits as someone-else@example.com")
+
+
+def test_iter_repos_skips_the_client_directory_itself(workspace):
+    org = workspace / "acme"
+    client = mark_client(org / "northwind")
+    make_repo(client / "web")
+    make_repo(org / "practice")
+    assert audit_identity.iter_repos(org) == [client / "web", org / "practice"]
+
+
+def test_iter_repos_includes_a_client_directory_that_is_itself_a_repo(workspace):
+    """A layout defect, but its commits still need auditing, as the flat org/dir."""
+    org = workspace / "acme"
+    client = mark_client(org / "northwind")
+    make_repo(client)
+    make_repo(client / "web")
+    assert audit_identity.iter_repos(org) == [client, client / "web"]
+    assert audit_identity.repo_label(org, client) == "acme/northwind"
+
+
+def test_drift_audits_a_client_directory_that_is_a_repo(workspace):
+    org = write_org(workspace / "acme", "acme", ACME)
+    client = mark_client(org / "northwind")
+    make_repo(client, name="acme-dev", email="someone-else@example.com")
+    messages = [f.message for f in severities(audit_identity.drift_findings(workspace), ERROR)]
+    assert len(messages) == 1
+    assert messages[0].startswith("acme/northwind commits as someone-else@example.com")

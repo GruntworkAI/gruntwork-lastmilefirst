@@ -94,7 +94,8 @@ def _check_gitleaks() -> Optional[str]:
 def check_repo_visibility(repo_path: Optional[Path] = None) -> Optional[str]:
     """
     Check if current repo is public via gh CLI.
-    Returns 'public', 'private', 'internal', or None if not determinable.
+    Returns 'PUBLIC', 'PRIVATE', 'INTERNAL', or None if not determinable
+    (no GitHub remote, gh missing or not logged in).
     """
     try:
         cmd = ["gh", "repo", "view", "--json", "visibility", "-q", ".visibility"]
@@ -106,7 +107,7 @@ def check_repo_visibility(repo_path: Optional[Path] = None) -> Optional[str]:
             cwd=str(repo_path) if repo_path else None,
         )
         if result.returncode == 0:
-            return result.stdout.strip().upper()
+            return result.stdout.strip().upper() or None
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return None
@@ -184,6 +185,50 @@ def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
             finding["_bumped"] = True
 
     return findings
+
+
+# A rule tagged `public-only` names something that is fine inside a private
+# repo but must never reach a public one (e.g. a client's name: allowed in a
+# private engagement repo, a finding in a public plugin repo). The names live
+# in the user's org rules file, never in the plugin.
+PUBLIC_ONLY_TAG = "public-only"
+
+_VISIBILITY_UNKNOWN_NOTE = (
+    "public-only rules applied because visibility could not be determined; "
+    "push the repo or run `gh auth login`"
+)
+
+
+def _is_public_only(finding: Dict[str, Any]) -> bool:
+    tags = finding.get("Tags") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    return any(str(t).strip().lower() == PUBLIC_ONLY_TAG for t in tags)
+
+
+def apply_public_only(
+    findings: List[Dict[str, Any]], visibility: Optional[str]
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Drop findings from `public-only` rules unless the repo may be public.
+
+    PUBLIC: every finding is kept. PRIVATE or INTERNAL: public-only findings
+    are dropped, with one summary line. Unknown visibility (no remote, `gh`
+    missing or not logged in): public-only findings are kept, with one line
+    saying why. A finding without the tag is never dropped.
+
+    Returns (kept_findings, report_lines).
+    """
+    tagged = [f for f in findings if _is_public_only(f)]
+    if not tagged:
+        return findings, []
+    vis = (visibility or "").upper()
+    if vis == "PUBLIC":
+        return findings, []
+    if vis in ("PRIVATE", "INTERNAL"):
+        kept = [f for f in findings if not _is_public_only(f)]
+        where = "a private" if vis == "PRIVATE" else "an internal"
+        return kept, [f"{len(tagged)} finding(s) from public-only rules suppressed in {where} repo"]
+    return findings, [_VISIBILITY_UNKNOWN_NOTE]
 
 
 def _format_findings(findings: List[Dict[str, Any]]) -> str:
@@ -459,12 +504,14 @@ def scan_repo(
 
         # gitleaks cannot see inside archives, so scan them separately.
         findings.extend(scan_archives(repo_path, config_path, is_public))
+        findings, public_only_lines = apply_public_only(findings, visibility)
 
         # Build report
         lines = _public_repo_banner(visibility)
         sync_note = consume_sync_note()
         if sync_note:
             lines.append(sync_note)
+        lines.extend(public_only_lines)
         lines.append(_format_findings(findings))
 
         return (1 if findings else 0), "\n".join(lines)
@@ -525,6 +572,8 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
         findings.extend(
             scan_archives(repo_path, config_path, is_public, staged_only=True)
         )
+        # Same visibility answer as the full scan (check_repo_visibility above).
+        findings, public_only_lines = apply_public_only(findings, visibility)
 
         lines = []
         sync_note = consume_sync_note()
@@ -532,6 +581,7 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             lines.append(sync_note)
         if is_public:
             lines.append("Reminder: you are committing to a PUBLIC repository")
+        lines.extend(public_only_lines)
 
         if findings:
             lines.append(_format_findings(findings))
@@ -541,6 +591,56 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
         return 0, "\n".join(lines)
     finally:
         config_path.unlink(missing_ok=True)
+
+
+def _load_workspace_loader():
+    """The workspace layout loader from hooks/scripts, or None if it cannot load.
+
+    The hooks directory is optional to the scanner (the per-project state
+    update below soft-fails the same way), so a missing or broken loader must
+    not stop a scan.
+    """
+    hooks_scripts = Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
+    if str(hooks_scripts) not in sys.path:
+        sys.path.insert(0, str(hooks_scripts))
+    try:
+        import workspace_types  # type: ignore
+        return workspace_types
+    except Exception:
+        return None
+
+
+def _find_workspace_repos(ws: Path) -> Tuple[List[Tuple[str, Path]], Optional[str]]:
+    """Git repos under the workspace as (key, path), plus an optional note.
+
+    With the loader: `<org>/<repo>`, plus `<org>/<client>/<repo>` under a
+    directory marked `type: client`, keyed by the path relative to the
+    workspace (the key Overwatch reads). A client directory that is itself a
+    repo is included as the flat `<org>/<dir>`, so it is still scanned.
+
+    Without the loader: the depth-2 walk, and a note saying client
+    directories are not being descended.
+    """
+    loader = _load_workspace_loader()
+    repos: List[Tuple[str, Path]] = []
+    orgs = [d for d in sorted(ws.iterdir()) if d.is_dir() and not d.name.startswith(".")]
+
+    if loader is None:
+        for org_dir in orgs:
+            for repo in sorted(org_dir.iterdir()):
+                if repo.is_dir() and not repo.name.startswith(".") and (repo / ".git").exists():
+                    repos.append((f"{org_dir.name}/{repo.name}", repo))
+        note = ("Note: the workspace layout loader could not be imported, so client "
+                "directories are not being descended; only <org>/<repo> is scanned.")
+        return repos, note
+
+    for org_dir in orgs:
+        found = [(p.key, p.path) for p in loader.iter_projects(org_dir)
+                 if (p.path / ".git").exists()]
+        found.extend((f"{org_dir.name}/{c.name}", c) for c in loader.iter_containers(org_dir)
+                     if (c / ".git").exists())
+        repos.extend(sorted(found))
+    return repos, None
 
 
 def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
@@ -561,16 +661,7 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     if not ws.exists():
         return 1, f"Workspace not found: {ws}"
 
-    # Find git repos (max 2 levels deep)
-    repos: List[Path] = []
-    for depth1 in sorted(ws.iterdir()):
-        if not depth1.is_dir() or depth1.name.startswith("."):
-            continue
-        for depth2 in sorted(depth1.iterdir()):
-            if not depth2.is_dir() or depth2.name.startswith("."):
-                continue
-            if (depth2 / ".git").exists():
-                repos.append(depth2)
+    repos, layout_note = _find_workspace_repos(ws)
 
     if not repos:
         return 0, f"No git repos found in {ws}"
@@ -579,32 +670,34 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     # overwatch module can't be loaded, we still complete the scan.
     update_scoped_state = None
     try:
-        hooks_scripts = (
-            Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
-        )
-        sys.path.insert(0, str(hooks_scripts))
         from overwatch import update_scoped_state as _uss  # type: ignore
         update_scoped_state = _uss
     except (ImportError, Exception):
         pass
 
-    lines = [f"Scanning {len(repos)} repos in {ws}...\n"]
+    lines = []
+    if layout_note:
+        lines.append(layout_note)
+    lines.append(f"Scanning {len(repos)} repos in {ws}...\n")
     total_findings = 0
     now = int(time.time())
 
-    for repo in repos:
+    for repo_name, repo in repos:
         exit_code, report = scan_repo(repo)
-        repo_name = f"{repo.parent.name}/{repo.name}"
         if exit_code == 0:
-            lines.append(f"  {repo_name}: clean")
+            # A clean repo's report is not printed, so carry the public-only
+            # suppression line (if any) onto its one line.
+            suppressed = next((l for l in report.splitlines()
+                               if "from public-only rules suppressed" in l), None)
+            lines.append(f"  {repo_name}: clean" + (f" ({suppressed})" if suppressed else ""))
         else:
             lines.append(f"  {repo_name}: FINDINGS DETECTED")
             lines.append(report)
             total_findings += 1
 
         # Record per-project scan timestamp so Overwatch can see this repo
-        # was scanned. Key shape matches what session_start.py reads from
-        # state["projects"][f"{org}/{project_dir.name}"].
+        # was scanned. The key comes from the same loader session_start.py
+        # uses, so the two agree for flat and nested projects alike.
         if update_scoped_state is not None:
             try:
                 update_scoped_state("projects", repo_name, "last_secret_scan", now)

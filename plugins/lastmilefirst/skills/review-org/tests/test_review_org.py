@@ -144,3 +144,42 @@ def test_main_rejects_missing_org(tmp_path: Path, capsys) -> None:
 
 def test_last_commit_ts_non_repo_is_zero(tmp_path: Path) -> None:
     assert review_org.last_commit_ts(tmp_path) == 0
+
+
+# --- client directories (plan 2026-09-28-001, U3) ------------------------------
+
+def test_rollup_shows_nested_rows_under_their_client(org: Path) -> None:
+    client = org / "northwind"
+    _write(client / ".claude-workspace", "type: client\n")
+    _write(client / "web" / "CLAUDE.md", "# Web\n\n## Archetype: Deployable\n")
+    (client / "docs").mkdir()
+    state = {"projects": {"acme/northwind/web": {"last_review": NOW - DAY}}}
+
+    rollup = review_org.build_rollup(org, state, now=NOW, commit_ts=lambda _p: 0)
+
+    rows = {p["name"]: p for p in rollup["projects"]}
+    assert "northwind" not in rows
+    assert rows["northwind/web"]["key"] == "acme/northwind/web"
+    assert rows["northwind/web"]["client"] == "northwind"
+    assert rows["northwind/web"]["in_state"] is True
+    assert rows["northwind/web"]["actions"]["review"]["last"] == NOW - DAY
+    names = [p["name"] for p in rollup["projects"]]
+    assert names.index("northwind/docs") + 1 == names.index("northwind/web")
+
+    text = review_org.format_text(rollup, Path("/tmp/state.json"))
+    assert "  northwind/: 2 project directories" in text
+    assert "Without one: acme-scratch, northwind/docs" in text
+
+
+def test_rollup_reports_a_layout_issue_from_an_empty_client_directory(org: Path) -> None:
+    client = org / "contoso"
+    _write(client / ".claude-workspace", "type: client\n")
+    _write(client / ".claude" / "org.json", "{}")
+
+    rollup = review_org.build_rollup(org, None, now=NOW, commit_ts=lambda _p: 0)
+
+    assert not [p for p in rollup["projects"] if p.get("client") == "contoso"]
+    assert len(rollup["layout"]) == 1
+    assert rollup["layout"][0].startswith("ACTION REQUIRED:")
+    assert "acme/contoso" in rollup["layout"][0]
+    assert "Layout: ACTION REQUIRED:" in review_org.format_text(rollup, Path("/tmp/state.json"))

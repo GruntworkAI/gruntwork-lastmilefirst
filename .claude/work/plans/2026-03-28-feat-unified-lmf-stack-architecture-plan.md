@@ -15,7 +15,7 @@ This is a foundational architecture change that affects conventions, data migrat
 ## Problem Statement / Motivation
 
 **Current state is ad-hoc and inconsistent:**
-- `gruntwork-stack-wisdom` already acts as a universal repo — it holds CLAUDE.md sources for gruntwork, lastmilefirst.ai, AND waterfield — but its internal structure doesn't reflect this
+- `gruntwork-stack-wisdom` already acts as a universal repo — it holds CLAUDE.md sources for gruntwork, lastmilefirst.ai, AND a paused client org — but its internal structure doesn't reflect this
 - Flat, encoded directory naming (`org-gw-claude-file/`, `project-lmf-advisors-claude-file/`) is opaque and hard to navigate
 - `organize-orgs` expects per-org repos (`{org}-stack-wisdom`, `{org}-operatives`) that don't exist and haven't been created
 - Operatives repos are expected but have never been set up for any org
@@ -65,7 +65,7 @@ stack/                               # One git repo per user
 ├── lastmilefirst.ai/                    # Mirrors ~/work/code/lastmilefirst.ai/
 │   └── (same structure)
 │
-└── waterfield/                          # Mirrors ~/work/code/Waterfield/
+└── contoso/                          # Mirrors ~/work/code/Contoso/
     └── (same structure)
 ```
 
@@ -88,8 +88,8 @@ stack/                               # One git repo per user
 │   │   ├── CLAUDE.md                    # Symlink → ../../stack/lastmilefirst-ai/CLAUDE.md
 │   │   └── lmf-advisors/               # Project git repo
 │   │       └── ...
-│   └── waterfield/                      # Org dir (lowercased from Waterfield)
-│       ├── CLAUDE.md                    # Symlink → ../../stack/waterfield/CLAUDE.md
+│   └── contoso/                      # Org dir (lowercased from Contoso)
+│       ├── CLAUDE.md                    # Symlink → ../../stack/contoso/CLAUDE.md
 │       └── client-project/              # Project git repo (client's GitHub)
 │           └── ...
 │
@@ -102,7 +102,7 @@ stack/                               # One git repo per user
     │   └── (full org template)
     ├── lastmilefirst-ai/
     │   └── ...
-    └── waterfield/
+    └── contoso/
         └── ...
 ```
 
@@ -114,7 +114,7 @@ Only code-root and org-level CLAUDE.md files are symlinked. Never into project g
 ~/work/code/CLAUDE.md                      → ../stack/personal/CLAUDE.md
 ~/work/code/gruntwork/CLAUDE.md            → ../../stack/gruntwork/CLAUDE.md
 ~/work/code/lastmilefirst-ai/CLAUDE.md     → ../../stack/lastmilefirst-ai/CLAUDE.md
-~/work/code/waterfield/CLAUDE.md           → ../../stack/waterfield/CLAUDE.md
+~/work/code/contoso/CLAUDE.md           → ../../stack/contoso/CLAUDE.md
 ```
 
 Formula: `~/work/code/{org}/CLAUDE.md → ../../stack/{org}/CLAUDE.md`
@@ -212,15 +212,15 @@ Exception: solo/private projects where only you clone the repo may optionally sy
 │   ├── personal/            # Personal projects (new)
 │   ├── gruntwork/           # Unchanged
 │   ├── lastmilefirst-ai/    # Renamed from lastmilefirst.ai/
-│   └── waterfield/          # Renamed from Waterfield/
+│   └── contoso/          # Renamed from Contoso/
 └── stack/                   # Institutional knowledge (new, created in Phase 2)
     ├── personal/
     ├── gruntwork/
     ├── lastmilefirst-ai/
-    └── waterfield/
+    └── contoso/
 ```
 
-**Naming convention:** All lowercase everywhere. Dots normalized to hyphens. `lastmilefirst.ai/` → `lastmilefirst-ai/`, `Waterfield/` → `waterfield/`. Code and stack org dirs always match exactly.
+**Naming convention:** All lowercase everywhere. Dots normalized to hyphens. `lastmilefirst.ai/` → `lastmilefirst-ai/`, `Contoso/` → `contoso/`. Code and stack org dirs always match exactly.
 
 **Tasks:**
 
@@ -230,7 +230,7 @@ Exception: solo/private projects where only you clone the repo may optionally sy
 - [ ] Move `~/Code/` contents → `~/work/code/` (preserve git repos, symlinks break intentionally)
 - [ ] Rename org dirs to lowercase/normalized:
   - `lastmilefirst.ai/` → `lastmilefirst-ai/`
-  - `Waterfield/` → `waterfield/`
+  - `Contoso/` → `contoso/`
 - [ ] Create `~/work/code/personal/` for personal projects
 - [ ] Update shell profile if any aliases reference `~/Code/`
 - [ ] Update lastmilefirst plugin workspace detection in `session_start.py` (`~/Code/` → `~/work/code/`)
@@ -285,7 +285,7 @@ Current `gruntwork-stack-wisdom` content to migrate:
 | `claude/claude-md-files/user-claude-file/CLAUDE.md` | `personal/CLAUDE.md` |
 | `claude/claude-md-files/org-gw-claude-file/CLAUDE.md` | `gruntwork/CLAUDE.md` |
 | `claude/claude-md-files/org-lmf-claude-file/CLAUDE.md` | `lastmilefirst.ai/CLAUDE.md` |
-| `claude/claude-md-files/org-wti-claude-file/CLAUDE.md` | `waterfield/CLAUDE.md` |
+| `claude/claude-md-files/org-contoso-claude-file/CLAUDE.md` | `contoso/CLAUDE.md` |
 | `claude/claude-md-files/project-lmf-advisors-claude-file/CLAUDE.md` | `lastmilefirst.ai/projects/LMF-Advisors/CLAUDE.md` (or stays in project repo) |
 | `stack-wisdom/*.md` (14 entries) | Triage per-org: `gruntwork/wisdom/`, `personal/wisdom/`, etc. |
 | `circuit-breakers/*.md` | Triage per-org or `personal/circuit-breakers/` |
@@ -311,7 +311,7 @@ Current `gruntwork-stack-wisdom` content to migrate:
   - `~/work/code/CLAUDE.md` → `stack/personal/CLAUDE.md`
   - `~/work/code/gruntwork/CLAUDE.md` → `../stack/gruntwork/CLAUDE.md`
   - `~/work/code/lastmilefirst.ai/CLAUDE.md` → `../stack/lastmilefirst.ai/CLAUDE.md`
-  - `~/work/code/Waterfield/CLAUDE.md` → `../stack/waterfield/CLAUDE.md`
+  - `~/work/code/Contoso/CLAUDE.md` → `../stack/contoso/CLAUDE.md`
 - [ ] Verify all symlinks resolve correctly
 - [ ] Verify Claude Code loads CLAUDE.md files correctly at each level
 - [ ] Decide fate of `gruntwork-stack-wisdom`: archive, redirect, or delete
@@ -465,7 +465,7 @@ All open questions have been resolved through discussion. Decisions are recorded
 | Q2 | How do skills discover the stack? | Convention-based: walk up to find `~/work/`, then `stack/` is always a sibling of `code/`. Override via org.json v2 for non-standard setups. |
 | Q3 | How does cross-org wisdom work? | Cross-org wisdom lives in `personal/wisdom/`. Search always includes `personal/` regardless of current org. |
 | Q4 | Operatives: stack vs `~/.claude/operatives/`? | Stack is source of truth. Migrate existing operatives. `~/.claude/operatives/` symlinks to `stack/personal/operatives/` for backward compatibility. |
-| Q5 | Case sensitivity in org dirs? | **All lowercase everywhere** — both stack and workspace dirs. `Waterfield/` → `waterfield/`, `lastmilefirst.ai/` → `lastmilefirst-ai/`. Rename workspace dirs during Phase 0. |
+| Q5 | Case sensitivity in org dirs? | **All lowercase everywhere** — both stack and workspace dirs. `Contoso/` → `contoso/`, `lastmilefirst.ai/` → `lastmilefirst-ai/`. Rename workspace dirs during Phase 0. |
 | Q6 | Multi-machine / reconnecting symlinks? | Not a separate mode. `organize-orgs` detects stack exists but symlinks are missing, and offers to create them as part of normal flow. |
 | Q7 | Non-wisdom content in gruntwork-stack-wisdom? | `gruntwork-stack-wisdom` stays as a project repo under `~/work/code/gruntwork/`. Only CLAUDE.md sources and wisdom/circuit-breaker content move to the stack. Everything else (`.claude/work/`, plans, archive, setup-scripts) stays in that repo. |
 | Q8 | LMF client repo ownership? | Client gets their own stack repo on their GitHub. Your knowledge about them goes in your stack under their org dir. Their institutional knowledge goes in theirs. |

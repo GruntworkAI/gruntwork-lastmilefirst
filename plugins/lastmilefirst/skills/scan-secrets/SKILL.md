@@ -58,7 +58,15 @@ python3 ${SKILL_DIR}/scripts/scan_secrets.py
 
 ### `--all`: Scan All Workspace Repos
 
-Walks `~/Code/` two levels deep finding git repos, scans each.
+Walks `~/Code/<org>/<repo>` finding git repos, and one level further inside a
+client directory (`~/Code/<org>/<client>/<repo>`), then scans each. A client
+directory is one marked `type: client`; see
+[Workspace Markers](../organize-orgs/SKILL.md#workspace-markers). Each repo's
+scan is recorded under its path relative to `~/Code/`, which is the key
+Overwatch reads. A client directory that is itself a repo (a layout mistake
+Overwatch warns about) is still scanned, as `<org>/<client>`. If the workspace
+layout loader cannot be imported, the walk falls back to `~/Code/<org>/<repo>`
+only and prints a line saying client directories are not being descended.
 
 **Run:**
 ```bash
@@ -133,6 +141,21 @@ description = "Gruntwork internal API token"
 regex = '''gw_live_[0-9a-f]{40}'''
 tags = ["org", "api-token"]
 keywords = ["gw_live_"]
+```
+
+For a term that is fine in private repos but must never reach a public one,
+add the `public-only` tag (see [Public-only rules](#public-only-rules)):
+
+```
+User: Flag our client's name, but only in public repos
+Claude: I'll add this rule to your org formats:
+
+[[rules]]
+id = "org-client-name-acme"
+description = "Client name (allowed in private repos)"
+regex = '''(?i)\bacme\b'''
+tags = ["org", "public-only"]
+keywords = ["acme"]
 ```
 
 Read the org formats file, append the new rule, and write it back:
@@ -291,6 +314,28 @@ Add patterns specific to your organization:
 - Custom API key prefixes
 - Internal service URLs with embedded tokens
 - Proprietary secret formats
+
+### Public-only rules
+
+A rule tagged `public-only` fires only in repositories whose GitHub visibility
+is PUBLIC. It is for names and terms that are fine inside private repos but
+must never reach a public one: a client's name in a private engagement repo is
+allowed, and the same name in a public plugin repo is a finding. The names
+themselves belong in your org rules file (`org_secret_formats.toml`), never in
+the plugin.
+
+Every mode that reports findings applies it the same way (the default scan,
+`--pre-commit`, and `--all` for each repo), using the visibility `gh` reports
+for that repo:
+
+| Visibility | Findings from `public-only` rules |
+|------------|-----------------------------------|
+| PUBLIC | Kept, like any other finding |
+| PRIVATE or INTERNAL | Dropped, with one line: "N finding(s) from public-only rules suppressed in a private repo" |
+| Unknown (no GitHub remote, `gh` missing or not logged in) | Kept, with one line saying so: push the repo or run `gh auth login` |
+
+A rule without the tag is never dropped. Under `--all`, a repo whose only
+findings were suppressed reads as clean, with the suppression line beside it.
 
 ## Severity Classification
 
