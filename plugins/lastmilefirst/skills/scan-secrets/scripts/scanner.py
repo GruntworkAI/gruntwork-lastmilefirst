@@ -91,12 +91,42 @@ def _check_gitleaks() -> Optional[str]:
     return None
 
 
+VISIBILITY_CONFIG_KEY = "lastmilefirst.visibility"
+VISIBILITY_VALUES = {"PUBLIC", "PRIVATE", "INTERNAL"}
+
+
+def declared_visibility(repo_path: Optional[Path] = None) -> Optional[str]:
+    """Visibility declared in the repo's own git config, if any.
+
+    `git config lastmilefirst.visibility private` is a local claim that does
+    not depend on which account `gh` has active. The `gh` CLI's active account
+    is machine-global, so a private repo owned by one account reads as
+    "not found" while another account is active; the declared value settles it.
+    Returns 'PUBLIC', 'PRIVATE', 'INTERNAL', or None when unset or invalid.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", VISIBILITY_CONFIG_KEY],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(repo_path) if repo_path else None,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    value = result.stdout.strip().upper()
+    return value if result.returncode == 0 and value in VISIBILITY_VALUES else None
+
+
 def check_repo_visibility(repo_path: Optional[Path] = None) -> Optional[str]:
     """
-    Check if current repo is public via gh CLI.
+    Visibility of the repo: the value declared in git config wins, then what
+    the gh CLI reports for the active account.
     Returns 'PUBLIC', 'PRIVATE', 'INTERNAL', or None if not determinable
-    (no GitHub remote, gh missing or not logged in).
+    (no GitHub remote, gh missing, not logged in, or the active account
+    cannot see the repo).
     """
+    declared = declared_visibility(repo_path)
+    if declared:
+        return declared
     try:
         cmd = ["gh", "repo", "view", "--json", "visibility", "-q", ".visibility"]
         result = subprocess.run(

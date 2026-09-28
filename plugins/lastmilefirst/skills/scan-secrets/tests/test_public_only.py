@@ -185,3 +185,46 @@ def test_all_mode_filters_per_repo_and_shows_the_suppression(fake_gitleaks, monk
     assert ("acme/private-repo: clean (1 finding(s) from public-only rules "
             "suppressed in a private repo)") in report
     assert "acme/public-repo: FINDINGS DETECTED" in report
+
+
+def _git(repo, *args):
+    import subprocess
+    subprocess.run(["git", *args], cwd=str(repo), check=True, capture_output=True)
+
+
+def test_declared_visibility_wins_over_gh(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "lastmilefirst.visibility", "private")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        raise AssertionError("gh must not be called when visibility is declared")
+
+    real_run = scanner.subprocess.run
+
+    def guarded_run(cmd, **kwargs):
+        if cmd[0] == "gh":
+            return fake_run(cmd, **kwargs)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(scanner.subprocess, "run", guarded_run)
+    assert scanner.check_repo_visibility(repo) == "PRIVATE"
+    assert not calls
+
+
+def test_declared_visibility_ignores_invalid_values(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "lastmilefirst.visibility", "secret")
+    assert scanner.declared_visibility(repo) is None
+
+
+def test_unset_declared_visibility_is_none(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    assert scanner.declared_visibility(repo) is None
