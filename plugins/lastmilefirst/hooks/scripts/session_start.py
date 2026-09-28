@@ -13,12 +13,13 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # Add script directory to path for local imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from github_protections import fetch_posture, posture_alert
+from workspace_types import iter_projects
 from overwatch import (
     load_state,
     update_scoped_state,
@@ -642,25 +643,43 @@ def _get_last_commit_ts(repo_path: Path) -> int:
     return 0
 
 
-def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
+def check_workspace_summary(
+    config: Dict,
+    full: bool = False,
+    state: Optional[Dict[str, Any]] = None,
+    commit_ts: Optional[Callable[[Path], int]] = None,
+) -> List[str]:
     """
     Scan all projects across all orgs for health metrics.
     Returns compact summary (session start) or full per-project detail (--full).
+
+    Projects come from the workspace loader, so a project inside a client
+    directory is counted and labeled `client/project`, and the client
+    directory itself is not. A loader note (a client directory nested in
+    another) becomes a NOTE line; a defect (a client directory carrying
+    org.json) becomes an ACTION REQUIRED line.
 
     Freshness alerts (stale_*) are gated on project activity: a repo with
     no commits since its last action is not flagged, even after the time
     threshold passes. "Never" alerts still fire when the repo has any
     commit history, so first-time scans/reviews of active repos surface.
     Empty / placeholder repos with no commits are silent.
+
+    `state` and `commit_ts` exist for tests; by default the Overwatch state
+    file and `git log` are read.
     """
     workspace = Path(config.get("workspace", ""))
     if not workspace.is_dir():
         return []
 
-    state = load_state()
+    if state is None:
+        state = load_state()
+    if commit_ts is None:
+        commit_ts = _get_last_commit_ts
     now = int(time.time())
 
     total = 0
+    layout_alerts: List[str] = []
     missing_archetype = []
     never_reviewed = []
     stale_reviewed = []
@@ -675,15 +694,15 @@ def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
         if not org_dir.is_dir():
             continue
 
-        for project_dir in sorted(org_dir.iterdir()):
-            if not project_dir.is_dir():
-                continue
-            # Skip hidden dirs and non-project dirs (like CLAUDE.md files)
-            if project_dir.name.startswith("."):
-                continue
+        for project in iter_projects(org_dir):
+            if project.defect:
+                layout_alerts.append(f"ACTION REQUIRED: {project.defect}")
+            if project.note:
+                layout_alerts.append(f"NOTE: {project.note}")
 
-            project_key = f"{org_name}/{project_dir.name}"
-            project_label = project_dir.name
+            project_dir = project.path
+            project_key = project.key
+            project_label = project.label
             total += 1
 
             project_state = state.get("projects", {}).get(project_key, {})
@@ -705,7 +724,7 @@ def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
             # Activity gate: a "never X" or "stale X" alert is only useful
             # if the project has any commit history (something changed) AND
             # — for stale — there's been activity since the last action.
-            last_commit = _get_last_commit_ts(project_dir)
+            last_commit = commit_ts(project_dir)
             has_commits = last_commit > 0
 
             # Check review freshness
@@ -733,17 +752,17 @@ def check_workspace_summary(config: Dict, full: bool = False) -> List[str]:
                 stale_organized.append(project_label)
 
     if total == 0:
-        return []
+        return layout_alerts
 
     if full:
-        return _format_workspace_full(
+        return layout_alerts + _format_workspace_full(
             total, missing_claude_md, missing_archetype,
             never_reviewed, stale_reviewed,
             never_scanned, stale_scanned,
             never_organized, stale_organized,
         )
 
-    return _format_workspace_summary(
+    return layout_alerts + _format_workspace_summary(
         total, missing_claude_md, missing_archetype,
         never_reviewed, stale_reviewed,
         never_scanned, stale_scanned,
@@ -890,7 +909,8 @@ def main() -> None:
 
     # Resolve current context and load scoped state
     ctx = resolve_context()
-    project_label = ctx["project"].split("/")[-1] if ctx["project"] else None
+    # "project", or "client/project" inside a client directory.
+    project_label = ctx["project"].split("/", 1)[1] if ctx["project"] else None
     org_label = ctx["org"]
 
     project_state = get_scoped_state("projects", ctx["project"]) if ctx["project"] else {}

@@ -561,16 +561,21 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     if not ws.exists():
         return 1, f"Workspace not found: {ws}"
 
-    # Find git repos (max 2 levels deep)
-    repos: List[Path] = []
+    hooks_scripts = Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
+    if str(hooks_scripts) not in sys.path:
+        sys.path.insert(0, str(hooks_scripts))
+    from workspace_types import iter_projects  # type: ignore
+
+    # Find git repos: <org>/<repo>, plus <org>/<client>/<repo> under a
+    # directory marked `type: client`. Keyed by the path relative to the
+    # workspace, which is the key Overwatch reads.
+    repos: List[Tuple[str, Path]] = []
     for depth1 in sorted(ws.iterdir()):
         if not depth1.is_dir() or depth1.name.startswith("."):
             continue
-        for depth2 in sorted(depth1.iterdir()):
-            if not depth2.is_dir() or depth2.name.startswith("."):
-                continue
-            if (depth2 / ".git").exists():
-                repos.append(depth2)
+        for project in iter_projects(depth1):
+            if (project.path / ".git").exists():
+                repos.append((project.key, project.path))
 
     if not repos:
         return 0, f"No git repos found in {ws}"
@@ -579,10 +584,6 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     # overwatch module can't be loaded, we still complete the scan.
     update_scoped_state = None
     try:
-        hooks_scripts = (
-            Path(__file__).parent.parent.parent.parent / "hooks" / "scripts"
-        )
-        sys.path.insert(0, str(hooks_scripts))
         from overwatch import update_scoped_state as _uss  # type: ignore
         update_scoped_state = _uss
     except (ImportError, Exception):
@@ -592,9 +593,8 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
     total_findings = 0
     now = int(time.time())
 
-    for repo in repos:
+    for repo_name, repo in repos:
         exit_code, report = scan_repo(repo)
-        repo_name = f"{repo.parent.name}/{repo.name}"
         if exit_code == 0:
             lines.append(f"  {repo_name}: clean")
         else:
@@ -603,8 +603,8 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
             total_findings += 1
 
         # Record per-project scan timestamp so Overwatch can see this repo
-        # was scanned. Key shape matches what session_start.py reads from
-        # state["projects"][f"{org}/{project_dir.name}"].
+        # was scanned. The key comes from the same loader session_start.py
+        # uses, so the two agree for flat and nested projects alike.
         if update_scoped_state is not None:
             try:
                 update_scoped_state("projects", repo_name, "last_secret_scan", now)
