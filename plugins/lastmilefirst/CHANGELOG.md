@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-09-28
+
+### Fixed
+
+- **scan-secrets: visibility can be declared per repo.** `git config lastmilefirst.visibility private` (or `public`, `internal`) is read before the `gh` lookup. The `gh` active account is machine-global, so a private repo owned by another account read as unknown and `public-only` rules applied where they should have been suppressed. Found on the first live use of the tag.
+
 ## [0.36.0] - 2026-09-28
 
 Versions 0.32.0 through 0.35.0 are recorded in the GitHub releases for this repository and were not added here.
