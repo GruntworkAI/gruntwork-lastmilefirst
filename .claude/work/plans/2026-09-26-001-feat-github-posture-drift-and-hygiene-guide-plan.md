@@ -1,6 +1,6 @@
 ---
 title: GitHub posture drift in Overwatch, a gated apply, and a hygiene guide for shared repositories
-version: 1.4
+version: 1.5
 date: 2026-09-26
 status: built
 type: feat
@@ -11,8 +11,12 @@ refs:
   - ~/Code/gruntwork/gruntwork-stack-wisdom/stack-wisdom/github-account-and-repo-hygiene.md (the private checklist, v1.0)
 ---
 
-# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.4)
+# GitHub posture drift in Overwatch, and a hygiene guide for shared repositories (v1.5)
 
+> **v1.5 (2026-09-27).** 0.35.0 shipped (PR #32, `be52faa`, tag `v0.35.0`). Open question 1 is
+> resolved with a different shape than either option: not an alert on any setting, but an
+> Overwatch freshness action for the posture audit itself, added as follow-up unit U6 for 0.36.0.
+>
 > **v1.4 (2026-09-27).** Built on `feat/github-posture-drift`, PR pending. Suites: hooks 236 (63
 > before), review-claude 47, review-org 10, audit-plugin 189. Live, read-only: `--audit --propose`
 > on all three marketplaces reproduces the hand-applied baseline with an empty default proposal;
@@ -225,6 +229,30 @@ account-specific notes.
 *Accept:* the guide passes the public-repo content rule by inspection; both links resolve;
 `review-voice` critique pass on the guide returns Ship or Hold with local fixes only.
 
+### U6. Posture audit freshness in Overwatch (follow-up, 0.36.0)
+
+Overwatch already tracks when `review`, `organize`, `secret_scan`, and `review_claude` last ran,
+and alerts when one is past its threshold and the repo has commits since. The posture audit
+becomes the same kind of action, so Overwatch can say "never audited" or "audited 41 days ago"
+about a public repo without holding an opinion about any single setting.
+
+- `scan_secrets.py --audit` records a `posture_audit` action at project scope through
+  `update_state.py` (add it to `DEFAULT_SCOPES`, default `projects`). `--audit --github --deep`
+  records it for every repo it covers that is cloned in the workspace.
+- `session_start.py` adds one freshness check: public repos only, threshold
+  `POSTURE_AUDIT_THRESHOLD_DAYS = 30` in `overwatch.py` beside the others, "never" alerts when
+  the repo has any commits, overdue alerts only when there are commits since the last audit (the
+  same rule the other three use). The alert names the command to run, nothing else.
+- `review-org`'s roll-up gains one line per project: posture audit on record or not, and days
+  since. Read-only, same state file.
+- Open question 1 (a tag-ruleset alert on marketplace repos) is closed by this: an unaudited
+  marketplace repo shows as unaudited, and the audit shows the tag line.
+
+*Accept:* fixture tests for the new freshness check including "never" with and without commits;
+session start on a repo audited today prints nothing new; on a public repo never audited it
+prints one line; `DEFAULT_SCOPES` has `posture_audit`; the roll-up line appears in review-org's
+output.
+
 ### U5. Release 0.35.0
 
 Version bump across the three files, PR, merge, `gh release create v0.35.0 --target main --latest`.
@@ -263,11 +291,10 @@ changed.
 
 ## Open questions
 
-1. **A session-start alert for an unprotected release tag on a marketplace repo.** It is the one
-   new alert with a supply-chain consequence and a fixed audience (Desktop users). Against it: it
-   costs one extra call per session start on those repos, and D2 says alerts do not grow.
-   Recommendation: ship without it, run `--audit` on the three marketplaces at release time (U5),
-   and revisit after a month of audits.
+1. **A session-start alert for an unprotected release tag on a marketplace repo.** Resolved
+   2026-09-27 by U6: Overwatch alerts on audit freshness, not on the setting. An unaudited repo
+   is the alert; the audit carries the tag line. D2 holds, since the new alert is about an action
+   not having run, the same class as the three that exist.
 2. **Whether the guide or the checklist is canonical for the generic content.** Recommendation: the
    shipped guide is canonical; the private checklist keeps only what names accounts.
 
