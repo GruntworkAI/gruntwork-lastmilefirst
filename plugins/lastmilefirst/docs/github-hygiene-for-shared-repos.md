@@ -1,5 +1,7 @@
 # GitHub hygiene for shared repositories
 
+**v1.1 (2026-10-06).** Adds what a purge of a published sensitive commit actually requires, under the fork pull request section.
+
 **v1.0 (2026-09-27).** First version.
 
 A checklist for anyone who maintains repositories that people and coding agents both push to. It
@@ -140,6 +142,18 @@ Everything above applies, with three differences.
 - [ ] After merging, read the author back with `git log -1 --format='%an <%ae>'`.
 - [ ] A token given to an agent for this pattern is fine-grained, scoped to the fork, and
       expires. The agent cannot push to the upstream; a person merges.
+
+**If a commit with sensitive data has already been published**, rewriting history is the first
+step and not the last. GitHub serves a commit by its hash for as long as anything references it:
+a branch, a tag, a fork in the same network, or a pull request. Every pull request merged after
+the commit landed carries it in its reference set, so the number of pull requests Support has to
+touch grows with each merge you make before asking. Act before merging anything else. The purge
+itself is a Support ticket: they confirm nothing references the hash, remove the pull request
+references (either the whole pull request, or only its diffs with the conversation kept), run
+garbage collection, and clear the cache. Delete any fork you own first. Verify yourself
+afterward, with the commit page, the `.patch` URL, and the REST API all returning 404, before
+treating the ticket as solved. And treat the data as exposed regardless; the purge cleans the
+history, it does not un-publish what was seen.
 
 ## What the plugin checks for you, and what only a person can set
 
