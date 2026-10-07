@@ -37,7 +37,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Mapping, NamedTuple, Optional
 
 # Workspace root. Overridable for tests and for the pending ~/work/ migration
 # (see the LMF-stack architecture plan).
@@ -57,6 +57,181 @@ REQUIRED_FIELDS = ("github_account", "git_user_name", "git_email")
 # obligation, because there is no "our account" for them to be wrong about.
 WORKSPACE_MARKER = ".claude-workspace"
 UNGOVERNED_TYPES = {"external", "scratch"}
+WORKSPACE_TYPES = {"studio", "client", "external", "scratch"}
+
+
+class ContractSummary(NamedTuple):
+    """Contract rule decisions, independent of diagnostics and filesystem reads."""
+
+    status: str  # missing | disabled | invalid | valid
+    enforcement: Optional[str]
+    missing_fields: tuple[str, ...] = ()
+    invalid_enforcement: bool = False
+    invalid_owners: bool = False
+
+
+class ClaimRegistry(NamedTuple):
+    claims: dict[str, set[str]]
+    invalid_sources: tuple[Any, ...] = ()
+
+
+class IdentityComparison(NamedTuple):
+    mismatches: tuple[str, ...]
+    unresolved_fields: tuple[str, ...]
+
+
+class RemoteClaim(NamedTuple):
+    owner: Optional[str]
+    claimed_by: tuple[str, ...]
+    conflict: bool
+
+
+def parse_workspace_type(text: str, *, strict: bool = False) -> Optional[str]:
+    """Parse supplied marker text without YAML or any filesystem access.
+
+    The hook's historical policy takes the first top-level type, including an
+    unknown value. Bounded audits opt into exactly one recognized, unquoted
+    type; None then means the supplied marker is malformed.
+    """
+    values = []
+    for line in text.splitlines():
+        if line.startswith(("#", " ", "\t")) or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        if key.strip() == "type":
+            value = value.split("#", 1)[0].strip().lower()
+            if not strict:
+                return value or None
+            values.append(value)
+    if strict and len(values) == 1 and values[0] in WORKSPACE_TYPES:
+        return values[0]
+    return None
+
+
+def inspect_identity_contract(
+    config: Optional[dict[str, Any]], *, strict: bool = False
+) -> ContractSummary:
+    """Inspect supplied config under hook defaults or stricter audit policy.
+
+    Hook defaults deliberately retain truthiness checks and string coercion of
+    enforcement, including unknown enforcement values. Strict audits require
+    non-placeholder strings, recognized enforcement, and an owner-string list.
+    An explicitly disabled contract skips the remaining validation in both.
+    """
+    identity = config.get("identity") if config is not None else None
+    if not isinstance(identity, dict) or not identity:
+        return ContractSummary("missing", None)
+    enforcement = identity.get("enforcement", ENFORCEMENT_BLOCK)
+    if strict:
+        enforcement = enforcement.lower() if isinstance(enforcement, str) else None
+    else:
+        enforcement = str(enforcement).lower()
+    if enforcement == ENFORCEMENT_OFF:
+        return ContractSummary("disabled", enforcement)
+    if strict:
+        missing = tuple(
+            field for field in REQUIRED_FIELDS
+            if not isinstance(identity.get(field), str) or not identity[field].strip()
+            or identity[field].strip() == "REPLACE_ME"
+        )
+        owners = identity.get("owns_remotes", [])
+        invalid_enforcement = enforcement not in {ENFORCEMENT_BLOCK, ENFORCEMENT_WARN}
+        invalid_owners = not isinstance(owners, list) or any(
+            not isinstance(owner, str) or not owner for owner in owners
+        )
+    else:
+        missing = tuple(field for field in REQUIRED_FIELDS if not identity.get(field))
+        invalid_enforcement = invalid_owners = False
+    status = "invalid" if missing or invalid_enforcement or invalid_owners else "valid"
+    return ContractSummary(status, enforcement, missing, invalid_enforcement, invalid_owners)
+
+
+def collect_claims(
+    configs: Iterable[tuple[Any, Optional[dict[str, Any]]]], *, strict: bool = False
+) -> ClaimRegistry:
+    """Collect owner/account claims from supplied (source, config) pairs.
+
+    Hook defaults preserve permissive iterable owners and string coercion.
+    Strict callers receive rejected sources for their own diagnostics; this
+    validates claims only, not the rest of an identity contract.
+    """
+    claims: dict[str, set[str]] = {}
+    invalid = []
+    for source, config in configs:
+        if not config:
+            continue
+        identity = config.get("identity")
+        if not isinstance(identity, dict):
+            continue
+        account = identity.get("github_account")
+        owners = identity.get("owns_remotes", [])
+        if strict:
+            if (not isinstance(account, str) or not account or not isinstance(owners, list)
+                    or any(not isinstance(owner, str) or not owner for owner in owners)):
+                invalid.append(source)
+                continue
+        elif not account:
+            continue
+        for owner in owners or []:
+            claims.setdefault(str(owner).lower(), set()).add(str(account))
+    return ClaimRegistry(claims, tuple(invalid))
+
+
+def compare_identity_fields(
+    identity: Mapping[str, Any], values: Mapping[str, Any]
+) -> IdentityComparison:
+    """Compare supplied Git fields, distinguishing absent from present-but-unset.
+
+    Effective-identity callers supply both keys (possibly None), so missing
+    effective values remain mismatches. Local-only audits may omit keys whose
+    inherited values they have intentionally not read.
+    """
+    mismatches, unresolved = [], []
+    for field, key in (("git_user_name", "user.name"), ("git_email", "user.email")):
+        if key not in values:
+            unresolved.append(key)
+        elif values[key] != identity[field]:
+            mismatches.append(key)
+    return IdentityComparison(tuple(mismatches), tuple(unresolved))
+
+
+def inspect_remote_claim(
+    url: str, account: str, claims: Mapping[str, set[str]]
+) -> RemoteClaim:
+    """Describe one supplied remote's owner claims; unclaimed owners are fine."""
+    owner = remote_owner(url)
+    claiming = claims.get(owner.lower(), set()) if owner else set()
+    return RemoteClaim(owner, tuple(sorted(claiming)), bool(claiming and account not in claiming))
+
+
+def select_governing_org(
+    candidates: Iterable[tuple[Path, bool, Optional[dict[str, Any]]]],
+    *, stop_on_malformed: bool = False,
+) -> tuple[Optional[Path], Optional[dict[str, Any]]]:
+    """Select the first governing candidate from nearest-first supplied data.
+
+    No ancestors are discovered here. Hook defaults skip unreadable/malformed
+    configs; bounded audits may stop on any present entry, even with no parsed
+    config, rather than falling back past an invalid nearer contract.
+    """
+    for path, present, config in candidates:
+        if (present if stop_on_malformed else config is not None):
+            return path, config
+    return None, None
+
+
+def select_ungoverned_ancestor(
+    markers: Iterable[tuple[Path, Optional[str]]],
+) -> Optional[Path]:
+    """First supplied marker carrying no identity obligation, without I/O."""
+    return next((path for path, kind in markers if kind in UNGOVERNED_TYPES), None)
+
+
+def _ancestor_paths(start: Path, workspace_root: Path) -> Iterable[Path]:
+    for candidate in [start, *start.parents]:
+        yield candidate
+        if candidate == workspace_root:
+            break
 
 
 # --------------------------------------------------------------------------
@@ -165,13 +340,7 @@ def workspace_type(directory: Path) -> Optional[str]:
         text = marker.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-    for line in text.splitlines():
-        if line.startswith(("#", " ", "\t")) or ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        if key.strip() == "type":
-            return value.split("#")[0].strip().lower() or None
-    return None
+    return parse_workspace_type(text)
 
 
 def ungoverned_ancestor(start: Path, workspace_root: Path) -> Optional[Path]:
@@ -181,12 +350,10 @@ def ungoverned_ancestor(start: Path, workspace_root: Path) -> Optional[Path]:
         workspace_root = workspace_root.resolve()
     except OSError:
         return None
-    for candidate in [start, *start.parents]:
-        if workspace_type(candidate) in UNGOVERNED_TYPES:
-            return candidate
-        if candidate == workspace_root:
-            break
-    return None
+    return select_ungoverned_ancestor(
+        (candidate, workspace_type(candidate))
+        for candidate in _ancestor_paths(start, workspace_root)
+    )
 
 
 def find_governing_org(
@@ -204,13 +371,10 @@ def find_governing_org(
     except OSError:
         return None, None
 
-    for candidate in [start, *start.parents]:
-        config = load_org_config(candidate)
-        if config is not None:
-            return candidate, config
-        if candidate == workspace_root:
-            break
-    return None, None
+    return select_governing_org(
+        (candidate, True, load_org_config(candidate))
+        for candidate in _ancestor_paths(start, workspace_root)
+    )
 
 
 def collect_account_claims(workspace_root: Path) -> dict[str, set[str]]:
@@ -228,21 +392,9 @@ def collect_account_claims(workspace_root: Path) -> dict[str, set[str]]:
     except OSError:
         return claims
 
-    for child in children:
-        if not child.is_dir():
-            continue
-        config = load_org_config(child)
-        if not config:
-            continue
-        identity = config.get("identity")
-        if not isinstance(identity, dict):
-            continue
-        account = identity.get("github_account")
-        if not account:
-            continue
-        for owner in identity.get("owns_remotes") or []:
-            claims.setdefault(str(owner).lower(), set()).add(str(account))
-    return claims
+    return collect_claims(
+        (child, load_org_config(child)) for child in children if child.is_dir()
+    ).claims
 
 
 def is_under(path: Path, parent: Path) -> bool:
@@ -346,8 +498,9 @@ def evaluate(
 
     identity = config.get("identity")
     org_name = config.get("name") or (org_dir.name if org_dir else None)
+    summary = inspect_identity_contract(config)
 
-    if not isinstance(identity, dict) or not identity:
+    if summary.status == "missing":
         result = Result("blocked")
         result.org = org_name
         result.problems.append(
@@ -360,14 +513,14 @@ def evaluate(
         result.remedies.append(f"Or exempt it once:  {OVERRIDE_ENV}=1 git commit ...")
         return result
 
-    enforcement = str(identity.get("enforcement", ENFORCEMENT_BLOCK)).lower()
-    if enforcement == ENFORCEMENT_OFF:
+    enforcement = summary.enforcement
+    if summary.status == "disabled":
         result = Result("skipped")
         result.org = org_name
         result.enforcement = enforcement
         return result
 
-    missing = [f for f in REQUIRED_FIELDS if not identity.get(f)]
+    missing = summary.missing_fields
     if missing:
         result = Result("blocked")
         result.org = org_name
@@ -387,15 +540,18 @@ def evaluate(
     actual_name, actual_email = effective_identity(cwd)
     expected_name = identity["git_user_name"]
     expected_email = identity["git_email"]
+    comparison = compare_identity_fields(
+        identity, {"user.name": actual_name, "user.email": actual_email}
+    )
 
-    if actual_email != expected_email:
+    if "user.email" in comparison.mismatches:
         result.problems.append(
             f"Commit email is {actual_email or '(unset)'}, but org '{org_name}' "
             f"requires {expected_email}."
         )
         result.remedies.append(f'git config user.email "{expected_email}"')
 
-    if actual_name != expected_name:
+    if "user.name" in comparison.mismatches:
         result.problems.append(
             f"Commit name is {actual_name or '(unset)'}, but org '{org_name}' "
             f"requires {expected_name}."
@@ -409,12 +565,10 @@ def evaluate(
     account = str(identity["github_account"])
     claims = collect_account_claims(workspace_root)
     for name, url in sorted(remotes(cwd).items()):
-        owner = remote_owner(url)
-        if not owner:
-            continue
-        claiming = claims.get(owner.lower())
-        if claiming and account not in claiming:
-            other = ", ".join(sorted(claiming))
+        claim = inspect_remote_claim(url, account, claims)
+        if claim.conflict:
+            owner = claim.owner
+            other = ", ".join(claim.claimed_by)
             result.problems.append(
                 f"Remote '{name}' points at {owner}/, which is claimed by "
                 f"{other} — but this directory is governed by {account}."

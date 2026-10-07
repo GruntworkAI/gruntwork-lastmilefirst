@@ -24,8 +24,11 @@ from typing import Optional
 ARCHIVE_AGE_DAYS = 30
 PROTECTION_AGE_DAYS = 7
 
-# Required directory structure
-CLAUDE_SUBDIRS = ["work/todos", "work/plans", "work/sessions", "debt", "archive"]
+# Share the required layout without importing this filesystem-writing tool.
+_HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
+if str(_HOOKS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_SCRIPTS))
+from project_layout import CLAUDE_SUBDIRS  # noqa: E402
 
 # Legacy directories that should be migrated with symlinks
 LEGACY_DIRS = {

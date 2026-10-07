@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from github_protections import fetch_posture, posture_alert
+from org_resources import resource_defaults, resource_settings
 # The workspace layout loader imports the marker parser from organize-orgs.
 # If that chain fails, degrade to the flat <org>/<project> walk and say so,
 # rather than losing the whole session-start report.
@@ -583,22 +584,24 @@ def check_org_infrastructure(config: Dict) -> List[str]:
             try:
                 with open(org_json, encoding="utf-8") as f:
                     org_data = json.load(f)
-                operatives_cfg = org_data.get("operatives", {})
-                wisdom_cfg = org_data.get("stack_wisdom", {})
                 # An org may opt out of these repos entirely. Without this, a
                 # deliberately minimal org emits two WARNINGs every session
                 # forever, which is how alert fatigue starts.
-                if operatives_cfg.get("enabled") is not False:
-                    operatives_dir = org_dir / operatives_cfg.get("repo", f"{org_name}-operatives")
-                if wisdom_cfg.get("enabled") is not False:
-                    wisdom_dir = org_dir / wisdom_cfg.get("repo", f"{org_name}-stack-wisdom")
+                operatives = resource_settings(org_name, "operatives", org_data)
+                wisdom = resource_settings(org_name, "stack_wisdom", org_data)
+                if operatives["status"] != "opted-out":
+                    operatives_dir = org_dir / operatives["relative"]
+                if wisdom["status"] != "opted-out":
+                    wisdom_dir = org_dir / wisdom["relative"]
             except (json.JSONDecodeError, IOError):
-                operatives_dir = org_dir / f"{org_name}-operatives"
-                wisdom_dir = org_dir / f"{org_name}-stack-wisdom"
+                defaults = resource_defaults(org_name)
+                operatives_dir = org_dir / defaults["operatives"]
+                wisdom_dir = org_dir / defaults["stack_wisdom"]
         else:
             alerts.append(f"WARNING: Org '{org_name}' missing .claude/org.json — run /run-organize-orgs")
-            operatives_dir = org_dir / f"{org_name}-operatives"
-            wisdom_dir = org_dir / f"{org_name}-stack-wisdom"
+            defaults = resource_defaults(org_name)
+            operatives_dir = org_dir / defaults["operatives"]
+            wisdom_dir = org_dir / defaults["stack_wisdom"]
 
         if operatives_dir is not None and not operatives_dir.is_dir():
             alerts.append(f"WARNING: Org '{org_name}' missing operatives repo — run /run-organize-orgs")

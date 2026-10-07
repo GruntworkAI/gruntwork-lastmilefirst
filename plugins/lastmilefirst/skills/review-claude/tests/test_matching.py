@@ -151,3 +151,9 @@ def test_headings_are_extracted_in_document_order():
 
 def test_no_headings_means_everything_missing():
     assert state("## Testing", "just prose, no headings at all\n") == "missing"
+
+
+def test_legacy_fence_behavior_is_default_with_strict_opt_in():
+    content = "````md\n# Hidden\n```\n# Historically visible\n````\n# Historically hidden"
+    assert extract_headings(content) == ["historically visible"]
+    assert extract_headings(content, strict_fences=True) == ["historically hidden"]

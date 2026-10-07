@@ -1,0 +1,119 @@
+# Select judgments, not executable Claude procedures. All paths are repo-relative.
+# Exact sections fail closed if upstream headings change. Mechanisms are adapted
+# only in prose; canonical Python dependencies are copied byte-for-byte.
+
+[[references]]
+source = "skills/parc/SKILL.md"
+output = "parc.md"
+sections = ["Entry points and posture", "Plan", "Allocate", "Review", "Compound", "Adaptive Guidance"]
+
+[[references]]
+source = "skills/review-docs/SKILL.md"
+output = "review-docs.md"
+sections = ["What This Skill Checks"]
+
+[[references]]
+source = "skills/review-work/SKILL.md"
+output = "review-work.md"
+sections = ["What This Skill Checks"]
+
+[[references]]
+source = "skills/review-project/SKILL.md"
+output = "review-project.md"
+sections = ["Cross-Cutting Checks"]
+exclude = ["Health Score"]
+
+[[references]]
+source = "skills/review-org/SKILL.md"
+output = "review-org.md"
+sections = ["The Report"]
+
+[[references]]
+source = "skills/review-claude/SKILL.md"
+output = "review-context.md"
+sections = ["Archetype-Aware Review", "How Section Matching Works", "Expected Sections"]
+
+[[references]]
+source = "skills/organize-project/SKILL.md"
+output = "project-layout.md"
+sections = ["Target Structure", "Archive Criteria"]
+
+[[replacements]]
+pattern = "/run-consult-expert"
+replacement = "consult the bundled persona brief for"
+[[replacements]]
+pattern = "/run-search-wisdom"
+replacement = "search approved local wisdom sources read-only"
+[[replacements]]
+pattern = "/run-search-knowledge"
+replacement = "search approved local knowledge sources read-only"
+[[replacements]]
+pattern = "/run-consult-operative"
+replacement = "read a relevant operative within the approved org scope"
+[[replacements]]
+pattern = "/run-create-operative"
+replacement = "propose an operative for separate approval"
+[[replacements]]
+pattern = "/run-add-wisdom"
+replacement = "propose a wisdom entry for separate approval"
+[[replacements]]
+pattern = "/run-add-knowledge"
+replacement = "propose a knowledge entry for separate approval"
+[[replacements]]
+pattern = "/run-organize-project"
+replacement = "propose project organization for separate approval"
+[[replacements]]
+pattern = "/run-organize-orgs"
+replacement = "propose org repairs for separate approval"
+[[replacements]]
+pattern = "/run-review-project"
+replacement = "the bundled review-project workflow"
+[[replacements]]
+pattern = "/run-scan-secrets --all"
+replacement = "a separately authorized secret scan (outside this pilot)"
+[[replacements]]
+pattern = "Claude plan mode"
+replacement = "a plan using the available planning interface"
+[[replacements]]
+pattern = "Task:"
+replacement = "Reviewer brief:"
+[[replacements]]
+pattern = "Something Claude must know every session"
+replacement = "Something the agent must know every session"
+[[replacements]]
+pattern = "Context if Claude needs to"
+replacement = "Context if the agent needs to"
+[[replacements]]
+pattern = "Skill if Claude needs to"
+replacement = "Skill if the agent needs to"
+[[replacements]]
+pattern = "Each confirmation writes `last_applied:` with today's date on the entry."
+replacement = "Each confirmation can propose a `last_applied:` date update; writing it requires separate approval."
+[[replacements]]
+pattern = "| No rhyme | Write the entry. First occurrence. |"
+replacement = "| No rhyme | Propose the entry for approval. First occurrence. |"
+[[replacements]]
+pattern = "Add `rhymes_with:`"
+replacement = "Propose `rhymes_with:`"
+[[replacements]]
+pattern = "Fix the skill or the rule."
+replacement = "Propose a fix to the skill or rule for approval."
+[[replacements]]
+pattern = "`last_applied` written"
+replacement = "`last_applied` update proposed"
+# Context placement is a decision independent of preserved .claude data storage.
+[[replacements]]
+pattern = "that project's CLAUDE.md gotchas section | edit it"
+replacement = "that project's selected context gotchas section | propose an edit for approval"
+[[replacements]]
+pattern = "context (CLAUDE.md at the right level) | Shannon decides the level"
+replacement = "the selected context file at the approved tier | use context-placement judgment and verify Codex inheritance"
+[[replacements]]
+pattern = "### CLAUDE.md Updates"
+replacement = "### Context update proposals"
+[[replacements]]
+pattern = "Should this OAuth pattern go in our CLAUDE.md?"
+replacement = "At which approved context tier does this OAuth pattern belong?"
+[[replacements]]
+pattern = "Shannon decides the level: a project-specific gotcha goes in the project CLAUDE.md, an org-wide\npattern in the org CLAUDE.md, a personal preference in the workspace CLAUDE.md."
+replacement = "Use context-placement judgment: a project-specific gotcha belongs at project scope, an org-wide\npattern at org scope, and a personal preference at workspace scope. Propose changes separately; verify\nwhich selected files Codex actually loads, and keep private higher-tier content out of public repos."

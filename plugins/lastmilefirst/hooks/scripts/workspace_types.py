@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Iterable, Iterator, NamedTuple, Optional, Tuple
+from typing import Iterable, Iterator, Mapping, NamedTuple, Optional, Tuple
 
 _ORGANIZE_ORGS_DIR = Path(__file__).resolve().parent.parent.parent / "skills" / "organize-orgs" / "scripts"
 if str(_ORGANIZE_ORGS_DIR) not in sys.path:
@@ -54,6 +54,9 @@ __all__ = [
     "Context",
     "LayoutIssue",
     "Project",
+    "ProjectLayout",
+    "classify_org_entries",
+    "container_layout_issues",
     "find_claude_md_projects",
     "find_projects",
     "is_container",
@@ -103,12 +106,84 @@ class LayoutIssue(NamedTuple):
     message: str
 
 
+class ProjectLayout(NamedTuple):
+    """One-level hierarchy classification of already-read directory entries."""
+
+    projects: Tuple[Project, ...]
+    containers: Tuple[Path, ...]
+
+
 # How a caller should label each kind of layout issue.
 ISSUE_SEVERITY = {
     "container-org-json": "ACTION REQUIRED",
     "container-is-repo": "WARNING",
     "nested-container": "NOTE",
 }
+
+
+def classify_org_entries(
+    org_dir: Path,
+    entries: Iterable[Tuple[Path, Optional[str]]],
+    container_children: Mapping[Path, Iterable[Path]],
+) -> ProjectLayout:
+    """Classify supplied entries, descending exactly one client tier, without I/O.
+
+    Callers own enumeration, ordering, hidden/evidence filters, and marker
+    parsing policy. Only direct org children can be containers. Their supplied
+    children are projects even when marked as another client container.
+    """
+    projects, containers = [], []
+    org = org_dir.name
+    for child, kind in entries:
+        if kind not in CONTAINER_TYPES:
+            projects.append(Project(child, (org, child.name)))
+            continue
+        containers.append(child)
+        for grandchild in container_children.get(child, ()):
+            projects.append(Project(grandchild, (org, child.name, grandchild.name), client=child.name))
+    return ProjectLayout(tuple(projects), tuple(containers))
+
+
+def container_layout_issues(
+    org_dir: Path,
+    container: Path,
+    *,
+    has_org_config: bool,
+    is_repo: bool,
+    child_markers: Iterable[Tuple[Path, Optional[str]]] = (),
+) -> list[LayoutIssue]:
+    """Layout decisions for a known container, based only on supplied facts.
+
+    Presence policy belongs to the reader: canonical callers check files and
+    .git existence; bounded audits may flag any present/unsafe metadata entry.
+    Diagnostics remain available even when the container has no projects.
+    """
+    issues = []
+    label = f"{org_dir.name}/{container.name}"
+    if has_org_config:
+        issues.append(LayoutIssue(
+            container, "container-org-json",
+            f"{label} is a client directory but carries .claude/org.json. "
+            f"The org's contract governs repos inside it; remove the file.",
+        ))
+    if is_repo:
+        issues.append(LayoutIssue(
+            container, "container-is-repo",
+            f"{label} is a client directory and also a git repo. A container "
+            f"should not be a repo: Overwatch, review-org, and the other "
+            f"project walkers do not track its own contents as a project. "
+            f"The secret scan and identity audit still cover it, keyed "
+            f"{label}; move its files into a project inside it.",
+        ))
+    for grandchild, kind in child_markers:
+        if kind in CONTAINER_TYPES:
+            issues.append(LayoutIssue(
+                grandchild, "nested-container",
+                f"{label}/{grandchild.name} is marked as a client directory "
+                f"inside another one. Only one level is supported, so it is "
+                f"treated as a project.",
+            ))
+    return issues
 
 
 def is_container(directory: Path) -> bool:
@@ -138,13 +213,11 @@ def iter_containers(org_dir: Path) -> Iterator[Path]:
 
 def iter_projects(org_dir: Path) -> Iterator[Project]:
     """Every project directory under an org, descending one level through containers."""
-    org = org_dir.name
+    # Process one direct child at a time to preserve the loader's lazy reads.
     for child in _children(org_dir):
-        if not is_container(child):
-            yield Project(child, (org, child.name))
-            continue
-        for grandchild in _children(child):
-            yield Project(grandchild, (org, child.name, grandchild.name), client=child.name)
+        kind = workspace_type(child) if child.is_dir() else None
+        children = {child: _children(child)} if kind in CONTAINER_TYPES else {}
+        yield from classify_org_entries(org_dir, [(child, kind)], children).projects
 
 
 def find_projects(org_dir: Path) -> list:
@@ -173,33 +246,17 @@ def layout_issues(org_dir: Path) -> list:
     - `container-is-repo`: the container is itself a git repo.
     - `nested-container`: a container inside a container (one level only).
     """
-    org = org_dir.name
     issues = []
     for container in iter_containers(org_dir):
-        label = f"{org}/{container.name}"
-        if (container / ".claude" / "org.json").is_file():
-            issues.append(LayoutIssue(
-                container, "container-org-json",
-                f"{label} is a client directory but carries .claude/org.json. "
-                f"The org's contract governs repos inside it; remove the file.",
-            ))
-        if (container / ".git").exists():
-            issues.append(LayoutIssue(
-                container, "container-is-repo",
-                f"{label} is a client directory and also a git repo. A container "
-                f"should not be a repo: Overwatch, review-org, and the other "
-                f"project walkers do not track its own contents as a project. "
-                f"The secret scan and identity audit still cover it, keyed "
-                f"{label}; move its files into a project inside it.",
-            ))
-        for grandchild in _children(container):
-            if is_container(grandchild):
-                issues.append(LayoutIssue(
-                    grandchild, "nested-container",
-                    f"{label}/{grandchild.name} is marked as a client directory "
-                    f"inside another one. Only one level is supported, so it is "
-                    f"treated as a project.",
-                ))
+        issues.extend(container_layout_issues(
+            org_dir, container,
+            has_org_config=(container / ".claude" / "org.json").is_file(),
+            is_repo=(container / ".git").exists(),
+            child_markers=(
+                (child, workspace_type(child) if child.is_dir() else None)
+                for child in _children(container)
+            ),
+        ))
     return issues
 
 

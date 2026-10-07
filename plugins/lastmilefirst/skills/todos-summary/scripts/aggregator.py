@@ -28,10 +28,141 @@ CACHE_DIR = Path.home() / ".claude" / "cache"
 CACHE_FILE = CACHE_DIR / "todo-aggregator.json"
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
-# The workspace layout loader lives with the hook scripts. It is imported inside
-# discover_projects, not here: session_start imports this module with its own
-# directory pushed onto sys.path and pops it afterward.
+# Shared loose-script helpers live with hooks. Keep import-time path changes
+# temporary: session_start imports this module with its own sys.path setup.
 HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
+_added_hooks_path = str(HOOKS_SCRIPTS) not in sys.path
+if _added_hooks_path:
+    sys.path.insert(0, str(HOOKS_SCRIPTS))
+try:
+    from markdown_content import without_fenced_blocks
+finally:
+    if _added_hooks_path:
+        sys.path.remove(str(HOOKS_SCRIPTS))
+
+
+def _split_todo_frontmatter(content: str, *, strict: bool = False) -> tuple[str, str, str]:
+    """Return frontmatter text, body, and absent/parsed/malformed status.
+
+    Legacy delimiters may occur anywhere after the initial ``---``. Strict
+    mode requires a complete opening line and a closing delimiter on its own
+    line, matching the bounded audit's Markdown rules.
+    """
+    if strict:
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+        if not content.startswith("---\n"):
+            return "", content, "absent"
+        match = re.search(r"^---\s*$", content[4:], re.MULTILINE)
+        if not match:
+            return "", content, "malformed"
+        return content[4:4 + match.start()], content[4 + match.end():], "parsed"
+    if not content.startswith("---"):
+        return "", content, "absent"
+    end_marker = content.find("---", 3)
+    if end_marker == -1:
+        return "", content, "malformed"
+    return content[3:end_marker].strip(), content[end_marker + 3:].strip(), "parsed"
+
+
+def parse_todo_frontmatter(content: str, *, strict: bool = False) -> Dict[str, Any]:
+    """Parse the todo format's small frontmatter subset without reading files.
+
+    The default preserves canonical scalar/list parsing. Strict mode keeps the
+    audit's unindented, exact status/priority keys and scalar quote stripping;
+    title is also available for callers explicitly choosing that preference.
+    """
+    frontmatter_text, _body, _status = _split_todo_frontmatter(content, strict=strict)
+    result: Dict[str, Any] = {}
+    lines = frontmatter_text.splitlines() if strict else frontmatter_text.split("\n")
+    for line in lines:
+        if strict:
+            key, separator, value = line.partition(":")
+            if separator and key in {"status", "priority", "title"}:
+                result[key] = value.strip().strip("\"'")
+            continue
+        line = line.strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key, value = key.strip(), value.strip()
+        if value.startswith("[") and value.endswith("]"):
+            items = value[1:-1].split(",")
+            result[key] = [item.strip().strip("\"'") for item in items if item.strip()]
+        else:
+            result[key] = value.strip("\"'")
+    return result
+
+
+def _visible_todo_body(content: str, *, ignore_fenced: bool, strict_frontmatter: bool) -> str:
+    _frontmatter, body, _status = _split_todo_frontmatter(content, strict=strict_frontmatter)
+    if ignore_fenced:
+        body = without_fenced_blocks(body)
+    return body
+
+
+def extract_todo_title(
+    content: str, filename: str | Path, *, ignore_fenced: bool = False,
+    strict_frontmatter: bool = False, prefer_frontmatter_title: bool = False,
+    strict_headings: bool = False,
+) -> str:
+    """Extract a todo title from supplied content and its filename only.
+
+    Defaults preserve canonical headings (including legacy loose ``#title``
+    forms) and humanized filenames. Strict headings preserve the audit's ATX
+    heading and unchanged filename-stem fallback. Frontmatter titles are opt-in.
+    """
+    if prefer_frontmatter_title:
+        title = parse_todo_frontmatter(content, strict=strict_frontmatter).get("title")
+        if isinstance(title, str) and title:
+            return title
+    body = _visible_todo_body(content, ignore_fenced=ignore_fenced,
+                              strict_frontmatter=strict_frontmatter)
+    if strict_headings:
+        heading = re.search(r"^#{1,6}\s+(.+)$", body, re.MULTILINE)
+        return heading.group(1) if heading else Path(filename).stem
+    for line in body.split("\n"):
+        line = line.strip()
+        if line.startswith("#"):
+            return line.lstrip("#").strip()
+    return Path(filename).stem.replace("-", " ").replace("_", " ").title()
+
+
+def parse_todo_inline_tags(content: str) -> tuple[List[str], List[str]]:
+    """Parse the canonical inline dependency tags from already-read content."""
+    blocks = [match.group(1).strip() for match in re.finditer(r"\[BLOCKS:([^\]]+)\]", content)]
+    blocked_by = [match.group(1).strip() for match in re.finditer(r"\[BLOCKED-BY:([^\]]+)\]", content)]
+    return blocks, blocked_by
+
+
+def parse_todo_content(
+    content: str, filename: str | Path, *, ignore_fenced: bool = False,
+    strict_frontmatter: bool = False, prefer_frontmatter_title: bool = False,
+    strict_headings: bool = False,
+) -> Dict[str, Any]:
+    """Parse already-read todo content; do not load config, read files, or stat.
+
+    Canonical defaults retain existing metadata/title behavior. Adapters can
+    explicitly choose strict delimiters, strict headings, and fenced-example
+    exclusion without borrowing canonical filesystem discovery or cache logic.
+    ``frontmatter_status`` reports absent, parsed, or malformed delimiters.
+    """
+    _frontmatter, _body, frontmatter_status = _split_todo_frontmatter(
+        content, strict=strict_frontmatter)
+    body = _visible_todo_body(content, ignore_fenced=ignore_fenced,
+                              strict_frontmatter=strict_frontmatter)
+    inline_blocks, inline_blocked_by = parse_todo_inline_tags(body if ignore_fenced else content)
+    return {
+        "title": extract_todo_title(
+            content, filename, ignore_fenced=ignore_fenced,
+            strict_frontmatter=strict_frontmatter,
+            prefer_frontmatter_title=prefer_frontmatter_title, strict_headings=strict_headings),
+        "frontmatter": parse_todo_frontmatter(content, strict=strict_frontmatter),
+        "frontmatter_status": frontmatter_status,
+        "inline_blocks": inline_blocks,
+        "inline_blocked_by": inline_blocked_by,
+        "open_checkboxes": len(re.findall(r"^\s*[-*+]\s+\[ \]", body, re.MULTILINE)),
+        "done_checkboxes": len(re.findall(r"^\s*[-*+]\s+\[[xX]\]", body, re.MULTILINE)),
+    }
 
 
 @dataclass
@@ -212,89 +343,32 @@ class TodoAggregator:
         except OSError:
             age_days = 0
 
-        # Extract YAML frontmatter
-        frontmatter = self._parse_frontmatter(content)
-
-        # Extract title (first markdown heading or filename)
-        title = self._extract_title(content, file_path)
-
-        # Parse inline tags
-        inline_blocks, inline_blocked_by = self._parse_inline_tags(content)
+        parsed = parse_todo_content(content, file_path)
+        frontmatter = parsed["frontmatter"]
 
         return TodoItem(
             project=project_name,
             file_path=file_path,
-            title=title,
+            title=parsed["title"],
             status=frontmatter.get("status", "pending"),
             priority=frontmatter.get("priority", "normal"),
             age_days=age_days,
-            blocks=frontmatter.get("blocks", []) + inline_blocks,
-            blocked_by=frontmatter.get("blocked_by", []) + inline_blocked_by,
+            blocks=frontmatter.get("blocks", []) + parsed["inline_blocks"],
+            blocked_by=frontmatter.get("blocked_by", []) + parsed["inline_blocked_by"],
             tags=frontmatter.get("tags", []),
         )
 
     def _parse_frontmatter(self, content: str) -> Dict[str, Any]:
-        """Parse YAML frontmatter from content."""
-        if not content.startswith("---"):
-            return {}
-
-        end_marker = content.find("---", 3)
-        if end_marker == -1:
-            return {}
-
-        frontmatter_text = content[3:end_marker].strip()
-        result: Dict[str, Any] = {}
-
-        for line in frontmatter_text.split("\n"):
-            line = line.strip()
-            if ":" not in line:
-                continue
-
-            key, value = line.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-
-            # Handle list values
-            if value.startswith("[") and value.endswith("]"):
-                # Simple list parsing
-                items = value[1:-1].split(",")
-                result[key] = [item.strip().strip("\"'") for item in items if item.strip()]
-            else:
-                result[key] = value.strip("\"'")
-
-        return result
+        """Compatibility wrapper around the shared pure frontmatter parser."""
+        return parse_todo_frontmatter(content)
 
     def _extract_title(self, content: str, file_path: Path) -> str:
-        """Extract title from content or filename."""
-        # Skip frontmatter
-        if content.startswith("---"):
-            end_marker = content.find("---", 3)
-            if end_marker != -1:
-                content = content[end_marker + 3:].strip()
-
-        # Look for first heading
-        for line in content.split("\n"):
-            line = line.strip()
-            if line.startswith("#"):
-                return line.lstrip("#").strip()
-
-        # Fall back to filename
-        return file_path.stem.replace("-", " ").replace("_", " ").title()
+        """Compatibility wrapper around the shared pure title extractor."""
+        return extract_todo_title(content, file_path)
 
     def _parse_inline_tags(self, content: str) -> tuple[List[str], List[str]]:
-        """Parse inline [BLOCKS:...] and [BLOCKED-BY:...] tags."""
-        blocks = []
-        blocked_by = []
-
-        # Find [BLOCKS:project]
-        for match in re.finditer(r"\[BLOCKS:([^\]]+)\]", content):
-            blocks.append(match.group(1).strip())
-
-        # Find [BLOCKED-BY:project#id] or [BLOCKED-BY:project]
-        for match in re.finditer(r"\[BLOCKED-BY:([^\]]+)\]", content):
-            blocked_by.append(match.group(1).strip())
-
-        return blocks, blocked_by
+        """Compatibility wrapper around the shared pure dependency parser."""
+        return parse_todo_inline_tags(content)
 
     def aggregate_todos(
         self,
