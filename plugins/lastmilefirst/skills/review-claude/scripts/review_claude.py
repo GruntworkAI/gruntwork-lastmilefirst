@@ -49,6 +49,7 @@ _HOOKS_SCRIPTS = Path(__file__).resolve().parents[3] / "hooks" / "scripts"
 if str(_HOOKS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_HOOKS_SCRIPTS))
 from workspace_types import is_container, iter_containers  # noqa: E402
+from markdown_content import without_fenced_blocks  # noqa: E402
 # find_projects: (label, path, has_claude_md) per project, shared with organize-claude.
 from workspace_types import find_claude_md_projects as find_projects  # noqa: E402
 
@@ -57,20 +58,17 @@ from workspace_types import find_claude_md_projects as find_projects  # noqa: E4
 # whole-file substring test passed on prose, fenced code samples, and (worst)
 # the `- header: "## Testing"` lines in scaffolded files' YAML frontmatter, so a
 # freshly scaffolded empty project reported every section present.
-_FENCE = re.compile(r"^\s*(```|~~~)")
 _ATX = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
 
 
-def extract_headings(content: str) -> list[str]:
-    """Return casefolded ATX heading texts, skipping fenced code blocks."""
+def extract_headings(content: str, *, strict_fences: bool = False) -> list[str]:
+    """Return casefolded ATX headings, preserving legacy fence rules by default.
+
+    Bounded adapters can opt into matching fence characters and lengths with
+    ``strict_fences=True``; canonical callers retain their historical behavior.
+    """
     headings = []
-    in_fence = False
-    for line in content.splitlines():
-        if _FENCE.match(line):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
+    for line in without_fenced_blocks(content, strict=strict_fences).splitlines():
         match = _ATX.match(line)
         if match:
             headings.append(match.group(1).strip().casefold())
@@ -457,7 +455,9 @@ _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _PATH_TOKEN = re.compile(r"(?:~|\.{1,2})?/[^\s|`)\]]+")
 
 
-def extract_section(content: str, name: str) -> Optional[tuple[str, str]]:
+def extract_section(
+    content: str, name: str, *, strict_fences: bool = False
+) -> Optional[tuple[str, str]]:
     """
     Return (heading, body) for the section named `name`, or None if absent.
 
@@ -467,13 +467,8 @@ def extract_section(content: str, name: str) -> Optional[tuple[str, str]]:
     """
     lines = content.splitlines()
     headings = []  # (line index, level, heading text as written)
-    in_fence = False
-    for i, line in enumerate(lines):
-        if _FENCE.match(line):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
+    visible = without_fenced_blocks(content, strict=strict_fences)
+    for i, line in enumerate(visible.splitlines()):
         match = _ATX_LEVEL.match(line)
         if match:
             headings.append((i, len(match.group(1)), match.group(2).strip()))
@@ -680,6 +675,25 @@ def tier_files(file_path: Path, level: str, workspace: Path) -> list[tuple[str, 
     return files
 
 
+def topic_overlaps(headings_by_tier) -> list[dict]:
+    """Map canonical topics to supplied ``(tier, path, headings)`` entries.
+
+    Return every topic, including those carried by zero or one tier, in
+    canonical topic order. Paths are passed through unchanged. Callers own
+    reading files, filtering carrier counts, and presentation.
+    """
+    headings_by_tier = list(headings_by_tier)
+    result = []
+    for topic, prefixes in OVERLAP_TOPICS:
+        carriers = []
+        for tier, path, headings in headings_by_tier:
+            hit = next((h for h in headings if h.startswith(prefixes)), None)
+            if hit:
+                carriers.append({"tier": tier, "path": path, "heading": hit})
+        result.append({"topic": topic, "carriers": carriers})
+    return result
+
+
 def overlap_report(files: list[tuple[str, Path]], reviewed: Path) -> list[str]:
     """
     For each topic in OVERLAP_TOPICS, list which tiers have a heading on it.
@@ -693,14 +707,12 @@ def overlap_report(files: list[tuple[str, Path]], reviewed: Path) -> list[str]:
             headings_by_tier.append((tier, path, extract_headings(path.read_text())))
 
     lines = ["Overlapping topics (tiers with a section on each; content not compared):"]
-    for topic, prefixes in OVERLAP_TOPICS:
+    for overlap in topic_overlaps(headings_by_tier):
         carriers = []
-        for tier, path, headings in headings_by_tier:
-            hit = next((h for h in headings if h.startswith(prefixes)), None)
-            if hit:
-                where = "this file" if path == reviewed else str(path)
-                carriers.append(f'{tier} "{hit}" ({where})')
-        lines.append(f"  {topic}: {'; '.join(carriers) if carriers else 'no tier'}")
+        for carrier in overlap["carriers"]:
+            where = "this file" if carrier["path"] == reviewed else str(carrier["path"])
+            carriers.append(f'{carrier["tier"]} "{carrier["heading"]}" ({where})')
+        lines.append(f"  {overlap['topic']}: {'; '.join(carriers) if carriers else 'no tier'}")
     return lines
 
 
