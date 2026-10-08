@@ -96,7 +96,7 @@ def parse_todo_frontmatter(content: str, *, strict: bool = False) -> Dict[str, A
 def _visible_todo_body(content: str, *, ignore_fenced: bool, strict_frontmatter: bool) -> str:
     _frontmatter, body, _status = _split_todo_frontmatter(content, strict=strict_frontmatter)
     if ignore_fenced:
-        body = without_fenced_blocks(body)
+        body = without_fenced_blocks(body, strict=True)
     return body
 
 

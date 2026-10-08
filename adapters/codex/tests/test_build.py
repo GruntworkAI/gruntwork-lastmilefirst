@@ -71,7 +71,7 @@ class PackageTests(unittest.TestCase):
 
     def test_every_shared_dependency_is_required_in_standalone_package(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             for name, data in self.outputs.items():
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -103,7 +103,7 @@ class PackageTests(unittest.TestCase):
 
     def test_standalone_relocation_and_no_pycache(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             package = root / "relocated-package"
             project = root / "project"
             project.mkdir()
@@ -126,7 +126,7 @@ class PackageTests(unittest.TestCase):
 
     def test_missing_dependency_returns_structured_error(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             script = root / "audit.py"
             script.write_bytes(self.outputs[builder.CORE + "scripts/audit.py"])
             result = subprocess.run([sys.executable, str(script), "--project", str(root)],
@@ -136,7 +136,7 @@ class PackageTests(unittest.TestCase):
 
     def test_output_symlink_and_unexpected_files_refused(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             target = root / "target"
             target.mkdir()
             link = root / "link"
@@ -154,7 +154,7 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "overlap repository inputs"):
                 builder.check_destination(root, self.outputs)
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             original = b'{"name": "unrelated-plugin"}'
             (root / "plugin.json").write_bytes(original)
             with self.assertRaisesRegex(ValueError, "not a managed"):
@@ -163,7 +163,7 @@ class PackageTests(unittest.TestCase):
 
     def test_output_hardlinks_cannot_overwrite_other_files(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             source = root / "canonical.json"
             source.write_text('{"name": "canonical"}')
             package = root / "package"
@@ -173,9 +173,39 @@ class PackageTests(unittest.TestCase):
                 builder.check_destination(package, self.outputs)
             self.assertEqual(source.read_text(), '{"name": "canonical"}')
 
+    def test_check_detects_stale_and_unexpected_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve() / "package"
+            build = [sys.executable, str(HERE / "build.py"), "--output", str(root)]
+            self.assertEqual(subprocess.run(build, capture_output=True, text=True).returncode, 0)
+            result = subprocess.run([*build, "--check"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            vendored = root / builder.CORE / "vendor/plugins/lastmilefirst/hooks/scripts/markdown_content.py"
+            original = vendored.read_bytes()
+            vendored.write_bytes(original + b"\n")
+            result = subprocess.run([*build, "--check"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("stale or missing outputs", result.stderr)
+            self.assertEqual(vendored.read_bytes(), original + b"\n", "check must not repair")
+            vendored.write_bytes(original)
+            (root / "skills/extra.md").write_text("planted\n")
+            result = subprocess.run([*build, "--check"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("unexpected output file", result.stderr)
+
+    def test_output_under_a_symlinked_ancestor_is_accepted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            target = root / "target"
+            target.mkdir()
+            link = root / "link"
+            link.symlink_to(target, target_is_directory=True)
+            builder.check_destination(link / "package", self.outputs)  # must not raise
+            self.assertFalse((target / "package").exists())
+
     def test_check_and_lint_do_not_write(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp) / "never-written"
+            root = Path(temp).resolve() / "never-written"
             result = subprocess.run([sys.executable, str(HERE / "build.py"), "--lint", "--output", str(root)],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)

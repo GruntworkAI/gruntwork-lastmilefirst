@@ -62,7 +62,9 @@ class AuditTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="lmf-audit-test-")
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # macOS keeps the temp directory behind a symlink (/var -> /private/var);
+        # the audit reports resolved paths, so compare against the real one.
+        self.root = Path(self.temp.name).resolve()
         self.skill = self.root / "installed/skills/lastmilefirst"
         self.script = self.skill / "scripts/audit.py"
         self.script.parent.mkdir(parents=True)
@@ -307,6 +309,29 @@ class AuditTests(unittest.TestCase):
         self.assertNotIn("linked", [p["label"] for p in report["projects"]])
         self.run_audit("--project", self.org / "linked", expected_code=2)
         self.assertEqual(snapshot(self.root), before)
+
+    def test_symlinked_ancestor_is_resolved_but_a_symlinked_root_is_refused(self):
+        self.context()
+        link = self.root / "via-link"
+        link.symlink_to(self.workspace, target_is_directory=True)
+        before = snapshot(self.root)
+        report = self.run_audit("--project", link / "studio/alpha")
+        self.assertEqual(snapshot(self.root), before)
+        self.assertEqual(report["projects"][0]["path"], str(self.project))
+        self.assertNotIn("symlink-skipped", self.codes(report))
+        report = self.run_audit("--project", link, expected_code=2)
+        self.assertIn("invalid-root", self.codes(report))
+
+    def test_explicit_project_without_evidence_is_reviewed_not_excluded(self):
+        self.context()
+        self.org_config()
+        (self.org / "assets").mkdir()
+        report = self.run_audit("--project", self.org / "assets", "--org", self.org)
+        self.assertEqual([p["label"] for p in report["projects"]], ["alpha", "assets"])
+        inventory = report["organization"]["inventory"]
+        self.assertEqual(inventory["unreviewed_on_disk"], [])
+        self.assertEqual(report["organization"]["skipped_directories"], [])
+        self.assertNotIn("project-discovery-incomplete", self.codes(report))
 
     def test_malformed_marker_config_and_invalid_utf8_are_findings(self):
         self.context()

@@ -117,3 +117,35 @@ replacement = "At which approved context tier does this OAuth pattern belong?"
 [[replacements]]
 pattern = "Shannon decides the level: a project-specific gotcha goes in the project CLAUDE.md, an org-wide\npattern in the org CLAUDE.md, a personal preference in the workspace CLAUDE.md."
 replacement = "Use context-placement judgment: a project-specific gotcha belongs at project scope, an org-wide\npattern at org scope, and a personal preference at workspace scope. Propose changes separately; verify\nwhich selected files Codex actually loads, and keep private higher-tier content out of public repos."
+
+# Claude subagent names are roles here, not tools; build.py --lint refuses any that survive.
+[[replacements]]
+pattern = "| Code Type | Reviewer Agent | Focus |"
+replacement = "| Code Type | Reviewer | Focus |"
+[[replacements]]
+pattern = "kieran-rails-reviewer, dhh-rails-reviewer"
+replacement = "a Rails reviewer"
+[[replacements]]
+pattern = "kieran-typescript-reviewer"
+replacement = "a TypeScript reviewer"
+[[replacements]]
+pattern = "kieran-python-reviewer"
+replacement = "a Python reviewer"
+[[replacements]]
+pattern = "security-sentinel"
+replacement = "a security reviewer"
+[[replacements]]
+pattern = "performance-oracle"
+replacement = "a performance reviewer"
+[[replacements]]
+pattern = "architecture-strategist"
+replacement = "an architecture reviewer"
+[[replacements]]
+pattern = "data-integrity-guardian"
+replacement = "a data-integrity reviewer"
+[[replacements]]
+pattern = "consult-paloma"
+replacement = "the Paloma brief"
+[[replacements]]
+pattern = "consult-adam"
+replacement = "the Adam brief"

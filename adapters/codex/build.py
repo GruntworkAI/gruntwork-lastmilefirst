@@ -6,6 +6,7 @@ import argparse
 import ast
 import hashlib
 import json
+import posixpath
 import re
 import sys
 import tomllib
@@ -35,7 +36,7 @@ VENDOR_FILES = [
 def headings(text: str) -> list[tuple[int, int, str]]:
     """ATX headings outside fences (upstream examples contain real-looking headings)."""
     result = []
-    for index, line in enumerate(without_fenced_blocks(text).splitlines()):
+    for index, line in enumerate(without_fenced_blocks(text, strict=True).splitlines()):
         match = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
         if match:
             result.append((index, len(match.group(1)), match.group(2)))
@@ -139,7 +140,7 @@ def build() -> dict[str, bytes]:
     for path in sorted((HERE / "adapter").rglob("*")):
         if path.is_symlink():
             raise ValueError(f"adapter symlinks are forbidden: {path}")
-        if path.is_file() and "__pycache__" not in path.parts:
+        if path.is_file() and "__pycache__" not in path.parts and not path.name.startswith("."):
             relative = str(path.relative_to(HERE / "adapter"))
             if relative in outputs:
                 raise ValueError(f"adapter would shadow generated source: {relative}")
@@ -149,7 +150,8 @@ def build() -> dict[str, bytes]:
         "adapter_sha256": {str(p.relative_to(HERE)): hashlib.sha256(p.read_bytes()).hexdigest()
                            for p in sorted(HERE.rglob("*")) if p.is_file() and
                            (p == HERE / "build.py" or p == HERE / "mapping.toml" or
-                            p.is_relative_to(HERE / "adapter")) and "__pycache__" not in p.parts},
+                            p.is_relative_to(HERE / "adapter")) and "__pycache__" not in p.parts
+                           and not p.name.startswith(".")},
     }, indent=2, sort_keys=True) + "\n").encode()
     return outputs
 
@@ -172,12 +174,15 @@ def lint(outputs: dict[str, bytes]) -> list[str]:
         text = data.decode()
         if re.search(r"/(?:run-|reload-|compound-engineering:)|\$\{(?:CLAUDE_PLUGIN_ROOT|SKILL_ROOT)\}", text):
             issues.append(f"unadapted command mechanism: {relative}")
+        # Claude subagent names are not Codex mechanisms either; the skill
+        # text tells the agent not to assume they exist.
+        if re.search(r"\b(?:consult-[a-z]+|[a-z]+-(?:reviewer|sentinel|oracle|guardian|strategist))\b(?!\.md)", text):
+            issues.append(f"unadapted Claude agent name: {relative}")
         for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", text):
             if "://" in link or link.startswith("#"):
                 continue
             target = Path(relative).parent / link.split("#")[0]
             # Normalize package-internal links without touching disk.
-            import posixpath
             target = posixpath.normpath(str(target))
             if target not in outputs:
                 issues.append(f"missing bundled reference: {relative} -> {link}")
@@ -189,10 +194,11 @@ def lint(outputs: dict[str, bytes]) -> list[str]:
 
 
 def check_destination(root: Path, outputs: dict[str, bytes]) -> None:
-    # Never follow a pre-existing output symlink, including any ancestor.
-    for path in [root, *root.parents]:
-        if path.is_symlink():
-            raise ValueError(f"output ancestor is a symlink: {path}")
+    # Never write through a pre-existing output symlink. Links in the
+    # ancestors are operating-system layout (macOS keeps /tmp and /var behind
+    # symlinks) and are resolved for the overlap check below.
+    if root.is_symlink():
+        raise ValueError(f"output directory is a symlink: {root}")
     resolved = root.resolve()
     repo = REPO.resolve()
     if (resolved == repo or repo.is_relative_to(resolved) or

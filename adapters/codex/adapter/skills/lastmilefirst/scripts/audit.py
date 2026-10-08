@@ -161,6 +161,18 @@ class Audit:
 
     def root(self, name, value):
         path = Path(os.path.abspath(os.path.expanduser(str(value))))
+        # The named directory itself must not be a link: that indirection is
+        # disclosed, not followed. Links in its ancestors are operating-system
+        # layout (macOS keeps /tmp and /var behind symlinks; a home directory
+        # can live on another volume) and are resolved once, here. Everything
+        # inside the resolved root is still held to the no-symlink rule.
+        try:
+            if path.is_symlink():
+                self.finding("invalid-root", path, f"The {name} root must be an accessible, non-symlink directory.", "error")
+                return None
+        except OSError:
+            pass
+        path = Path(os.path.realpath(path))
         if path == Path(path.anchor):
             self.finding("unsafe-root", path, "A filesystem root is too broad; name a project, org, or workspace.", "error")
             return None
@@ -218,7 +230,7 @@ class Audit:
             return self.context_cache[key]
         path = directory / self.args.context_name
         content, state = self.read(path, root)
-        visible = self.markdown_helper.without_fenced_blocks(content or "")
+        visible = self.markdown_helper.without_fenced_blocks(content or "", strict=True)
         headings = self.review.extract_headings(visible)
         archetype = None
         if tier == "project":
@@ -532,6 +544,9 @@ class Audit:
                     self.finding("unsupported-project-tier", project,
                                  "Explicit project must be direct or inside one marked client tier, and cannot be a hidden directory or client container.", "error")
                     return report, 2
+                # Naming the project is the evidence discovery lacked: it is
+                # reviewed, so it is no longer an excluded directory.
+                skipped = [item for item in skipped if Path(item["path"]) != project]
             config_meta, config = self.config(org, org)
             org_context = contexts[-1]
             # A filtered directory still exists. Include known excluded paths
