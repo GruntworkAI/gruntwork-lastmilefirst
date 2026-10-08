@@ -425,6 +425,26 @@ def resolve_context(cwd: Optional[Path] = None) -> Dict[str, Optional[str]]:
     return {"org": ctx.org, "project": ctx.key, "client": ctx.client}
 
 
+def project_root(ctx: Dict[str, Optional[str]], config: Optional[Dict[str, Any]] = None) -> Optional[Path]:
+    """The directory a resolved context's project lives in, or None.
+
+    The project key is the path relative to the workspace, so the root is the
+    workspace joined with the key. Checks that are about a project (its
+    CLAUDE.md, its archetype) read this directory, never the current one: a
+    session started in a subdirectory is still about the project above it,
+    and a session outside any configured org is not about a project at all.
+    """
+    key = ctx.get("project") if ctx else None
+    if not key:
+        return None
+    if config is None:
+        config = _load_organize_config()
+    workspace = (config or {}).get("workspace")
+    if not workspace:
+        return None
+    return Path(workspace) / key
+
+
 def update_project_state(field: str, value: Any, cwd: Optional[Path] = None) -> None:
     """Update a field for the current project (auto-detected from CWD)."""
     ctx = resolve_context(cwd)
