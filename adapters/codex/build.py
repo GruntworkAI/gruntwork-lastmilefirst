@@ -53,6 +53,18 @@ def section(text: str, title: str) -> str:
     return "\n".join(text.splitlines()[start:end]).rstrip() + "\n"
 
 
+def adapt_reference(text: str, item: dict) -> str:
+    """Apply reviewed mechanism adaptations; changed source anchors fail closed."""
+    for edit in item.get("adaptations", []):
+        count = text.count(edit["pattern"])
+        expected = edit.get("count", 1)
+        if count != expected:
+            raise ValueError(f"adaptation drift in {item.get('output', 'reference')}: "
+                             f"expected {expected} occurrences of {edit['pattern']!r}, found {count}")
+        text = text.replace(edit["pattern"], edit["replacement"])
+    return text
+
+
 def safe_source(relative: str) -> Path:
     path = SOURCE / relative
     if path.is_symlink() or not path.resolve().is_relative_to(SOURCE.resolve()) or not path.is_file():
@@ -84,7 +96,7 @@ def build() -> dict[str, bytes]:
         header = (f"> Generated judgment excerpt from canonical {item['source']}.\n"
                   "> Use with the adapter SKILL.md: these are review criteria, not permission to act.\n"
                   "> Existing CLAUDE.md paths describe legacy storage, not Codex automatic inheritance.\n\n")
-        outputs[CORE + "references/" + item["output"]] = (header + prose(extracted)).encode()
+        outputs[CORE + "references/" + item["output"]] = (header + prose(adapt_reference(extracted, item))).encode()
 
     # Generate a readable archetype index from the same constants used by audits.
     tree = ast.parse(read("skills/organize-claude/scripts/archetypes.py"))
@@ -129,8 +141,8 @@ def build() -> dict[str, bytes]:
     manifest = {
         "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
         "name": "lastmilefirst-codex",
-        "version": source_manifest["version"] + "-codex.0",
-        "description": "Bounded LastMileFirst pilot: PARC and read-only project, organization, and context reviews.",
+        "version": source_manifest["version"] + "-codex.1",
+        "description": "Bounded LastMileFirst skills: PARC, expert lenses, and read-only project, organization, context, voice, signal, docs, and work reviews.",
         "author": source_manifest["author"],
         "repository": source_manifest["repository"],
         "license": source_manifest["license"],
@@ -172,11 +184,11 @@ def lint(outputs: dict[str, bytes]) -> list[str]:
         if "/vendor/" in relative or not relative.endswith(".md"):
             continue
         text = data.decode()
-        if re.search(r"/(?:run-|reload-|compound-engineering:)|\$\{(?:CLAUDE_PLUGIN_ROOT|SKILL_ROOT)\}", text):
+        if re.search(r"/(?:run-|reload-)|compound-engineering|\bce-[a-z]+\b|\$\{(?:CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT|SKILL_ROOT)\}", text):
             issues.append(f"unadapted command mechanism: {relative}")
         # Claude subagent names are not Codex mechanisms either; the skill
         # text tells the agent not to assume they exist.
-        if re.search(r"\b(?:consult-[a-z]+|[a-z]+-(?:reviewer|sentinel|oracle|guardian|strategist))\b(?!\.md)", text):
+        if re.search(r"\b(?:consult-(?!expert\b)[a-z]+|[a-z]+-(?:reviewer|sentinel|oracle|guardian|strategist))\b(?!\.md)", text):
             issues.append(f"unadapted Claude agent name: {relative}")
         for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", text):
             if "://" in link or link.startswith("#"):
