@@ -19,12 +19,14 @@ python3 -B -m unittest discover -s adapters/codex/tests -v
 
 The installable package is `adapters/codex/dist/` (gitignored). Build does **not** install,
 activate, register, publish, or alter user configuration. Copying or installing it is a separate
-authorized action. `--output PATH` builds into a new package directory; pre-existing symlinks, hardlinked output files,
-or unexpected files are refused rather than followed/deleted. Inside this repository only the
+authorized action. `--output PATH` builds into a new package directory; a destination that is itself a
+symlink, hardlinked output files, or unexpected files are refused rather than followed/deleted
+(symlinks in the destination's ancestors, such as macOS's `/tmp`, are resolved). Inside this repository only the
 default dist/ is an allowed destination; elsewhere a nonempty destination must already carry
 this adapter's manifest and source-provenance marker. Canonical/Muse/source directories cannot
 be build destinations. `--check` checks exact contents
-and `--lint` renders and validates without writing. Do not hand-edit generated files.
+and `--lint` renders and validates without writing; it refuses Claude command paths and Claude
+subagent names in generated prose. Do not hand-edit generated files.
 
 ```text
 adapters/codex/
@@ -114,7 +116,9 @@ has no repair/record switch: writes are a separate task with specific authorizat
 - Local Git config evidence only; inherited/global/system/include/environment identity is
   unverified. Support-repo cleanliness and synchronization are also unverified. The pilot is
   not pre-commit identity enforcement
-- Symlinks and linked-worktree/submodule Git pointers are deliberately skipped and disclosed
+- Symlinks and linked-worktree/submodule Git pointers are deliberately skipped and disclosed.
+  A named root must not itself be a symlink; symlinks in its ancestors (macOS `/var`, a home
+  directory on another volume) are resolved once, and the report shows the resolved path
 - Only directories with project evidence are auto-discovered; excluded directories are listed
   as unreviewed and make coverage partial, never falsely reported as absent
 - Heading checks do not assess section bodies. Overlapping topics are not proof of contradiction.
