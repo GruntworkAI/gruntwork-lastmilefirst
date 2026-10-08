@@ -27,7 +27,7 @@ Manage the lastmilefirst overwatch system - proactive monitoring and reminders.
 | Stale todos | Every session | Any todos older than 14 days |
 | Secret scan freshness | Every session | Never scanned or 7+ days since `/run-scan-secrets` |
 | Repo visibility | Every session | Current repo is PUBLIC |
-| Missing CLAUDE.md | Every session | No CLAUDE.md in project |
+| Missing CLAUDE.md | Every session | No CLAUDE.md at the project root (inside a configured project only) |
 | Expert roster sync | Every session | User CLAUDE.md missing experts or operatives |
 | Org infrastructure | Every session | Missing org.json, operatives, or wisdom repo |
 | Workspace summary | Every session | Cross-project health (archetypes, reviews, scans) |
@@ -58,6 +58,16 @@ sidesteps Claude Code's unreliable local marketplace-cache refresh.
 2. **PostToolUse hooks** track file edits during session
 3. **Stop hook** suggests committing if changes were made
 4. **State file** at `~/.claude/lastmilefirst/overwatch-state.json` tracks timestamps
+
+### Where it runs
+
+Hooks load in Claude Code (terminal, IDE, and the desktop app's Code tab) and in Cowork
+tasks; Chat ignores them, so in a Chat conversation Overwatch does not run and nothing here
+claims it did. Project-level checks (CLAUDE.md, archetype, review and scan freshness) apply
+only when the session's directory is inside a project under a configured org, and they read
+the project's root, not the current directory. A session in `~/Downloads`, a scratch folder,
+or an org root gets no project alerts. Workspace-level lines (the sweep reminder, the
+project summary) are not gated on the current directory, by design.
 
 Projects are keyed by their path relative to the workspace: `org/project`, or
 `org/client/project` for a project inside a client directory (see
