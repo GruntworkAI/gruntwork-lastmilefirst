@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Codex adapter pilot** at `adapters/codex/`, outside the marketplace plugin. Five skills-only entry points (PARC and read-only project, org, and context reviews) generated from the plugin sources, with a bounded audit that reads only explicitly named roots. Not verified in a live Codex session.
+
+### Changed
+
+- **Shared pure helpers** extracted from five scripts (`check_identity.py`, `workspace_types.py`, `aggregator.py`, `review_claude.py`, `organize_project.py`) into `hooks/scripts/markdown_content.py`, `org_resources.py`, and `project_layout.py`, so the adapters and the plugin use one implementation. The canonical call paths keep their defaults; stricter fence, frontmatter, and marker policies are opt-in flags the adapters set. Verified unchanged by differential comparison on crafted inputs.
+
 ## [0.36.2] - 2026-10-08
 
 ### Fixed

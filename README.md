@@ -73,6 +73,17 @@ rm -rf ~/.claude/plugins/cache/gruntwork-marketplace
 |--------|---------|-------------|
 | [lastmilefirst](plugins/lastmilefirst/) | 0.36.2 | Opinionated structure and workflow for projects built by people and coding agents. Includes PARC, expert agents, operatives, stack-wisdom, and stack-knowledge. |
 
+## Other runtimes
+
+The plugin is built for Claude Code, and two generated packages carry parts of it elsewhere.
+Both are built from the plugin sources with a `build.py` and a `mapping.toml`, never copied by
+hand, and neither is part of this marketplace.
+
+| Adapter | What it carries | Status |
+|---------|-----------------|--------|
+| [adapters/muse](adapters/muse/) | PARC, the review and scan lenses, and the persona roster as a Muse skill package | Best-effort port against observed, undocumented interfaces |
+| [adapters/codex](adapters/codex/) | PARC and read-only project, org, and context reviews as Codex skills | Bounded pilot; not verified in a live Codex session |
+
 ## About
 
 This marketplace hosts plugins developed by [Gruntwork](https://github.com/GruntworkAI) for Claude Code. Each plugin follows the Last Mile First philosophy: set up the infrastructure for smooth delivery before building features.

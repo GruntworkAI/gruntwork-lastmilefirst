@@ -49,8 +49,16 @@ gruntwork-lastmilefirst/
 │       ├── skills/
 │       ├── agents/
 │       └── ...
+├── adapters/
+│   ├── muse/               # Muse skill package built from the plugin (build.py + mapping.toml)
+│   └── codex/              # Codex skills-only pilot, same pattern; dist/ is gitignored in both
 └── README.md               # Also contains version table
 ```
+
+The adapters are generated from the plugin, never hand-copied. Shared domain rules live in the
+plugin's Python (`hooks/scripts/markdown_content.py`, `org_resources.py`, `project_layout.py`,
+and helpers in `check_identity.py`, `workspace_types.py`, `aggregator.py`, `review_claude.py`);
+an adapter opts into stricter policies by flag, and the canonical callers keep their defaults.
 
 ## Adding a New Plugin
 
@@ -95,6 +103,15 @@ Eight suites, each run on its own from `plugins/lastmilefirst/`:
 ```
 
 `skills/review-voice/tests/` holds hand-run test cases, not pytest.
+
+The adapters have their own checks, run from the repository root. Run them on macOS, not only
+in a Linux sandbox (see the gotchas table):
+
+```bash
+python3 -B adapters/codex/build.py --check && python3 -B adapters/codex/build.py --lint
+python3 -B -m unittest discover -s adapters/codex/tests
+python3 -B adapters/muse/build.py --check
+```
 
 Each suite carries its own `conftest.py` doing the `sys.path` inserts, because the skills ship as
 loose scripts rather than packaged modules.
