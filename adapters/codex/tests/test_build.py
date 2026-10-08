@@ -32,7 +32,10 @@ class PackageTests(unittest.TestCase):
         self.assertNotIn("extensions", manifest)
         self.assertNotIn("hooks", manifest)
         actual = {Path(k).parts[1] for k in self.outputs if k.endswith("SKILL.md")}
-        self.assertEqual(actual, {"lastmilefirst", "parc", "review-project", "review-org", "review-context"})
+        self.assertEqual(actual, {
+            "lastmilefirst", "parc", "review-project", "review-org", "review-context",
+            "review-voice", "review-signal", "consult-expert", "review-docs", "review-work",
+        })
         self.assertFalse(any(k.startswith(("hooks/", ".mcp", "mcp.json", ".app")) for k in self.outputs))
 
     def test_canonical_dependency_bytes_and_hashes(self):
@@ -100,6 +103,23 @@ class PackageTests(unittest.TestCase):
         for name, data in self.outputs.items():
             if name.endswith(".md") and "/vendor/" not in name:
                 self.assertNotIn("update_state.py", data.decode())
+
+    def test_reference_provenance_covers_each_new_review_source(self):
+        hashes = json.loads(self.outputs["SOURCE_MANIFEST.json"])["sources_sha256"]
+        for skill in ("review-voice", "review-signal", "consult-expert", "review-docs", "review-work"):
+            relative = f"skills/{skill}/SKILL.md"
+            with self.subTest(skill=skill):
+                self.assertIn(relative, hashes)
+                self.assertIn(f"{builder.CORE}references/{skill}.md", self.outputs)
+                self.assertEqual(hashlib.sha256((builder.SOURCE / relative).read_bytes()).hexdigest(),
+                                 hashes[relative])
+
+    def test_lint_rejects_missing_review_reference_after_relocation(self):
+        outputs = dict(self.outputs)
+        del outputs[builder.CORE + "references/review-voice.md"]
+        issues = builder.lint(outputs)
+        self.assertTrue(any("missing bundled reference" in issue and "review-voice.md" in issue
+                            for issue in issues), issues)
 
     def test_standalone_relocation_and_no_pycache(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -188,10 +208,20 @@ class PackageTests(unittest.TestCase):
             self.assertIn("stale or missing outputs", result.stderr)
             self.assertEqual(vendored.read_bytes(), original + b"\n", "check must not repair")
             vendored.write_bytes(original)
+            reference = root / builder.CORE / "references/review-voice.md"
+            original_reference = reference.read_bytes()
+            reference.write_bytes(original_reference + b"\n")
+            result = subprocess.run([*build, "--check"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("stale or missing outputs", result.stderr)
+            self.assertIn("references/review-voice.md", result.stderr)
+            self.assertEqual(reference.read_bytes(), original_reference + b"\n", "check must not repair")
+            reference.write_bytes(original_reference)
             (root / "skills/extra.md").write_text("planted\n")
             result = subprocess.run([*build, "--check"], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn("unexpected output file", result.stderr)
+            self.assertEqual((root / "skills/extra.md").read_text(), "planted\n")
 
     def test_output_under_a_symlinked_ancestor_is_accepted(self):
         with tempfile.TemporaryDirectory() as temp:

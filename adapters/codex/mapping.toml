@@ -38,6 +38,70 @@ source = "skills/organize-project/SKILL.md"
 output = "project-layout.md"
 sections = ["Target Structure", "Archive Criteria"]
 
+[[references]]
+source = "skills/review-voice/SKILL.md"
+output = "review-voice.md"
+sections = ["The one idea worth holding", "Three kinds of rule", "The Tells", "Method: how a tell becomes a verdict", "House Rules", "Guards (do not skip these)", "Modes", "How to Run", "Output Format (critique pass)", "Style Rules for Your Response"]
+
+[[references.adaptations]]
+pattern = """1. **Standing rules (the author).** The author's user-level `CLAUDE.md`, in a `## Voice`
+   section or any section that lists retired phrases or hard rules. On a surface with no
+   CLAUDE.md (Desktop, Cowork), the same rules live in the app's stored preferences and writing
+   settings. An agent persona's rules live in that agent's own repository."""
+replacement = """1. **Standing rules (the author).** Author rules already supplied in the conversation or
+   an explicitly approved context file. Report the source and any unavailable layer. Do not
+   search the home directory, app preferences, unrelated repositories, or parent tiers.
+   An agent persona's rules apply only when that persona is the requested author."""
+[[references.adaptations]]
+pattern = """2. **Engagement rules (the voice sheet).** Rules and rulings for one body of work, at
+   `.claude/work/voice-sheet.md` in the project, or passed by path (`voice-sheet <path>`) when
+   the deliverables live elsewhere. This is the layer that accretes. To start one, copy
+   `voice-sheet-example.md` from this skill's directory and keep only what is the author's."""
+replacement = """2. **Engagement rules (the voice sheet).** Read an author-supplied voice sheet or
+   `.claude/work/voice-sheet.md` only inside explicitly approved project scope. No sheet is
+   required for pasted text. Creating a sheet is a separate authorized task; never substitute
+   an example file for the author's own rules."""
+[[references.adaptations]]
+pattern = """one line each; on the author's confirmation, append them to the voice sheet. Never write a
+ruling the author has not seen."""
+replacement = """one line each; confirmation of a ruling does not authorize a file write. Append only
+when the author separately authorizes updating the named voice sheet with the confirmed
+rulings. Never write a ruling the author has not seen."""
+[[references.adaptations]]
+pattern = """2. **Load the house rules**, all three layers: standing rules from the user-level CLAUDE.md or
+   stored preferences, the engagement voice sheet if one exists or is passed, then the
+   conversation. Say which layers you found. If none, ask."""
+replacement = """2. **Load the house rules**, all three layers within supplied or explicitly approved
+   sources: standing rules, the engagement voice sheet if supplied, then this conversation.
+   Say which layers you found and which are unavailable. If none, ask. Do not infer author
+   rules from examples or search outside approved scope."""
+[[references.adaptations]]
+pattern = "One line each; appended to the voice sheet on confirmation."
+replacement = "One line each; propose a named voice-sheet update for separate write authorization."
+
+[[references]]
+source = "skills/review-signal/SKILL.md"
+output = "review-signal.md"
+sections = ["Core Standard", "Slop Patterns to Hunt For", "Editing Priorities", "Input Modes", "How to Run", "Default Output Format", "Operating Modes", "Style Rules for Your Response"]
+[[references.adaptations]]
+pattern = "a response Claude just generated in the current session"
+replacement = "a response the assistant just generated in the current session"
+[[references.adaptations]]
+pattern = "### Step 5: Revise Decisively"
+replacement = "### Step 5: Revise Decisively (only on rewrite authorization or explicit LFG)"
+[[references.adaptations]]
+pattern = "## Revised Version\n[Tightened rewrite]"
+replacement = "## Revised Version (only on rewrite authorization or explicit LFG)\n[Tightened rewrite]"
+
+[[references]]
+source = "skills/consult-expert/SKILL.md"
+output = "consult-expert.md"
+sections = ["The Experts", "When to Use Each Expert", "Designed Pairings"]
+[[references.adaptations]]
+pattern = "`review-claude`"
+replacement = "`review-context`"
+count = 3
+
 [[replacements]]
 pattern = "/run-consult-expert"
 replacement = "consult the bundled persona brief for"

@@ -1,6 +1,8 @@
-# LastMileFirst Codex adapter pilot
+# LastMileFirst Codex adapter
 
-A local, **skills-only** package for PARC and organization-first project/context reviews.
+A local, **skills-only** package with ten entry points: the LastMileFirst gateway, PARC,
+review-project, review-org, review-context, review-voice, review-signal, consult-expert,
+review-docs, and review-work.
 Canonical LastMileFirst sources remain in `plugins/lastmilefirst`. The shared-rule refactor
 updates their Python callers to use the same pure helpers as this adapter; existing Claude
 behavior is regression-tested and Muse-generated outputs remain byte-identical. Marketplace
@@ -44,6 +46,11 @@ adapters/codex/
       review-project/
       review-org/
       review-context/
+      review-voice/
+      review-signal/
+      consult-expert/
+      review-docs/
+      review-work/
 ```
 
 ## What is shared, what is adapted
@@ -85,6 +92,34 @@ copying only `adapters/codex/` into an older checkout is insufficient to rebuild
 `AGENTS.md`; `.claude/org.json`, `.claude-workspace`, `.claude/work`, `.claude/debt`, and
 `.claude/archive` remain shared storage. No global search-and-replace or filesystem migration
 is performed. The context-name parameter is independent of storage paths.
+
+## Editorial and artifact reviews
+
+Use `review-voice` for prose that reads machine-authored, `review-signal` for low signal,
+`review-docs` for a documentation set, and `review-work` for local todos/plans/sessions/debt.
+Pasted text and explicitly supplied artifacts need no repository or workspace scaffolding.
+`consult-expert` routes by the canonical roster to one of the 16 compact persona lenses;
+it does not install named agents or claim that an independent reviewer ran.
+
+The voice taxonomy, measurement method, obligation checks, house-rule semantics, guards,
+verdict, and response contract are generated from canonical `review-voice`. Signal's RENT
+standard, priority order, scoring, and shared verdict contract are generated from canonical
+`review-signal`. Adapter prose defines only scope, routing, tool availability, and authorization.
+Mechanism-specific replacements declare exact source anchors and counts; anchor drift fails
+closed rather than silently restoring home-directory discovery or writes. Reference links and
+Claude-only mechanisms are checked on every render. No alternate editorial rulebook is kept.
+
+Editorial reviews are critique-first. An explicit rewrite or LFG request authorizes an in-chat
+rewrite; changing a file still needs approval for that target. Voice reviews use only supplied
+or approved author context. Missing house rules prompt a question and partial coverage, never
+example rules substituted for the author's. Confirming a ruling does not itself authorize
+writing a voice sheet. After an authorized rewrite, repeat the complete canonical pass.
+
+Docs/work criteria are unchanged generated excerpts. Dates are evidence signals, not proof of
+abandonment or completion. Report missing evidence, unreadable or skipped artifacts, and the
+actual review scope. GitHub duplicates remain unverified without separately approved remote
+scope. Issue creation, archive/move/scaffold operations, wisdom extraction, cache writes, and
+review-state updates are separate actions, never side effects of a review.
 
 ## Bounded audit examples
 
@@ -155,3 +190,9 @@ CLAUDE.md. Run each independently because their test package names collide. New 
 tests preserve the intentional default-versus-strict policies and check pure helper behavior.
 Apply the shared canonical source changes together with this adapter; no Muse source or
 release-metadata changes are required for this local prerelease.
+
+The five-review expansion has static contract tests and documented instruction walkthroughs
+in `tests/REVIEW_WALKTHROUGHS.md`. Those are checks of the shipped instructions, not live
+model evaluations or proof of automatic routing. Linux validation does not replace the
+macOS adapter-suite gate before rollout. No installation, authentication, paid model call,
+publication, or remote change is performed by build/test.
