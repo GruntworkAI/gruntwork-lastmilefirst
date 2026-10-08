@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Codex adapter pilot** at `adapters/codex/`, outside the marketplace plugin. Five skills-only entry points (PARC and read-only project, org, and context reviews) generated from the plugin sources, with a bounded audit that reads only explicitly named roots. Not verified in a live Codex session.
+- **Codex adapter** at `adapters/codex/`, outside the marketplace plugin. Ten skills-only entry points generated from the plugin sources: a gateway, PARC, expert consultation, and read-only project, org, context, voice, signal, docs, and work reviews, with a bounded audit that reads only explicitly named roots. Editorial reviews are critique-first; a rewrite or file write needs its own authorization. Claude-only mechanisms are rewritten by exact anchor and the build fails closed on drift. Not verified in a live Codex session.
 
 ### Changed
 

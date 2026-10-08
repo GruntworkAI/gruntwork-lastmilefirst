@@ -184,7 +184,7 @@ def lint(outputs: dict[str, bytes]) -> list[str]:
         if "/vendor/" in relative or not relative.endswith(".md"):
             continue
         text = data.decode()
-        if re.search(r"/(?:run-|reload-|compound-engineering:)|\$\{(?:CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT|SKILL_ROOT)\}", text):
+        if re.search(r"/(?:run-|reload-)|compound-engineering|\bce-[a-z]+\b|\$\{(?:CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT|SKILL_ROOT)\}", text):
             issues.append(f"unadapted command mechanism: {relative}")
         # Claude subagent names are not Codex mechanisms either; the skill
         # text tells the agent not to assume they exist.

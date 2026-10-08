@@ -213,3 +213,21 @@ replacement = "the Paloma brief"
 [[replacements]]
 pattern = "consult-adam"
 replacement = "the Adam brief"
+
+# compound-engineering is a Claude Code plugin; Codex has no such skill names. Keep the
+# "if the host lists one, else the chat fallback" logic and drop the names.
+[[replacements]]
+pattern = "**Preferred: `ce-explain`** (compound-engineering plugin),"
+replacement = "**Preferred: an explain-the-change skill the host actually lists**,"
+[[replacements]]
+pattern = "Use it when ce-explain is\nnot installed"
+replacement = "Use it when no such skill is\nlisted"
+[[replacements]]
+pattern = "where ce-explain's ceremony"
+replacement = "where that skill's ceremony"
+[[replacements]]
+pattern = "and ce-explain with Quiz me where installed"
+replacement = "and an explain-the-change skill with Quiz me where the host lists one"
+[[replacements]]
+pattern = "| A repo learning in the ce-compound shape | `docs/solutions/` | `ce-compound`, where installed |"
+replacement = "| A repo learning in the compound shape | `docs/solutions/` | the host's compound skill, where listed |"
