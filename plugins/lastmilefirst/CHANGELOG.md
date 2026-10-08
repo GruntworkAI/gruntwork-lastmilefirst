@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.2] - 2026-10-08
+
+### Fixed
+
+- **overwatch: project checks fire only for a project, at its root.** The session-start CLAUDE.md check read the current directory and never asked whether it was a project, so a session in a scratch folder, in `~/Downloads`, or in a Cowork task on any folder outside the workspace got "No CLAUDE.md in this project" and a directive to present it. From a subdirectory of a real project the same check fired for the wrong directory, and the archetype check stayed silent for the same reason. Both now read the resolved project root and run only inside a project under a configured org. Git status, the workspace sweep reminder, and the workspace summary are unchanged. The docs no longer call Overwatch Claude-Code-only: hooks also load in Cowork and are ignored in Chat.
+
 ## [0.36.1] - 2026-09-28
 
 ### Fixed

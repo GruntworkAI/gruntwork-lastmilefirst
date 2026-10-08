@@ -32,6 +32,7 @@ from overwatch import (
     load_state,
     update_scoped_state,
     resolve_context,
+    project_root,
     get_scoped_state,
     get_plugins_dir,
     get_state_dir,
@@ -495,9 +496,17 @@ def check_repo_visibility(project_key: Optional[str] = None) -> Optional[str]:
     return "\n".join(messages)
 
 
-def check_claude_md() -> Optional[str]:
-    """Check if CLAUDE.md exists in current directory."""
-    if not Path("CLAUDE.md").exists():
+def check_claude_md(project_dir: Optional[Path]) -> Optional[str]:
+    """Check that the resolved project has a CLAUDE.md at its root.
+
+    Takes the project root, not the current directory: a session started in
+    a subdirectory must not report the project's CLAUDE.md as missing, and a
+    directory that is not a project (outside any configured org) has no
+    CLAUDE.md to miss.
+    """
+    if project_dir is None:
+        return None
+    if not (project_dir / "CLAUDE.md").exists():
         return "ACTION REQUIRED: No CLAUDE.md in this project. Run /run-organize-project to scaffold."
     return None
 
@@ -544,12 +553,12 @@ def check_overwatch_guidance(
     return "ACTION REQUIRED: No Overwatch response guidance in CLAUDE.md. Run /run-organize-claude to add it."
 
 
-def check_archetype() -> Optional[str]:
-    """Check if project CLAUDE.md declares an archetype."""
-    if _detect_archetype is None:
-        return None  # Archetype module not available, skip silently
+def check_archetype(project_dir: Optional[Path]) -> Optional[str]:
+    """Check if the project's CLAUDE.md (at its root) declares an archetype."""
+    if _detect_archetype is None or project_dir is None:
+        return None  # Archetype module not available, or not a project
 
-    claude_md = Path("CLAUDE.md")
+    claude_md = project_dir / "CLAUDE.md"
     if not claude_md.exists():
         return None  # No CLAUDE.md — separate check handles this
 
@@ -966,6 +975,9 @@ def main() -> None:
 
     # Load workspace config for cross-project checks
     config = _load_organize_config() or {}
+    # Project-level checks read the project's root, not the current directory,
+    # and run only when the directory is inside a configured project.
+    project_dir = project_root(ctx, config)
 
     # Check 1: Git status
     git_alert = check_git_status()
@@ -1020,13 +1032,14 @@ def main() -> None:
     if visibility_alert:
         alerts.append(visibility_alert)
 
-    # Check 9: CLAUDE.md
-    claude_md_alert = check_claude_md()
-    if claude_md_alert:
-        alerts.append(claude_md_alert)
+    # Check 9: CLAUDE.md at the project root (project-scoped, skip if not in a project)
+    if project_dir is not None:
+        claude_md_alert = check_claude_md(project_dir)
+        if claude_md_alert:
+            alerts.append(claude_md_alert)
 
-    # Check 10: Overwatch response guidance
-    guidance_alert = check_overwatch_guidance(config=config)
+    # Check 10: Overwatch response guidance (searched from the project root when known)
+    guidance_alert = check_overwatch_guidance(cwd=project_dir, config=config)
     if guidance_alert:
         alerts.append(guidance_alert)
 
@@ -1036,8 +1049,8 @@ def main() -> None:
         alerts.extend(blocker_alerts)
 
     # Check 12: Project archetype declaration (current project only)
-    if ctx["project"]:
-        archetype_alert = check_archetype()
+    if project_dir is not None:
+        archetype_alert = check_archetype(project_dir)
         if archetype_alert:
             alerts.append(archetype_alert)
 

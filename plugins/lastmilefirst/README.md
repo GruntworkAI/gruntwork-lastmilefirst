@@ -32,7 +32,7 @@ The "What goes where" table under [Project Structure](#project-structure) shows 
 
 ### Keeping it that way
 
-Structure drifts once a project is underway, so the plugin keeps checking it. Overwatch runs at the start of each Claude Code session and identifies drift: uncommitted changes, todos older than 14 days, a project overdue for review or organizing, a missing `CLAUDE.md` or archetype, a stale secret scan. This is soft enforcement: Overwatch reports and recommends (doesn't block), and the `review-*` and `organize-*` skills do the fixing when you run them. `/run-overwatch` shows the current alerts at any time.
+Structure drifts once a project is underway, so the plugin keeps checking it. Overwatch runs at the start of each Claude Code or Cowork session inside a configured project and identifies drift: uncommitted changes, todos older than 14 days, a project overdue for review or organizing, a missing `CLAUDE.md` or archetype, a stale secret scan. This is soft enforcement: Overwatch reports and recommends (doesn't block), and the `review-*` and `organize-*` skills do the fixing when you run them. `/run-overwatch` shows the current alerts at any time.
 
 ## Concepts
 
