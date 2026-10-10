@@ -32,7 +32,7 @@ The "What goes where" table under [Project Structure](#project-structure) shows 
 
 ### Keeping it that way
 
-Structure drifts once a project is underway, so the plugin keeps checking it. Overwatch runs at the start of each Claude Code or Cowork session inside a configured project and identifies drift: uncommitted changes, todos older than 14 days, a project overdue for review or organizing, a missing `CLAUDE.md` or archetype, a stale secret scan. This is soft enforcement: Overwatch reports and recommends (doesn't block), and the `review-*` and `organize-*` skills do the fixing when you run them. `/run-overwatch` shows the current alerts at any time.
+Structure drifts once a project is underway, so the plugin keeps checking it. Overwatch runs at the start of each Claude Code or Cowork session inside a configured project and identifies drift: uncommitted changes, todos older than 14 days, a project overdue for review or organizing, a missing `CLAUDE.md` or archetype, a stale secret scan, a machine that cannot commit as one of your orgs' accounts. This is soft enforcement: Overwatch reports and recommends (doesn't block), and the `review-*` and `organize-*` skills do the fixing when you run them. `/run-overwatch` shows the current alerts at any time.
 
 ## Concepts
 
@@ -346,7 +346,7 @@ claude --plugin-dir /path/to/gruntwork-lastmilefirst/plugins/lastmilefirst
 
 ### Prerequisites
 
-- **Python 3.9+** - Required for Overwatch hooks
+- **Python 3.9+** - Required for Overwatch hooks (the session-start device check and the organize-device scripts need 3.11+)
 - **Git** - For repository status checks
 
 ## Commands
@@ -357,6 +357,7 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 |---------|---------|
 | `/run-get-started` | Quick orientation and available commands |
 | `/run-organize-orgs` | Set up org infrastructure (org.json, operatives, wisdom repos) |
+| `/run-organize-device` | Bootstrap a new machine and audit any machine against your identity contracts (GitHub logins, SSH, git identity, tools, plugins) |
 | `/run-organize-claude` | Audit and scaffold CLAUDE.md hierarchy (user/org/project) |
 | `/run-organize-project` | Enforce consistent project structure (docs/, .claude/) |
 | `/run-review-claude` | Review CLAUDE.md for gaps, suggest additions |
@@ -661,6 +662,7 @@ lastmilefirst/
 │   └── run-*.md            # All prefixed with run-
 ├── skills/                 # Full skill implementations
 │   ├── organize-orgs/
+│   ├── organize-device/
 │   ├── organize-claude/
 │   ├── organize-project/
 │   ├── review-*/
