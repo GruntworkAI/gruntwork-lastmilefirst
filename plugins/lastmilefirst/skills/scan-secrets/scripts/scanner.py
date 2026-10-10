@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -246,7 +247,7 @@ def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
     return findings
 
 
-# Three kinds of tagged rule, one policy (plan 2026-10-09-001, section 3.1).
+# Three kinds of tagged rule, one policy.
 #
 # - `public-only`: an organization's name (e.g. a client's), fine inside a
 #   private repo and a finding in a public one. Dropped in PRIVATE/INTERNAL.
@@ -272,10 +273,6 @@ def _tags(finding: Dict[str, Any]) -> set:
     if isinstance(tags, str):
         tags = [tags]
     return {str(t).strip().lower() for t in tags}
-
-
-def _is_public_only(finding: Dict[str, Any]) -> bool:
-    return PUBLIC_ONLY_TAG in _tags(finding)
 
 
 def _finding_kind(finding: Dict[str, Any]) -> str:
@@ -338,7 +335,7 @@ def apply_public_only(
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Deprecated alias of apply_visibility_policy, kept for one release.
 
-    Returns the kept findings without the `Blocking` flag, as before 0.37.0.
+    Returns the kept findings without the `Blocking` flag.
     """
     kept, lines = apply_visibility_policy(findings, visibility)
     return [{k: v for k, v in f.items() if k != "Blocking"} for f in kept], lines
@@ -370,7 +367,8 @@ def _format_findings(findings: List[Dict[str, Any]]) -> str:
     lines.append("-" * 90)
 
     ordered = sorted(findings, key=lambda x: x.get("Severity", ""), reverse=True)
-    ordered.sort(key=lambda x: not _is_blocking(x))  # stable: blocking first
+    # Stable regroup: blocking first, keeping the severity order within each group.
+    ordered.sort(key=lambda x: not _is_blocking(x))
     for f in ordered:
         severity = f.get("Severity", "?") if _is_blocking(f) else "WARNING"
         rule = f.get("RuleID", f.get("Description", "unknown"))[:34]
@@ -519,7 +517,6 @@ def scan_archives(
     itself reported, because an unscannable committed binary is a finding.
     """
     import shutil
-    import tempfile
 
     cwd = str(repo_path) if repo_path else None
     root = Path(cwd) if cwd else Path.cwd()
@@ -587,6 +584,36 @@ def scan_archives(
     return results
 
 
+def _gitleaks_report(
+    args: List[str],
+    prefix: str,
+    config_path: Path,
+    cwd: Optional[str],
+    is_public: bool,
+) -> Tuple[Optional[List[Dict[str, Any]]], int, str]:
+    """Run gitleaks with a JSON report and parse it.
+
+    Returns (findings, exit_code, stderr). findings is None when gitleaks
+    aborted before writing the report, so the caller can fail closed with its
+    own message. Exit codes alone are ambiguous (gitleaks uses 1 for both
+    "leaks found" and "config load failure"); the reliable signal that the
+    scan completed is that the requested --report-path file exists. Treating
+    no-report as no-findings would silently hide config errors.
+    """
+    report_file = tempfile.mktemp(suffix=".json", prefix=prefix)
+    code, _stdout, stderr = _run_gitleaks(
+        args + ["--report-format", "json", "--report-path", report_file],
+        config_path=config_path,
+        cwd=cwd,
+    )
+    report_path = Path(report_file)
+    if not report_path.exists():
+        return None, code, stderr
+    findings = _parse_findings(report_path.read_text(encoding="utf-8"), is_public)
+    report_path.unlink(missing_ok=True)
+    return findings, code, stderr
+
+
 def scan_repo(
     repo_path: Optional[Path] = None,
     report_format: str = "text",
@@ -608,32 +635,15 @@ def scan_repo(
 
     config_path = write_merged_config()
     try:
-        # Use JSON report to temp file
-        import tempfile
-        report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-report-")
-
-        code, stdout, stderr = _run_gitleaks(
-            ["git", "--report-format", "json", "--report-path", report_file],
-            config_path=config_path,
-            cwd=cwd,
+        findings, code, stderr = _gitleaks_report(
+            ["git"], "gitleaks-report-", config_path, cwd, is_public
         )
-
-        # Fail-closed on gitleaks abort. Exit codes alone are ambiguous (gitleaks
-        # uses 1 for both "leaks found" and "config load failure"). The reliable
-        # signal: if we requested --report-path and the file doesn't exist, the
-        # scan never completed. Treating no-report as no-findings would silently
-        # hide config errors.
-        report_path = Path(report_file)
-        if not report_path.exists():
+        # Fail-closed on gitleaks abort (see _gitleaks_report).
+        if findings is None:
             return 1, (
                 f"gitleaks aborted before producing a report (exit {code}). "
                 f"Scan did not complete.\nstderr:\n{stderr or '(none)'}"
             )
-
-        findings = _parse_findings(
-            report_path.read_text(encoding="utf-8"), is_public
-        )
-        report_path.unlink(missing_ok=True)
 
         # gitleaks cannot see inside archives, so scan them separately.
         findings.extend(scan_archives(repo_path, config_path, is_public))
@@ -668,27 +678,12 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
 
     config_path = write_merged_config()
     try:
-        import tempfile
-        report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-staged-")
-
-        code, stdout, stderr = _run_gitleaks(
-            [
-                "git",
-                "--pre-commit",
-                "--staged",
-                "--report-format", "json",
-                "--report-path", report_file,
-            ],
-            config_path=config_path,
-            cwd=cwd,
+        findings, code, stderr = _gitleaks_report(
+            ["git", "--pre-commit", "--staged"],
+            "gitleaks-staged-", config_path, cwd, is_public,
         )
-
-        # Fail-closed on gitleaks abort. Gitleaks exit code 1 means either
-        # "leaks found" or "config load failure" — ambiguous. The reliable
-        # signal that the scan actually ran: the requested --report-path file
-        # exists. If it doesn't, treat as a hard failure and block the commit.
-        report_path = Path(report_file)
-        if not report_path.exists():
+        # Fail-closed on gitleaks abort (see _gitleaks_report): block the commit.
+        if findings is None:
             return 1, (
                 f"gitleaks aborted before producing a report (exit {code}). "
                 f"Pre-commit scan did not complete.\n"
@@ -696,11 +691,6 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
                 f"Commit blocked. If this is a config issue, run "
                 f"/run-scan-secrets --list-formats to inspect rules."
             )
-
-        findings = _parse_findings(
-            report_path.read_text(encoding="utf-8"), is_public
-        )
-        report_path.unlink(missing_ok=True)
 
         # Staged archives are invisible to gitleaks; expand and scan them too.
         findings.extend(
@@ -732,7 +722,7 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
         config_path.unlink(missing_ok=True)
 
 
-# --- Pre-push scan (plan 2026-10-09-001, section 3.4) ----------------------
+# --- Pre-push scan -------------------------------------------------------
 
 _ZERO_SHA = re.compile(r"^0+$")
 
@@ -791,23 +781,36 @@ def _push_log_opts(ref: Dict[str, str], cwd: Optional[str]) -> str:
     return ref["local_sha"]
 
 
+def _repo_auditor():
+    """The repo_auditor module, or None if it cannot load."""
+    try:
+        import repo_auditor
+        return repo_auditor
+    except Exception:
+        return None
+
+
 def _fetch_github_posture(repo_path: Optional[Path]) -> Optional[Dict[str, Any]]:
     """GitHub's own answer (visibility plus posture), one `gh api` call.
 
     None when the posture module cannot load; a dict with visibility None when
     `gh` is missing, unauthenticated, or there is no GitHub remote.
     """
+    auditor = _repo_auditor()
+    if auditor is None:
+        return None
     try:
-        import repo_auditor
-        return repo_auditor._fetch_posture(repo_path or Path.cwd())
+        return auditor._fetch_posture(repo_path or Path.cwd())
     except Exception:
         return None
 
 
 def _describe_github_posture(posture: Dict[str, Any]) -> str:
+    auditor = _repo_auditor()
+    if auditor is None:
+        return ""
     try:
-        import repo_auditor
-        return repo_auditor._describe_posture(posture)
+        return auditor._describe_posture(posture)
     except Exception:
         return ""
 
@@ -816,12 +819,15 @@ def _hygiene_warnings(repo_path: Optional[Path]) -> List[str]:
     """repo_auditor's gitignore-gap and dangerous-file checks, as warning lines."""
     lines: List[str] = []
     try:
-        import repo_auditor
-        missing, _present = repo_auditor.check_gitignore(repo_path)
+        auditor = _repo_auditor()
+        if auditor is None:
+            # Re-raise the original import error so the warning names its type.
+            import repo_auditor as auditor
+        missing, _present = auditor.check_gitignore(repo_path)
         if missing:
             lines.append(f"WARNING: .gitignore is missing {len(missing)} required "
                          f"pattern(s): {', '.join(missing)}")
-        dangerous = sorted(repo_auditor.check_dangerous_committed_files(repo_path))
+        dangerous = sorted(auditor.check_dangerous_committed_files(repo_path))
         if dangerous:
             shown = ", ".join(dangerous[:10])
             more = f" and {len(dangerous) - 10} more" if len(dangerous) > 10 else ""
@@ -915,26 +921,15 @@ def scan_pushed(stdin_text: str, repo_path: Optional[Path] = None) -> Tuple[int,
 
     config_path = write_merged_config()
     try:
-        import tempfile
-
         findings: List[Dict[str, Any]] = []
         seen = set()
         for ref in to_scan:
-            report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-push-")
-            code, _stdout, stderr = _run_gitleaks(
-                [
-                    "git",
-                    "--log-opts", _push_log_opts(ref, cwd),
-                    "--report-format", "json",
-                    "--report-path", report_file,
-                ],
-                config_path=config_path,
-                cwd=cwd,
+            ref_findings, code, stderr = _gitleaks_report(
+                ["git", "--log-opts", _push_log_opts(ref, cwd)],
+                "gitleaks-push-", config_path, cwd, is_public,
             )
-            # Fail-closed on gitleaks abort, as in scan_staged: a requested
-            # report that does not exist means the scan never completed.
-            report_path = Path(report_file)
-            if not report_path.exists():
+            # Fail-closed on gitleaks abort (see _gitleaks_report).
+            if ref_findings is None:
                 return 1, (
                     f"gitleaks aborted before producing a report (exit {code}). "
                     f"Pre-push scan of {ref['local_ref']} did not complete.\n"
@@ -942,14 +937,13 @@ def scan_pushed(stdin_text: str, repo_path: Optional[Path] = None) -> Tuple[int,
                     f"Push blocked. If this is a config issue, run "
                     f"/run-scan-secrets --list-formats to inspect rules."
                 )
-            for f in _parse_findings(report_path.read_text(encoding="utf-8"), is_public):
+            for f in ref_findings:
                 key = f.get("Fingerprint") or (f.get("Commit"), f.get("File"),
                                                f.get("StartLine"), f.get("RuleID"))
                 if key in seen:
                     continue
                 seen.add(key)
                 findings.append(f)
-            report_path.unlink(missing_ok=True)
 
         findings, policy_lines = apply_visibility_policy(findings, visibility)
 

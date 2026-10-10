@@ -127,7 +127,7 @@ def test_later_check_failure_still_blocks(script, tmp_path):
     assert "Secret scan found potential secrets" in result.stderr
 
 
-# --- the pre-push dispatcher (plan 2026-10-09-001, U3) ------------------------
+# --- the pre-push dispatcher ------------------------------------------------
 
 KINDS = ["pre-commit", "pre-push"]
 

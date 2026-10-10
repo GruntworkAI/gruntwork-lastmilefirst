@@ -343,27 +343,6 @@ def check_secret_scan_status(state: Dict, project_label: Optional[str] = None) -
     return None
 
 
-def _current_rules_fingerprint() -> Optional[str]:
-    """Fingerprint of the ruleset a scan would use right now, or None."""
-    try:
-        scan_scripts = (
-            Path(__file__).parent.parent.parent
-            / "skills" / "scan-secrets" / "scripts"
-        )
-        sys.path.insert(0, str(scan_scripts))
-        from scanner import rules_fingerprint  # type: ignore
-
-        return rules_fingerprint()
-    except Exception:
-        return None
-
-
-# GitHub's visibility answer changes rarely and the `gh` call is the slow part
-# of session start, so it is cached per repo path for a day, the same window
-# as the posture cache below.
-VISIBILITY_CACHE_TTL = 24 * 60 * 60
-
-
 def _scan_secrets_module():
     """Lazy-import scanner.py from the scan-secrets skill, or None."""
     try:
@@ -377,6 +356,21 @@ def _scan_secrets_module():
         return scanner
     except Exception:
         return None
+
+
+def _current_rules_fingerprint() -> Optional[str]:
+    """Fingerprint of the ruleset a scan would use right now, or None."""
+    try:
+        m = _scan_secrets_module()
+        return m.rules_fingerprint() if m is not None else None
+    except Exception:
+        return None
+
+
+# GitHub's visibility answer changes rarely and the `gh` call is the slow part
+# of session start, so it is cached per repo path for a day, the same window
+# as the posture cache below.
+VISIBILITY_CACHE_TTL = 24 * 60 * 60
 
 
 def _git_output(args: List[str], cwd: Optional[Path]) -> Optional[str]:
@@ -433,6 +427,13 @@ def check_visibility_drift(cwd: Optional[Path] = None) -> Optional[str]:
     answer. Never raises.
     """
     try:
+        # Cheap checks first: the declaration, then the repo and its remotes;
+        # the scanner module loads only once all three are present.
+        raw = _git_output(["git", "config", "--get", "lastmilefirst.visibility"], cwd)
+        declared = (raw or "").strip().upper()
+        if declared not in ("PUBLIC", "PRIVATE", "INTERNAL"):
+            return None
+
         top = _git_output(["git", "rev-parse", "--show-toplevel"], cwd)
         if not top or not top.strip():
             return None
@@ -443,9 +444,6 @@ def check_visibility_drift(cwd: Optional[Path] = None) -> Optional[str]:
 
         scanner = _scan_secrets_module()
         if scanner is None:
-            return None
-        declared = scanner.declared_visibility(repo_root)
-        if not declared:
             return None
 
         reported = _github_visibility(str(repo_root), repo_root, scanner, int(time.time()))

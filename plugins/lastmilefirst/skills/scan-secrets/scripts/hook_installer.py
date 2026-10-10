@@ -55,7 +55,7 @@ CHECKS = [
 ]
 
 
-# Registered pre-push checks, in run order (plan 2026-10-09-001, section 3.4).
+# Registered pre-push checks, in run order.
 #
 # One entry on purpose: git passes the pushed refs on the hook's stdin, and
 # stdin can be read once. The dispatcher reads nothing itself, so the single
