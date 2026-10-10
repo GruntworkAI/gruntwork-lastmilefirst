@@ -358,6 +358,107 @@ def _current_rules_fingerprint() -> Optional[str]:
         return None
 
 
+# GitHub's visibility answer changes rarely and the `gh` call is the slow part
+# of session start, so it is cached per repo path for a day, the same window
+# as the posture cache below.
+VISIBILITY_CACHE_TTL = 24 * 60 * 60
+
+
+def _scan_secrets_module():
+    """Lazy-import scanner.py from the scan-secrets skill, or None."""
+    try:
+        scan_scripts = (
+            Path(__file__).parent.parent.parent
+            / "skills" / "scan-secrets" / "scripts"
+        )
+        sys.path.insert(0, str(scan_scripts))
+        import scanner  # type: ignore
+
+        return scanner
+    except Exception:
+        return None
+
+
+def _git_output(args: List[str], cwd: Optional[Path]) -> Optional[str]:
+    """stdout of a git command, or None when it fails or git is unusable."""
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, timeout=5,
+            cwd=str(cwd) if cwd else None,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def _github_visibility(repo_key: str, repo_root: Path, scanner, now: int) -> Optional[str]:
+    """What GitHub reports for this repo, from a day-old cache or one `gh` call.
+
+    Only a determinate answer is cached; `gh` missing, unauthenticated, or
+    unable to see the repo is retried next session rather than remembered.
+    """
+    try:
+        entry = get_scoped_state("repos", repo_key).get("github_visibility")
+        if isinstance(entry, dict):
+            checked_at = entry.get("checked_at", 0)
+            if isinstance(checked_at, int) and now - checked_at <= VISIBILITY_CACHE_TTL:
+                cached = entry.get("visibility")
+                if isinstance(cached, str) and cached:
+                    return cached
+    except Exception:
+        pass
+
+    posture = scanner._fetch_github_posture(repo_root)
+    visibility = posture.get("visibility") if isinstance(posture, dict) else None
+    if not visibility:
+        return None
+    visibility = str(visibility).upper()
+    try:
+        update_scoped_state(
+            "repos", repo_key, "github_visibility",
+            {"visibility": visibility, "checked_at": now},
+        )
+    except Exception:
+        pass  # cache is an optimization, never a correctness requirement
+    return visibility
+
+
+def check_visibility_drift(cwd: Optional[Path] = None) -> Optional[str]:
+    """ACTION REQUIRED when the declared visibility disagrees with GitHub's.
+
+    The declaration (`git config lastmilefirst.visibility`) is what the
+    secret-scan policy trusts, so a repo declared private that GitHub serves
+    publicly has been scanned under the wrong rules. Silent when the directory
+    is not a git repo, has no remote, carries no declaration, or `gh` cannot
+    answer. Never raises.
+    """
+    try:
+        top = _git_output(["git", "rev-parse", "--show-toplevel"], cwd)
+        if not top or not top.strip():
+            return None
+        repo_root = Path(top.strip())
+        remotes = _git_output(["git", "remote"], repo_root)
+        if not remotes or not remotes.strip():
+            return None
+
+        scanner = _scan_secrets_module()
+        if scanner is None:
+            return None
+        declared = scanner.declared_visibility(repo_root)
+        if not declared:
+            return None
+
+        reported = _github_visibility(str(repo_root), repo_root, scanner, int(time.time()))
+        if not reported or reported == declared:
+            return None
+        return (
+            f"ACTION REQUIRED: this repo is declared {declared.lower()} but GitHub "
+            f"reports {reported.lower()}; run /run-scan-secrets --audit"
+        )
+    except Exception:
+        return None
+
+
 def check_workspace_scan_status(state: Dict) -> Optional[str]:
     """
     Check whether the whole estate has been swept recently, and whether the
@@ -1029,6 +1130,12 @@ def main() -> None:
     workspace_scan_alert = check_workspace_scan_status(global_state)
     if workspace_scan_alert:
         alerts.append(workspace_scan_alert)
+
+    # Check 7c: Declared visibility vs GitHub's. Runs in any git repo with a
+    # remote, project or not, since the declaration lives in the repo itself.
+    drift_alert = check_visibility_drift()
+    if drift_alert:
+        alerts.append(drift_alert)
 
     # Check 8: Repo visibility
     visibility_alert = check_repo_visibility(ctx["project"])
