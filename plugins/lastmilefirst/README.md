@@ -380,6 +380,17 @@ All commands use the `run-` prefix for discoverability via autocomplete.
 
 For repositories that people and coding agents both push to, [GitHub hygiene for shared repositories](docs/github-hygiene-for-shared-repos.md) lists the account and repository settings to set, which ones `/run-scan-secrets` checks for you, and which ones only a person can set.
 
+### Network providers for `/run-organize-device`
+
+The device audit can check how your machines reach each other privately. It is off by default, and one provider ships so far.
+
+| Provider | Status |
+|----------|--------|
+| Tailscale | shipped |
+| yours | invited |
+
+To add one, contribute a Python module with three functions: `detect`, `audit`, and `handoff`. Its tests put a stub of the tool's binary on PATH and write one test per finding. It reads names and states only, never a key or token, and [Adding a provider](skills/organize-device/SKILL.md#adding-a-provider) has the interface.
+
 ## Public Expert Agents
 
 The plugin includes 16 AI expert personas you can consult when you need specialized knowledge. These are **public experts** - built into the plugin and available to everyone.

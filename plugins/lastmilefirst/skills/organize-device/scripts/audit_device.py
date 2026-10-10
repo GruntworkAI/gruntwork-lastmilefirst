@@ -285,9 +285,12 @@ def tilde(path: Path, home: Path) -> str:
 
 
 def is_absolute_home_path(text: str, home: Path) -> bool:
-    """An absolute path into a home directory, which breaks on a different login."""
-    if text.startswith(("/Users/", "/home/")):
-        return True
+    """An absolute path into this login's home, which breaks on a different login.
+
+    Only the real home counts (as given and resolved). A path under `/Users/`
+    or `/home/` that is outside this home (e.g. `/Users/Shared/code`) is a
+    deliberate location, not a portability problem.
+    """
     for prefix in {str(home), str(_resolve(home))}:
         if text == prefix or text.startswith(prefix.rstrip("/") + "/"):
             return True
@@ -485,11 +488,29 @@ def gh_login_present(account: str, timeout: float = GH_TIMEOUT) -> Optional[bool
 
     Uses the exit code of `gh auth token --user` (local keyring, no network)
     and discards stdout, so the token is never kept or printed.
+    None also covers a gh older than 2.40.0, which lacks `--user` and answers
+    `unknown flag`, so an old gh never reads as a missing login.
     """
     result = _run(["gh", "auth", "token", "--user", account], timeout)
     if result is None:
         return None
+    if result.returncode != 0 and "unknown flag" in (result.stderr or ""):
+        return None
     return result.returncode == 0
+
+
+GH_MIN_VERSION = "2.40.0"  # first gh with `gh auth token --user`
+
+
+def gh_upgrade_remedy(system: Optional[str] = None) -> str:
+    """How to get a gh new enough for the login check, per platform."""
+    system = system or _system()
+    if system == "Darwin":
+        return "run `brew upgrade gh`"
+    if system == "Linux":
+        return ("install gh from GitHub's own apt repository (distribution packages are often "
+                "older): https://github.com/cli/cli/blob/trunk/docs/install_linux.md")
+    return "upgrade gh: https://github.com/cli/cli#installation"
 
 
 _GREETING_RE = re.compile(r"Hi ([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)!")
@@ -629,8 +650,12 @@ def section_github(ctx: AuditContext) -> list[Finding]:
         state = gh_login_present(account)
         orgs = _orgs_for(ctx, account)
         if state is None:
-            findings.append(note(section, f"Could not check the gh login for {account}; gh did "
-                                          f"not answer in time.", org=orgs))
+            findings.append(note(
+                section,
+                f"Could not check the gh login for {account}: gh did not answer in time, or "
+                f"it is older than {GH_MIN_VERSION} (the first release with "
+                f"`gh auth token --user`). If `gh --version` is older, {gh_upgrade_remedy()}.",
+                org=orgs))
         elif state:
             present.append(account)
         else:
@@ -793,7 +818,34 @@ def _ssh_liveness(ctx: AuditContext, section: str) -> list[Finding]:
 _GITDIR_PREFIXES = ("gitdir:", "gitdir/i:")
 
 
-def _gitdir_target(stanza: GitStanza) -> Optional[str]:
+def user_git_config_paths(home: Path) -> list[Path]:
+    """The user-level git config files git reads, whether or not they exist.
+
+    `~/.gitconfig`, then `$XDG_CONFIG_HOME/git/config` (`~/.config/git/config`
+    when the variable is unset). Public for the installer and Overwatch hook.
+    """
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = expand(xdg, home) if xdg else home / ".config"
+    return [home / ".gitconfig", base / "git" / "config"]
+
+
+def _user_gitdir_stanzas(home: Path) -> list[tuple[Path, GitStanza]]:
+    found: list[tuple[Path, GitStanza]] = []
+    for path in user_git_config_paths(home):
+        for stanza in read_git_config(path) or []:
+            if gitdir_target(stanza) is not None:
+                found.append((path, stanza))
+    return found
+
+
+def read_user_git_stanzas(home: Path) -> list[GitStanza]:
+    """`includeIf "gitdir:..."` stanzas from every user-level git config file
+    that exists, in `user_git_config_paths` order."""
+    return [stanza for _, stanza in _user_gitdir_stanzas(home)]
+
+
+def gitdir_target(stanza: GitStanza) -> Optional[str]:
+    """The pattern of an `includeIf "gitdir:..."` stanza, or None for any other."""
     if stanza.section != "includeif" or not stanza.subsection:
         return None
     for prefix in _GITDIR_PREFIXES:
@@ -802,7 +854,8 @@ def _gitdir_target(stanza: GitStanza) -> Optional[str]:
     return None
 
 
-def _gitdir_matches(raw: str, org_dir: Path, home: Path) -> bool:
+def gitdir_matches(raw: str, org_dir: Path, home: Path) -> bool:
+    """Whether a gitdir pattern (with or without `/` or `/**`) names `org_dir`."""
     text = raw
     for suffix in ("/**", "/"):
         if text.endswith(suffix):
@@ -813,22 +866,32 @@ def _gitdir_matches(raw: str, org_dir: Path, home: Path) -> bool:
     return _resolve(expand(text, home)) == _resolve(org_dir)
 
 
-def has_include_for(stanzas: Iterable[GitStanza], org_dir: Path, home: Path) -> bool:
+# One-release aliases for the names the installer and hook first imported.
+_gitdir_target = gitdir_target
+_gitdir_matches = gitdir_matches
+
+
+def has_include_for(stanzas: Optional[Iterable[GitStanza]], org_dir: Path,
+                    home: Path) -> bool:
     """True when any `includeIf "gitdir:..."` stanza targets `org_dir`.
 
     Right or wrong does not matter here (an absolute home path still counts);
     section_git_identity judges the stanza. Public for the Overwatch check.
+    Pass `read_user_git_stanzas(home)` to cover every user-level file; None
+    reads them here.
     """
+    if stanzas is None:
+        stanzas = read_user_git_stanzas(home)
     return any(
-        (target := _gitdir_target(s)) is not None and _gitdir_matches(target, org_dir, home)
+        (target := gitdir_target(s)) is not None and gitdir_matches(target, org_dir, home)
         for s in stanzas
     )
 
 
-def _include_path(raw: str, home: Path) -> Path:
+def _include_path(raw: str, home: Path, base: Optional[Path] = None) -> Path:
     """git resolves a relative include path against the including file's directory."""
     path = expand(raw, home)
-    return path if path.is_absolute() else home / path
+    return path if path.is_absolute() else (base or home) / path
 
 
 def _stanza_text(gitdir: str, path: str) -> str:
@@ -844,21 +907,23 @@ def section_git_identity(ctx: AuditContext) -> list[Finding]:
     findings: list[Finding] = []
     home = ctx.home
     global_cfg = read_git_config(home / ".gitconfig") or []
-    stanzas = [s for s in global_cfg if _gitdir_target(s) is not None]
+    sourced = _user_gitdir_stanzas(home)
+    stanzas = [s for _, s in sourced]
     effective: dict[str, list[GitStanza]] = {}
 
     for contract in ctx.contracts:
         org_gitdir = tilde(contract.org_dir, home).rstrip("/") + "/"
         default_path = f"~/.gitconfig-{contract.org}"
         stanza = next((s for s in stanzas
-                       if _gitdir_matches(_gitdir_target(s), contract.org_dir, home)), None)
+                       if gitdir_matches(gitdir_target(s), contract.org_dir, home)), None)
         if stanza is None:
             effective[contract.org] = global_cfg
             if ctx.is_default(contract):
                 continue  # the default org rides the global identity, checked below
             findings.append(missing(
                 section, contract.org,
-                f"No includeIf stanza for {org_gitdir} in ~/.gitconfig, so commits there use "
+                f"No includeIf stanza for {org_gitdir} in ~/.gitconfig or "
+                f"{tilde(user_git_config_paths(home)[1], home)}, so commits there use "
                 f"the global identity instead of {contract.git_email}.",
                 f"Append to ~/.gitconfig:\n{_stanza_text(org_gitdir, default_path)}\n"
                 f"Create {default_path} with:\n{_user_text(contract)}",
@@ -869,7 +934,9 @@ def section_git_identity(ctx: AuditContext) -> list[Finding]:
             ))
             continue
 
-        gitdir_raw = _gitdir_target(stanza)
+        source_path = next(p for p, s in sourced if s is stanza)
+        source = tilde(source_path, home)
+        gitdir_raw = gitdir_target(stanza)
         path_raw = stanza.last("path")
         problems = []
         if is_absolute_home_path(gitdir_raw, home):
@@ -882,7 +949,7 @@ def section_git_identity(ctx: AuditContext) -> list[Finding]:
             include = None
             fixed_path = default_path
         else:
-            include = _include_path(path_raw, home)
+            include = _include_path(path_raw, home, source_path.parent)
             if is_absolute_home_path(path_raw, home):
                 problems.append(f"path uses an absolute home path ({path_raw})")
             fixed_path = tilde(include, home) if tilde(include, home).startswith("~") \
@@ -909,7 +976,7 @@ def section_git_identity(ctx: AuditContext) -> list[Finding]:
         effective[contract.org] = [*global_cfg, *(include_cfg or [])]
 
         if problems:
-            remedy = f"Replace the stanza in ~/.gitconfig with:\n" \
+            remedy = f"Replace the stanza in {source} with:\n" \
                      f"{_stanza_text(org_gitdir, fixed_path)}"
             if file_problem or fixed_path != (tilde(include, home) if include else None):
                 remedy += f"\nMake {fixed_path} contain (other settings in it can stay):\n" \
@@ -980,10 +1047,20 @@ def _signing_note(ctx: AuditContext, section: str,
     return [note(section, f"Commit signing: {'; '.join(parts)}.")]
 
 
+def credential_helper_name(helper: str) -> str:
+    """The helper's name only. An inline `!` command can carry a token, so it is
+    never echoed, and arguments after the name are dropped for the same reason."""
+    helper = helper.strip()
+    if helper.startswith("!"):
+        return "a custom command (!...)"
+    return helper.split()[0] if helper else helper
+
+
 def _credential_note(section: str, global_cfg: list[GitStanza]) -> Finding:
     helper = git_get(global_cfg, "credential", "helper")
     if helper:
-        return note(section, f"credential.helper is {helper} (from ~/.gitconfig).")
+        return note(section, f"credential.helper is {credential_helper_name(helper)} "
+                             f"(from ~/.gitconfig).")
     return note(section, "credential.helper is not set in ~/.gitconfig (a system-level "
                          "default may still apply).")
 

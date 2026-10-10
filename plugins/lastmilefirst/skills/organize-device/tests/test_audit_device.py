@@ -6,14 +6,13 @@ so every `missing` and `wrong` case has exactly one test that produces it.
 from __future__ import annotations
 
 import json
-import os
-import sys
+from pathlib import Path
 
 import pytest
 
 import audit_device
 from audit_device import MISSING, WRONG
-from .conftest import CLIENT, PLUGIN_ROOT, REAL_HOME, SSH_CONFIG, SSH_STUB, STUDIO
+from .conftest import CLIENT, SSH_CONFIG, SSH_STUB, STUDIO
 
 
 def run(capsys, *argv):
@@ -137,42 +136,12 @@ def test_old_python_is_refused_with_one_line(capsys):
     assert audit_device.require_python((3, 11)) is True
 
 
-def test_no_real_home_path_is_read(device, capsys):
+def test_no_real_home_path_is_read(device, capsys, real_home_guard):
     """Nothing under the real home is opened or listed, apart from the
-    interpreter and this plugin's own source."""
-    seen: list[str] = []
-    allowed = tuple(os.path.realpath(p) for p in
-                    {PLUGIN_ROOT, sys.prefix, sys.base_prefix, sys.exec_prefix})
-
-    def hook(event, args):
-        if event in ("open", "os.listdir", "os.scandir") and args:
-            target = args[0]
-            if isinstance(target, (str, bytes, os.PathLike)):
-                seen.append(os.path.realpath(os.fsdecode(target)))
-
-    _HOOK_STATE["fn"] = hook
-    try:
-        audit_device.main(["--json"])
-    finally:
-        _HOOK_STATE["fn"] = None
+    interpreter and this plugin's own source (the conftest guard enforces it)."""
+    audit_device.main(["--json"])
     capsys.readouterr()
-    leaked = [p for p in seen
-              if (p == REAL_HOME or p.startswith(REAL_HOME + os.sep))
-              and not p.startswith(allowed)]
-    assert seen, "the audit hook recorded nothing; the test is not observing"
-    assert leaked == []
-
-
-_HOOK_STATE: dict = {"fn": None}
-
-
-def _dispatch(event, args):
-    fn = _HOOK_STATE["fn"]
-    if fn is not None:
-        fn(event, args)
-
-
-sys.addaudithook(_dispatch)
+    assert real_home_guard.seen, "the audit hook recorded nothing; the test is not observing"
 
 
 # --------------------------------------------------------------------------
@@ -284,6 +253,36 @@ def test_gh_timeout_is_a_note(device, capsys, monkeypatch):
              f["message"]]
     assert len(notes) == 2
     assert only(found, MISSING, "GitHub logins") == []
+
+
+OLD_GH_STUB = """#!/bin/sh
+if [ "$1" = "auth" ] && [ "$2" = "token" ]; then
+  echo "unknown flag: --user" >&2
+  exit 1
+fi
+exit 0
+"""
+
+
+def test_gh_without_user_flag_is_a_note_not_missing(device, capsys, monkeypatch):
+    device.stub("gh", OLD_GH_STUB)
+    assert audit_device.gh_login_present("ExampleStudio") is None
+    monkeypatch.setattr(audit_device, "_system", lambda: "Darwin")
+    _, found = findings(capsys)
+    assert only(found, MISSING, "GitHub logins") == []
+    notes = [f for f in found if f["section"] == "GitHub logins" and "2.40.0" in f["message"]]
+    assert len(notes) == 2
+    assert all("brew upgrade gh" in f["message"] for f in notes)
+
+
+def test_gh_upgrade_remedy_names_the_apt_repository_on_linux():
+    assert "apt repository" in audit_device.gh_upgrade_remedy("Linux")
+    assert "brew upgrade gh" in audit_device.gh_upgrade_remedy("Darwin")
+
+
+def test_gh_probe_timeout_yields_none(monkeypatch):
+    monkeypatch.setattr(audit_device, "_run", lambda args, timeout: None)
+    assert audit_device.gh_login_present("ExampleStudio") is None
 
 
 # --------------------------------------------------------------------------
@@ -428,9 +427,96 @@ def test_absolute_home_include_path_is_wrong(device, capsys):
 
 
 def test_users_prefix_counts_as_absolute_home(device, capsys):
-    assert audit_device.is_absolute_home_path("/Users/someone/.gitconfig-x", device.home)
-    assert audit_device.is_absolute_home_path("/home/someone/.gitconfig-x", device.home)
+    # Only this login's real home counts, as given or resolved.
+    assert audit_device.is_absolute_home_path(f"{device.home}/.gitconfig-x", device.home)
+    assert audit_device.is_absolute_home_path(str(device.home), device.home)
     assert not audit_device.is_absolute_home_path("~/.gitconfig-x", device.home)
+    # A /Users/ or /home/ path outside this home is a chosen location.
+    assert not audit_device.is_absolute_home_path("/Users/Shared/code/x/", device.home)
+    assert not audit_device.is_absolute_home_path("/home/someone/.gitconfig-x", device.home)
+
+
+def test_workspace_outside_home_stanza_is_accepted(device, capsys, tmp_path):
+    shared = tmp_path / "Shared" / "code"
+    (shared / "example-client" / ".claude").mkdir(parents=True)
+    (shared / "example-client" / ".claude" / "org.json").write_text(
+        json.dumps({"name": "example-client", "identity": CLIENT}), encoding="utf-8")
+    (shared / "example-studio" / ".claude").mkdir(parents=True)
+    (shared / "example-studio" / ".claude" / "org.json").write_text(
+        json.dumps({"name": "example-studio", "identity": STUDIO}), encoding="utf-8")
+    device.gitconfig(_stanza(f"{shared}/example-client/", "~/.gitconfig-example-client"))
+    audit_device.main(["--workspace-root", str(shared), "--json"])
+    found = json.loads(capsys.readouterr().out)["findings"]
+    assert only(found, WRONG, "git identity") == []
+    assert only(found, MISSING, "git identity") == []
+
+
+def test_user_git_config_paths(device, monkeypatch):
+    assert audit_device.user_git_config_paths(device.home) == [
+        device.home / ".gitconfig", device.home / ".config" / "git" / "config"]
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    assert audit_device.user_git_config_paths(device.home)[1] == \
+        device.home / ".config" / "git" / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/example/xdg")
+    assert audit_device.user_git_config_paths(device.home)[1] == Path("/example/xdg/git/config")
+
+
+def test_stanza_only_in_xdg_git_config_audits_clean(device, capsys, monkeypatch):
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    device.gitconfig(GLOBAL_USER)
+    device.write(".config/git/config", '[includeIf "gitdir:~/Code/example-client/"]\n'
+                                       "\tpath = ~/.gitconfig-example-client\n")
+    _, found = findings(capsys)
+    assert only(found, WRONG, "git identity") == []
+    assert only(found, MISSING, "git identity") == []
+    assert audit_device.has_include_for(audit_device.read_user_git_stanzas(device.home),
+                                        device.workspace / "example-client", device.home)
+
+
+def test_stanza_under_custom_xdg_config_home_audits_clean(device, capsys, monkeypatch,
+                                                          tmp_path):
+    xdg = tmp_path / "elsewhere-xdg"
+    (xdg / "git").mkdir(parents=True)
+    (xdg / "git" / "config").write_text('[includeIf "gitdir:~/Code/example-client/"]\n'
+                                        "\tpath = ~/.gitconfig-example-client\n",
+                                        encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    device.gitconfig(GLOBAL_USER)
+    _, found = findings(capsys)
+    assert only(found, WRONG, "git identity") == []
+    assert only(found, MISSING, "git identity") == []
+
+
+def test_both_user_git_configs_merge(device, capsys):
+    device.org("example-third", {**CLIENT, "github_account": "example-third-bot",
+                                 "git_user_name": "example-third-bot",
+                                 "git_email": "5678+example-third-bot@users.noreply.github.com",
+                                 "owns_remotes": ["example-third-bot"],
+                                 "ssh_host_alias": "github-example-client"})
+    device.write(".config/git/config", '[includeIf "gitdir:~/Code/example-third/"]\n'
+                                       "\tpath = ~/.gitconfig-example-third\n")
+    device.write(".gitconfig-example-third", "[user]\n\tname = example-third-bot\n"
+                 "\temail = 5678+example-third-bot@users.noreply.github.com\n")
+    stanzas = audit_device.read_user_git_stanzas(device.home)
+    assert [audit_device.gitdir_target(s) for s in stanzas] == [
+        "~/Code/example-client/", "~/Code/example-third/"]
+    _, found = findings(capsys)
+    assert only(found, WRONG, "git identity") == []
+    assert only(found, MISSING, "git identity") == []
+
+
+def test_wrong_stanza_in_xdg_file_names_that_file(device, capsys):
+    device.gitconfig(GLOBAL_USER)
+    device.write(".config/git/config", '[includeIf "gitdir:~/Code/example-client"]\n'
+                                       "\tpath = ~/.gitconfig-example-client\n")
+    _, found = findings(capsys)
+    [bad] = only(found, WRONG, "git identity")
+    assert bad["remedy"].startswith("Replace the stanza in ~/.config/git/config with:")
+
+
+def test_private_gitdir_names_remain_aliases():
+    assert audit_device._gitdir_target is audit_device.gitdir_target
+    assert audit_device._gitdir_matches is audit_device.gitdir_matches
 
 
 def test_gitdir_without_trailing_slash_is_wrong(device, capsys):
@@ -501,6 +587,36 @@ def test_signing_is_reported_never_flagged(device, capsys):
 def test_credential_helper_is_reported(device, capsys):
     _, out, _ = run(capsys)
     assert "credential.helper is osxkeychain" in out
+
+
+def test_inline_credential_helper_is_never_echoed(device, capsys):
+    device.gitconfig(GLOBAL_USER
+                     + '[credential]\n\thelper = "!f() { echo password=example-value; }; f"\n'
+                     + '[includeIf "gitdir:~/Code/example-client/"]\n'
+                     + "\tpath = ~/.gitconfig-example-client\n")
+    _, out, _ = run(capsys)
+    assert "example-value" not in out
+    assert "credential.helper is a custom command (!...)" in out
+    _, out, _ = run(capsys, "--json")
+    assert "example-value" not in out
+
+
+def test_credential_helper_arguments_are_dropped(device, capsys):
+    device.gitconfig(device.home.joinpath(".gitconfig").read_text().replace(
+        "helper = osxkeychain", "helper = store --file ~/example-secret-store"))
+    _, out, _ = run(capsys)
+    assert "credential.helper is store " in out
+    assert "example-secret-store" not in out
+
+
+def test_insteadof_url_is_never_echoed(device, capsys):
+    device.gitconfig(device.home.joinpath(".gitconfig").read_text()
+                     + '[url "https://user:example-token@example.invalid/"]\n'
+                     + "\tinsteadOf = https://example.invalid/\n")
+    _, out, _ = run(capsys)
+    assert "example-token" not in out
+    _, out, _ = run(capsys, "--json")
+    assert "example-token" not in out
 
 
 def test_https_origins_are_counted_not_named(device, capsys):

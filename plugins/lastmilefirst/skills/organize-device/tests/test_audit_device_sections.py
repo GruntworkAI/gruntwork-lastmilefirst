@@ -16,7 +16,7 @@ import pytest
 import audit_device
 import network
 from audit_device import MISSING, WRONG
-from .conftest import CLIENT, PLUGIN_ROOT, REAL_HOME, STUDIO
+from .conftest import CLIENT, STUDIO
 
 
 # --------------------------------------------------------------------------
@@ -826,19 +826,7 @@ def test_is_default_module_level(device):
 # no real home
 # --------------------------------------------------------------------------
 
-_HOOK_STATE: dict = {"fn": None}
-
-
-def _dispatch(event, args):
-    fn = _HOOK_STATE["fn"]
-    if fn is not None:
-        fn(event, args)
-
-
-sys.addaudithook(_dispatch)
-
-
-def test_no_real_home_path_is_read_by_the_new_sections(tailscale_device, capsys, monkeypatch):
+def test_no_real_home_path_is_read_by_the_new_sections(tailscale_device, capsys, real_home_guard):
     device = tailscale_device
     device.stub("claude", CLAUDE_STUB)
     device.stub("aws", AWS_STUB)
@@ -852,29 +840,11 @@ def test_no_real_home_path_is_read_by_the_new_sections(tailscale_device, capsys,
         '[keychain]\nitems = ["example-item"]\n'
         '[network]\nprovider = "tailscale"\n[network.tailscale]\nssh = true\n')
     table(device, ROWS)
-    seen: list[str] = []
-    allowed = tuple(os.path.realpath(p) for p in
-                    {PLUGIN_ROOT, sys.prefix, sys.base_prefix, sys.exec_prefix})
-
-    def hook(event, args):
-        if event in ("open", "os.listdir", "os.scandir") and args:
-            target = args[0]
-            if isinstance(target, (str, bytes, os.PathLike)):
-                seen.append(os.path.realpath(os.fsdecode(target)))
-
-    _HOOK_STATE["fn"] = hook
-    try:
-        audit_device.main(["--json", "--full"])
-    finally:
-        _HOOK_STATE["fn"] = None
+    audit_device.main(["--json", "--full"])
     out = capsys.readouterr().out
     sections = {f["section"] for f in json.loads(out)["findings"]}
     assert {"Claude Code", "AWS", "Keychain", "Network", "Workspace"} <= sections
-    leaked = [p for p in seen
-              if (p == REAL_HOME or p.startswith(REAL_HOME + os.sep))
-              and not p.startswith(allowed)]
-    assert seen
-    assert leaked == []
+    assert real_home_guard.seen
 
 
 # --------------------------------------------------------------------------

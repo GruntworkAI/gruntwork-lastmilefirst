@@ -8,6 +8,10 @@ The `device` fixture builds a fake machine under tmp_path: a home directory
 invented orgs, an SSH config with keys on disk, a gitconfig with an include,
 and a PATH holding only stub binaries. Out of the box the machine is clean;
 each test breaks one thing.
+
+The `real_home_guard` fixture is autouse: every test in this directory runs
+under an audit hook that fails it if anything touches a path under the real
+home (see the fixture for the events and the allowed prefixes).
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ for _p in (_SKILL / "scripts",
 # Captured before any test patches HOME.
 REAL_HOME = os.path.realpath(os.path.expanduser("~"))
 PLUGIN_ROOT = str(_SKILL.parents[2])
+WORKTREE_ROOT = str(_SKILL.parents[3])
 
 STUDIO = {
     "github_account": "ExampleStudio",
@@ -185,3 +190,118 @@ def _workspace_claude_md(request):
     """
     if "device" in request.fixturenames:
         request.getfixturevalue("device").write("Code/CLAUDE.md", "# Example workspace\n")
+
+
+# --- no real home -------------------------------------------------------------
+
+# Path arguments to watch, by audit event: the positions that name a path.
+_PATH_EVENTS = {
+    "open": (0,),
+    "os.listdir": (0,),
+    "os.scandir": (0,),
+    "os.mkdir": (0,),
+    "os.rename": (0, 1),
+    "os.chmod": (0,),
+    "os.remove": (0,),
+    "os.rmdir": (0,),
+    "shutil.copyfile": (0, 1),
+    "shutil.copymode": (0, 1),
+}
+
+
+def _under(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+class RealHomeGuard:
+    """Records every watched path; `leaks` are the ones under the real home that are
+    not allowed. The fake HOME, /tmp and /private/tmp are outside the real home, so
+    they pass without an entry; the worktree, the venv, and the Python prefixes are
+    inside it on a developer machine, so they are listed."""
+
+    allowed = tuple(dict.fromkeys(os.path.realpath(p) for p in (
+        WORKTREE_ROOT, PLUGIN_ROOT, sys.prefix, sys.base_prefix, sys.exec_prefix,
+        sys.base_exec_prefix, "/private/tmp", "/tmp")))
+
+    def __init__(self) -> None:
+        self.seen: list[tuple[str, str]] = []
+        self.leaks: list[tuple[str, str]] = []
+        self._busy = False
+
+    def _check(self, event: str, raw: object, argv_element: bool = False) -> None:
+        if isinstance(raw, int) or raw is None:
+            return  # a file descriptor, or no path
+        if not isinstance(raw, (str, bytes, os.PathLike)):
+            return
+        text = os.fsdecode(raw)
+        if argv_element:
+            text = os.path.expanduser(text) if text.startswith("~") else text
+            if not os.path.isabs(text):
+                return  # a word, not a path (relative paths resolve in an allowed cwd)
+        path = os.path.realpath(text)
+        self.seen.append((event, path))
+        if _under(path, REAL_HOME) and not any(_under(path, a) for a in self.allowed):
+            self.leaks.append((event, path))
+
+    def __call__(self, event: str, args: tuple) -> None:
+        if self._busy or not args:
+            return
+        self._busy = True
+        try:
+            if event in _PATH_EVENTS:
+                for i in _PATH_EVENTS[event]:
+                    if i < len(args):
+                        self._check(event, args[i])
+            elif event == "subprocess.Popen":
+                executable, argv, cwd = args[0], args[1], args[2]
+                self._check(event, executable, argv_element=True)
+                if isinstance(argv, (str, bytes, os.PathLike)):
+                    argv = [argv]
+                for element in argv or ():
+                    self._check(event, element, argv_element=True)
+                self._check(event, cwd)
+        finally:
+            self._busy = False
+
+
+_GUARD: dict = {"current": None}
+
+
+def _dispatch(event: str, args: tuple) -> None:
+    guard = _GUARD["current"]
+    if guard is not None:
+        guard(event, args)
+
+
+sys.addaudithook(_dispatch)  # audit hooks cannot be removed; this one is a no-op between tests
+
+
+def _leak_report(guard: RealHomeGuard) -> str:
+    shown = "\n".join(f"  {event}: {path}" for event, path in dict.fromkeys(guard.leaks))
+    guard.leaks.clear()  # reported once
+    return f"touched the real home ({REAL_HOME}):\n{shown}"
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):
+    """Report a leak in the test body as a test failure, not a teardown error."""
+    result = yield
+    guard = _GUARD["current"]
+    if guard is not None and guard.leaks:
+        pytest.fail(_leak_report(guard), pytrace=False)
+    return result
+
+
+@pytest.fixture(autouse=True)
+def real_home_guard():
+    """Fail any test in this directory that opens, lists, creates, renames, chmods,
+    removes, or copies a path under the real home, or starts a process whose
+    executable, argv, or cwd names one. Request it by name to read `.seen`."""
+    guard = RealHomeGuard()
+    _GUARD["current"] = guard
+    try:
+        yield guard
+    finally:
+        _GUARD["current"] = None
+    if guard.leaks:  # from fixture setup or teardown
+        pytest.fail(_leak_report(guard), pytrace=False)

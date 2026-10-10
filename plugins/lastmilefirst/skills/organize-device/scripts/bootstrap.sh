@@ -48,6 +48,18 @@ CLAUDE_INSTALLER_URL="https://claude.ai/install.sh"
 # Homebrew's documented installer, from https://brew.sh.
 HOMEBREW_INSTALLER_URL="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 
+# Where GitHub documents its own apt repository for gh. Some distributions
+# package a gh too old for the plugin (see GH_MIN_MAJOR below).
+GH_APT_REPO_URL="https://github.com/cli/cli/blob/trunk/docs/install_linux.md"
+
+# gh 2.40 added `gh auth token --user`, which the device audit and the
+# session-start check use to look up each account's login.
+GH_MIN_MAJOR=2
+GH_MIN_MINOR=40
+
+# Fetch limits for the installer downloads, in seconds.
+CURL_LIMITS="--connect-timeout 15 --max-time 300"
+
 PLATFORM=""
 SUDO=""
 WARNINGS=""
@@ -152,8 +164,11 @@ prepare_package_manager() {
     else
       say "Installing Homebrew (it may ask for your password and to press RETURN)."
       local installer
-      installer="$(curl -fsSL "$HOMEBREW_INSTALLER_URL")"
-      from_tty /bin/bash -c "$installer"
+      # shellcheck disable=SC2086  # CURL_LIMITS is split into flags on purpose
+      installer="$(curl -fsSL $CURL_LIMITS "$HOMEBREW_INSTALLER_URL")" \
+        || die "could not download the Homebrew installer; check the network and rerun."
+      from_tty /bin/bash -c "$installer" \
+        || die "the Homebrew installer did not finish; check the network and rerun."
       load_brew_env || die "Homebrew installed but brew was not found; open a new terminal and rerun."
       prefer_brew_path
       say "Homebrew installed. Add it to your shell profile as Homebrew's own output describes."
@@ -165,7 +180,8 @@ prepare_package_manager() {
     fi
     say "Refreshing the apt package list."
     # shellcheck disable=SC2086  # SUDO is empty or one word, on purpose
-    from_tty $SUDO apt-get update
+    from_tty $SUDO apt-get update \
+      || warn "apt-get update did not finish, so packages may come from an old list; check the network, then run 'sudo apt-get update' and rerun."
   fi
 }
 
@@ -228,6 +244,32 @@ ensure_python() {
   fi
 }
 
+# gh prints "gh version 2.23.0 (2023-02-14)"; this prints "2.23".
+gh_version() {
+  gh --version 2>/dev/null | sed -n 's/^gh version \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -n 1 || true
+}
+
+# Succeeds when gh is at least GH_MIN_MAJOR.GH_MIN_MINOR, or when its version
+# cannot be read (then there is nothing to warn about with confidence).
+gh_new_enough() {
+  local version major minor
+  version="$(gh_version)"
+  [ -n "$version" ] || return 0
+  major="${version%%.*}"
+  minor="${version#*.}"
+  if [ "$major" -gt "$GH_MIN_MAJOR" ]; then return 0; fi
+  if [ "$major" -lt "$GH_MIN_MAJOR" ]; then return 1; fi
+  [ "$minor" -ge "$GH_MIN_MINOR" ]
+}
+
+check_gh_version() {
+  [ "$PLATFORM" = "apt" ] || return 0
+  have gh || return 0
+  if ! gh_new_enough; then
+    warn "gh is $(gh_version), older than ${GH_MIN_MAJOR}.${GH_MIN_MINOR}, which the device audit needs to look up each account's login. Install a current gh from GitHub's apt repository (${GH_APT_REPO_URL})."
+  fi
+}
+
 install_baseline() {
   step "Baseline tools"
   local name cmd brew_pkg apt_pkg
@@ -247,7 +289,7 @@ install_baseline() {
         die "could not install git, which the plugin install needs."
       fi
       if [ "$name" = "gh" ] && [ "$PLATFORM" = "apt" ]; then
-        warn "could not install gh from this distribution's packages; add GitHub's apt repository (https://github.com/cli/cli/blob/trunk/docs/install_linux.md) and install gh."
+        warn "could not install gh from this distribution's packages; add GitHub's apt repository (${GH_APT_REPO_URL}) and install gh."
       else
         warn "could not install ${name}; install it by hand."
       fi
@@ -255,6 +297,7 @@ install_baseline() {
   done <<TABLE
 $BASELINE_TOOLS
 TABLE
+  check_gh_version
 }
 
 # ---------------------------------------------------------------------------
@@ -272,8 +315,11 @@ install_claude() {
   fi
   say "Installing Claude Code with the native installer."
   local installer
-  installer="$(curl -fsSL "$CLAUDE_INSTALLER_URL")"
-  bash -c "$installer" </dev/null
+  # shellcheck disable=SC2086  # CURL_LIMITS is split into flags on purpose
+  installer="$(curl -fsSL $CURL_LIMITS "$CLAUDE_INSTALLER_URL")" \
+    || die "could not download the Claude Code installer; check the network and rerun."
+  bash -c "$installer" </dev/null \
+    || die "the Claude Code installer did not finish; check the network and rerun."
   have claude || die "Claude Code installed but claude is not on PATH; open a new terminal and rerun."
   say "installed: $(claude --version 2>/dev/null || echo claude)"
 }

@@ -791,8 +791,10 @@ def check_identity_contracts(config: Dict) -> List[str]:
 def check_device(config: Dict) -> List[str]:
     """One line per org this machine cannot commit for (organize-device 3.6).
 
-    A `gh` login and an `includeIf` stanza per contract, both read locally,
-    cached for a day when clean. Silent on any failure.
+    A `gh` login and an `includeIf` stanza per contract, both read locally.
+    The gh probes share a 3 s budget inside the hook's 10 s; a clean answer is
+    cached for a day, an undetermined one for an hour, an alert never. Below
+    Python 3.11 it prints one WARNING a day instead. Silent on any failure.
     """
     if _device_alerts is None:
         return []

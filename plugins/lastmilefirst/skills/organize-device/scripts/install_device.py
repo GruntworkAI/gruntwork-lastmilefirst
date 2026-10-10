@@ -74,7 +74,6 @@ from audit_device import (  # noqa: E402
     Finding,
     TOOL_BINARY,
     expand,
-    load_contracts,
     parse_git_config,
     parse_ssh_config,
     read_git_config,
@@ -182,80 +181,7 @@ def _expand_args(argv: list[str]) -> list[str]:
     return [str(expand(a, home)) if a == "~" or a.startswith("~/") else a for a in argv]
 
 
-# --- classifiers: a `missing` remedy the skill can perform -------------------
-
-_PACKAGE_RE = re.compile(r"^(brew install|sudo apt-get install -y) [A-Za-z0-9@/_.+-]+$")
-_GIT_INCLUDE_RE = re.compile(
-    r'^Append to ~/\.gitconfig:\n'
-    r'(?P<stanza>\[includeIf "gitdir:(?P<gitdir>[^"\n]+)"\]\n\tpath = (?P<path>\S+))\n'
-    r'Create (?P<create>\S+) with:\n'
-    r'(?P<user>\[user\]\n\tname = [^\n]+\n\temail = [^\n]+)$'
-)
-_SSH_BLOCK_RE = re.compile(
-    r"^Append to ~/\.ssh/config:\n(?P<block>Host (?P<host>\S+)(?:\n    [^\n]+)+)$"
-)
-_CLAUDE_LINE_RE = re.compile(r"^claude plugin (marketplace add|install) \S+(?: \S+)*$")
 _CLONE_RE = re.compile(r"^(gh repo clone|git clone) \S+")
-
-
-def _package_action(command: str) -> Optional[Action]:
-    command = _strip_code(command)
-    if command == audit_device.CLAUDE_INSTALL:
-        return Action("package", lambda state: _run_command(["bash", "-c", command]))
-    if _PACKAGE_RE.match(command):
-        return Action("package", lambda state: _run_command(shlex.split(command)))
-    return None
-
-
-def _git_include_action(remedy: str) -> Optional[Action]:
-    match = _GIT_INCLUDE_RE.match(remedy.strip())
-    if not match:
-        return None
-    stanza, gitdir, path = match["stanza"], match["gitdir"], match["path"]
-    if match["create"] != path or not _safe_home_file(path) or not gitdir.startswith("~"):
-        return None
-    user_text = match["user"]
-    return Action("git_include",
-                  lambda state: apply_git_include(state, stanza,
-                                                  expand(gitdir.rstrip("/"), Path.home()),
-                                                  gitdir, path, user_text))
-
-
-def _ssh_block_action(remedy: str) -> Optional[Action]:
-    match = _SSH_BLOCK_RE.match(remedy.strip())
-    if not match:
-        return None
-    block, host = match["block"], match["host"]
-    return Action("ssh_block", lambda state: apply_ssh_block(state, host, block))
-
-
-def _claude_action(remedy: str) -> Optional[Action]:
-    lines = [_strip_code(l) for l in remedy.strip().splitlines() if l.strip()]
-    if not lines or not all(_CLAUDE_LINE_RE.match(l) for l in lines):
-        return None
-
-    def run(state: ApplyState) -> tuple[bool, str]:
-        done = []
-        for line in lines:
-            ok, detail = _run_command(shlex.split(line))
-            if not ok:
-                return False, detail
-            done.append(detail)
-        return True, "; ".join(done)
-
-    return Action("claude", run)
-
-
-def _clone_action(remedy: str) -> Optional[Action]:
-    first = _strip_code(remedy.strip().splitlines()[0]) if remedy.strip() else ""
-    if not _CLONE_RE.match(first) or "(specify)" in first:
-        return None  # an unknown owner is not a determined command
-
-    def run(state: ApplyState) -> tuple[bool, str]:
-        cwd = state.workspace_root if state.workspace_root.is_dir() else Path.home()
-        return _run_command(_expand_args(shlex.split(first)), cwd=cwd)
-
-    return Action("clone", run, confirm_each=True, dest=_clone_dest(shlex.split(first)))
 
 
 def _clone_dest(argv: list[str]) -> Optional[str]:
@@ -276,8 +202,8 @@ def _text(value: Any) -> Optional[str]:
 def _from_structured(action: Any) -> Optional[Action]:
     """An Action built from the audit's `Finding.action` dict, executed from its fields.
 
-    Returns None for an unknown kind or a malformed payload, so the step falls
-    back to the remedy-text path (and from there, most likely, to `you`).
+    Returns None for an unknown kind or a malformed payload, so the step is a
+    `you` step.
     """
     if not isinstance(action, dict):
         return None
@@ -348,31 +274,13 @@ def _from_structured(action: Any) -> Optional[Action]:
 def classify(finding: Finding) -> Optional[Action]:
     """The action for a `missing` finding whose result is fully determined, else None.
 
-    A structured `finding.action` from the audit is preferred and executed from
-    its fields. Without one, only allow-listed remedy text shapes qualify (a
-    fallback for audits that predate the field). Anything else, including
-    every `wrong` finding, is a `you` step.
+    The audit's structured `finding.action` is executed from its fields. A
+    `missing` finding without one, or with an unknown or malformed one, is a
+    `you` step, as is every `wrong` finding. Remedy prose is never parsed.
     """
     if finding.finding_class != MISSING:
         return None
-    structured = getattr(finding, "action", None)
-    if structured is not None:
-        return _from_structured(structured)
-    if not finding.remedy:
-        return None
-    section = finding.section or ""
-    remedy = finding.remedy
-    if section == "Tools":
-        return _package_action(remedy)
-    if section == "git identity":
-        return _git_include_action(remedy)
-    if section == "SSH":
-        return _ssh_block_action(remedy)
-    if section == "Claude Code":
-        return _claude_action(remedy)
-    if section == "Workspace":
-        return _clone_action(remedy)
-    return None
+    return _from_structured(getattr(finding, "action", None))
 
 
 def _rank(finding: Finding, part: str, action: Optional[Action]) -> int:
@@ -381,11 +289,6 @@ def _rank(finding: Finding, part: str, action: Optional[Action]) -> int:
     if isinstance(structured, dict) and structured.get("kind") == "clone":
         return _RANK_CLONE
     if isinstance(structured, dict) and structured.get("kind") == "package":
-        return _RANK_PACKAGE
-    if section == "Workspace" and finding.remedy and \
-            _CLONE_RE.match(_strip_code(finding.remedy.strip().splitlines()[0])):
-        return _RANK_CLONE  # clones last, runnable or not
-    if action is not None and action.kind == "package":
         return _RANK_PACKAGE
     if section == "SSH" and part == "you":
         return _RANK_KEY  # key generation and upload come before the alias that uses the key
@@ -467,11 +370,13 @@ def _backup(state: ApplyState, path: Path, mode: Optional[int] = None) -> Option
 
 def _append(path: Path, text: str) -> None:
     """Append `text` as its own paragraph; existing bytes are left exactly as they were."""
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    # surrogateescape: a stray non-UTF-8 byte elsewhere in the file does not block the append
+    existing = path.read_text(encoding="utf-8", errors="surrogateescape") \
+        if path.exists() else ""
     lead = ""
     if existing:
         lead = "\n" if existing.endswith("\n") else "\n\n"
-    with path.open("a", encoding="utf-8") as handle:
+    with path.open("a", encoding="utf-8", errors="surrogateescape") as handle:
         handle.write(f"{lead}{text}\n")
 
 
@@ -482,12 +387,11 @@ def apply_git_include(state: ApplyState, stanza: str, org_dir: Path, gitdir: str
     gitconfig = home / ".gitconfig"
     include = expand(path_text, home)
 
-    existing = read_git_config(gitconfig) or []
-    for current in existing:
-        target = audit_device._gitdir_target(current)
-        if target is not None and audit_device._gitdir_matches(target, org_dir, home):
-            return False, (f"~/.gitconfig already has an includeIf for {gitdir}; left alone "
-                           f"(rerun the audit)")
+    # Every user-level file git reads (~/.gitconfig and $XDG_CONFIG_HOME/git/config),
+    # so a stanza kept in either is never duplicated.
+    if audit_device.has_include_for(audit_device.read_user_git_stanzas(home), org_dir, home):
+        return False, (f"a user-level git config already has an includeIf for {gitdir}; "
+                       f"left alone (rerun the audit)")
 
     want = parse_git_config(user_text)
     created = False
@@ -593,26 +497,8 @@ def apply_manifest_copy(source: Path) -> tuple[bool, str]:
 # --------------------------------------------------------------------------
 
 def build_context(manifest_arg: Optional[Path], root_arg: Optional[Path]) -> AuditContext:
-    """The same context audit_device.main builds, cheap mode. Raises ManifestError.
-
-    Uses audit_device.build_context. The copy below is a fallback for an
-    audit_device that predates it or changes its keywords (U3 and U4 were built
-    in parallel, 2026-10-09); it mirrors main() and would drift if main() did.
-    """
-    shared = getattr(audit_device, "build_context", None)
-    if callable(shared):
-        try:
-            return shared(manifest=manifest_arg, workspace_root=root_arg)
-        except TypeError:
-            pass  # a different signature than expected; use the local copy
-    home = Path.home()
-    manifest_path = expand(str(manifest_arg), home) if manifest_arg else \
-        default_manifest_path(home=home)
-    manifest = load_manifest(manifest_path if manifest_arg else None)
-    root = expand(str(root_arg), home) if root_arg else expand(manifest.workspace_root, home)
-    return AuditContext(home=home, workspace_root=root, manifest=manifest,
-                        manifest_path=manifest_path, full=False, liveness=False,
-                        contracts=load_contracts(root))
+    """The context audit_device.main builds, cheap mode. Raises ManifestError."""
+    return audit_device.build_context(manifest=manifest_arg, workspace_root=root_arg)
 
 
 def build_steps(ctx: AuditContext, manifest_arg: Optional[Path]) -> list[Step]:
@@ -702,8 +588,8 @@ def apply_steps(ctx: AuditContext, steps: list[Step], yes: bool = False,
                 continue
         try:
             ok, detail = step.action.run(state)
-        except OSError as exc:
-            ok, detail = False, f"{exc.strerror or exc}"
+        except (OSError, ValueError) as exc:  # ValueError covers UnicodeDecodeError
+            ok, detail = False, f"{getattr(exc, 'strerror', None) or exc}"
         print(f"{step.number}. {'done' if ok else 'failed'}: {detail}")
         if ok:
             done += 1
@@ -997,8 +883,16 @@ def snapshot(manifest_arg: Optional[Path], root_arg: Optional[Path], force: bool
 # entry point
 # --------------------------------------------------------------------------
 
+class _Parser(argparse.ArgumentParser):
+    """argparse exits 2 on a bad argument; this exits 3 (could not run), as the audit does."""
+
+    def error(self, message: str) -> None:  # type: ignore[override]
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_CANNOT_RUN, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = audit_device._Parser(
+    parser = _Parser(
         description="Print the device checklist, perform its script steps, or write a "
                     "device manifest from this machine.",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -15,9 +15,9 @@ import pytest
 
 import audit_device
 import install_device
-from audit_device import MISSING, missing, wrong
+from audit_device import missing, wrong
 from device_manifest import default_manifest_path, load_manifest
-from .conftest import CLIENT, GH_STUB, PLUGIN_ROOT, REAL_HOME, SSH_CONFIG
+from .conftest import CLIENT, GH_STUB, SSH_CONFIG
 
 CLIENT_INCLUDE = '[includeIf "gitdir:~/Code/example-client/"]\n' \
                  "\tpath = ~/.gitconfig-example-client"
@@ -219,7 +219,10 @@ def test_apply_creates_include_and_appends_stanza_with_backup(device, capsys, mo
 
 
 def test_apply_keeps_an_existing_matching_include_file(device, capsys, monkeypatch):
-    device.gitconfig(GLOBAL_ONLY)  # the include file from conftest stays
+    device.gitconfig(GLOBAL_ONLY)
+    # same name and email as the contract, plus a line the canonical text lacks, so a
+    # rewrite (even to the "right" content) would show
+    device.write(".gitconfig-example-client", CLIENT_USER + "\n[commit]\n\tgpgsign = true\n")
     original = (device.home / ".gitconfig-example-client").read_bytes()
     answer(monkeypatch, "y\n")
     code, out, _ = run(capsys, "--apply")
@@ -240,6 +243,64 @@ def test_apply_refuses_stanza_when_include_file_disagrees(device, capsys, monkey
     assert code == 1
     assert "failed: ~/.gitconfig-example-client already exists with a different" in out
     assert tree(device.home) == before
+
+
+def test_apply_does_not_duplicate_a_stanza_kept_in_the_xdg_config(device, capsys, monkeypatch):
+    """git also reads $XDG_CONFIG_HOME/git/config; a stanza there satisfies the org."""
+    device.gitconfig(GLOBAL_ONLY)
+    device.write(".config/git/config", CLIENT_INCLUDE + "\n")
+    before = tree(device.home)
+    answer(monkeypatch, "", tty=False)
+    code, out, _ = run(capsys, "--apply", "--yes")
+    assert code == 0, out
+    assert "git identity (example-client)" not in out
+    assert "Nothing to do" in out
+    assert tree(device.home) == before
+    assert backups(device.home, ".gitconfig") == []
+
+
+def test_apply_writer_refuses_when_the_xdg_config_already_has_the_stanza(device):
+    device.gitconfig(GLOBAL_ONLY)
+    device.write(".config/git/config", CLIENT_INCLUDE + "\n")
+    (device.home / ".gitconfig-example-client").unlink()
+    before = tree(device.home)
+    state = install_device.ApplyState(stamp="20260101T000000", workspace_root=device.workspace)
+    ok, detail = install_device.apply_git_include(
+        state, CLIENT_INCLUDE, device.workspace / "example-client", "~/Code/example-client/",
+        "~/.gitconfig-example-client", CLIENT_USER)
+    assert not ok and "already has an includeIf" in detail
+    assert tree(device.home) == before
+
+
+def test_apply_appends_past_a_non_utf8_byte(device, capsys, monkeypatch):
+    original = GLOBAL_ONLY.encode() + b"# caf\xe9 (latin-1, not UTF-8)\n"
+    (device.home / ".gitconfig").write_bytes(original)
+    (device.home / ".gitconfig-example-client").unlink()
+    answer(monkeypatch, "", tty=False)
+    code, out, _ = run(capsys, "--apply", "--yes")
+    assert code == 0, out
+    assert "done: created ~/.gitconfig-example-client; appended the includeIf" in out
+    assert "1 done, 0 failed, 0 skipped" in out
+    assert (device.home / ".gitconfig").read_bytes() == \
+        original + b"\n" + CLIENT_INCLUDE.encode() + b"\n"
+
+
+def test_a_step_raising_valueerror_is_recorded_failed_and_the_summary_prints(
+        device, capsys, monkeypatch):
+    def boom(state, *args):
+        raise UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid continuation byte")
+
+    break_client_include(device)
+    device.unstub("jq")
+    log = device.home.parent / "brew.log"
+    device.stub("brew", f'#!/bin/sh\necho "$@" >> {log}\nexit 0\n')
+    monkeypatch.setattr(install_device, "apply_git_include", boom)
+    answer(monkeypatch, "", tty=False)
+    code, out, _ = run(capsys, "--apply", "--yes")
+    assert code == 1
+    assert "failed: 'utf-8' codec can't decode" in out
+    assert log.read_text(encoding="utf-8") == "install jq\n"  # the other step still ran
+    assert "1 done, 1 failed, 0 skipped" in out
 
 
 def test_apply_never_touches_a_wrong_finding(device, capsys, monkeypatch):
@@ -349,12 +410,17 @@ def test_failed_package_install_is_reported_and_exits_1(device, capsys, monkeypa
     assert code == 1 and "failed: brew install jq exited 7" in out
 
 
+def clone_finding(org, owner, repo, command=None, you=None, action=True):
+    dest = f"~/Code/{org}/{repo}"
+    command = command or f"gh repo clone {owner}/{repo} {dest}"
+    return missing("Workspace", org, f"{repo} is not cloned.", command, you=you,
+                   action={"kind": "clone", "command": command, "dest": dest} if action else None)
+
+
 def workspace_section(ctx):
     return [
-        missing("Workspace", "example-studio", "example-alpha is not cloned.",
-                "gh repo clone ExampleStudio/example-alpha ~/Code/example-studio/example-alpha"),
-        missing("Workspace", "example-studio", "example-beta is not cloned.",
-                "gh repo clone ExampleStudio/example-beta ~/Code/example-studio/example-beta"),
+        clone_finding("example-studio", "ExampleStudio", "example-alpha"),
+        clone_finding("example-studio", "ExampleStudio", "example-beta"),
     ]
 
 
@@ -391,23 +457,31 @@ def test_declining_the_first_question_skips_every_clone(device, capsys, monkeypa
     assert not log.exists()
 
 
-def test_clone_remedy_shapes(device, capsys, monkeypatch):
+def test_clone_action_shapes(device, capsys, monkeypatch):
     def section(ctx):
         return [
-            missing("Workspace", "example-client", "example-gamma is not cloned.",
-                    "git clone git@github-example-client:example-client-bot/example-gamma.git "
-                    "~/Code/example-client/example-gamma"),
-            missing("Workspace", "example-side", "example-delta is not cloned.",
-                    "gh repo clone (specify)/example-delta ~/Code/example-side/example-delta",
-                    you="The owner is unknown; run /run-organize-orgs first."),
+            clone_finding("example-client", None, "example-gamma",
+                          command="git clone git@github-example-client:example-client-bot/"
+                                  "example-gamma.git ~/Code/example-client/example-gamma"),
+            # the audit attaches no action when the owner is unknown
+            clone_finding("example-side", None, "example-delta",
+                          command="gh repo clone (specify)/example-delta "
+                                  "~/Code/example-side/example-delta",
+                          you="The owner is unknown; run /run-organize-orgs first.",
+                          action=False),
+            # and an action that still holds the placeholder is refused, too
+            clone_finding("example-side", None, "example-epsilon",
+                          command="gh repo clone (specify)/example-epsilon "
+                                  "~/Code/example-side/example-epsilon"),
         ]
 
     monkeypatch.setattr(audit_device, "SECTIONS", [*audit_device.SECTIONS, ("Workspace", section)])
     _, out, _ = run(capsys)
     assert step_lines(out) == [
-        "1. [script] Workspace (example-client): example-gamma is not cloned.",
+        "1. [you] Workspace (example-side): example-delta is not cloned.",
         "2. [you] Workspace (example-side): example-delta is not cloned.",
-        "3. [you] Workspace (example-side): example-delta is not cloned.",
+        "3. [script] Workspace (example-client): example-gamma is not cloned.",
+        "4. [you] Workspace (example-side): example-epsilon is not cloned.",
     ]
 
 
@@ -422,28 +496,28 @@ def test_a_note_with_a_handoff_is_an_optional_you_step(device, capsys, monkeypat
     assert "      example-net up" in out
 
 
-def test_claude_plugin_remedy_is_a_script_step(device, capsys, monkeypatch):
+def test_remedy_prose_without_an_action_is_a_you_step(device, capsys, monkeypatch):
+    """A runnable-looking remedy is not executed unless the audit attached an action."""
     log = device.home.parent / "claude.log"
     device.stub("claude", f'#!/bin/sh\necho "$@" >> {log}\nexit 0\n')
+    device.stub("brew", f'#!/bin/sh\necho "$@" >> {log}\nexit 0\n')
 
-    def claude_section(ctx):
+    def section(ctx):
         return [
             missing("Claude Code", None, "Marketplace example/market is not known.",
                     "claude plugin marketplace add example/market"),
-            missing("Claude Code", None, "Plugin example@market is not enabled.",
-                    "claude plugin install example@market"),
-            wrong("Claude Code", None, "Something exists and is wrong.",
-                  "claude plugin install example-other@market"),
+            missing("Tools", None, "example-tool is not installed.", "brew install example-tool"),
+            missing("Workspace", "example-studio", "example-eta is not cloned.",
+                    "gh repo clone ExampleStudio/example-eta ~/Code/example-studio/example-eta"),
         ]
 
-    monkeypatch.setattr(audit_device, "SECTIONS",
-                        [*audit_device.SECTIONS, ("Claude Code", claude_section)])
-    answer(monkeypatch, "y\n")
-    code, out, _ = run(capsys, "--apply")
-    assert code == 0
-    assert "2 script steps, 1 you step." in out
-    calls = [l for l in log.read_text(encoding="utf-8").splitlines() if l.startswith("plugin")]
-    assert calls == ["plugin marketplace add example/market", "plugin install example@market"]
+    monkeypatch.setattr(audit_device, "SECTIONS", [*audit_device.SECTIONS, ("Extra", section)])
+    answer(monkeypatch, "", tty=False)
+    code, out, _ = run(capsys, "--apply", "--yes", "--clone", "example-eta")
+    assert code == 0, out
+    assert all("[you]" in l for l in step_lines(out)) and len(step_lines(out)) == 3
+    assert "No script steps to run." in out
+    assert not log.exists() or "plugin" not in log.read_text(encoding="utf-8")
 
 
 def test_manifest_copy_only_when_none_exists(device, capsys, monkeypatch, tmp_path):
@@ -606,51 +680,18 @@ def test_snapshot_without_a_network_package_writes_none(device, monkeypatch, tmp
 # no real HOME, every mode
 # --------------------------------------------------------------------------
 
-_HOOK_STATE: dict = {"fn": None}
-
-
-def _dispatch(event, args):
-    fn = _HOOK_STATE["fn"]
-    if fn is not None:
-        fn(event, args)
-
-
-sys.addaudithook(_dispatch)
-
-
-def watch_real_home(action) -> None:
-    seen: list[str] = []
-    allowed = tuple(os.path.realpath(p) for p in
-                    {PLUGIN_ROOT, sys.prefix, sys.base_prefix, sys.exec_prefix})
-
-    def hook(event, args):
-        if event in ("open", "os.listdir", "os.scandir", "subprocess.Popen") and args:
-            target = args[0]
-            if isinstance(target, (str, bytes, os.PathLike)):
-                seen.append(os.path.realpath(os.fsdecode(target)))
-
-    _HOOK_STATE["fn"] = hook
-    try:
-        action()
-    finally:
-        _HOOK_STATE["fn"] = None
-    leaked = [p for p in seen
-              if (p == REAL_HOME or p.startswith(REAL_HOME + os.sep))
-              and not p.startswith(allowed)]
-    assert seen, "the audit hook recorded nothing; the test is not observing"
-    assert leaked == []
-
-
 @pytest.mark.parametrize("mode", ["checklist", "apply-no", "apply-yes", "snapshot"])
-def test_no_real_home_path_is_read_or_written(device, capsys, monkeypatch, mode):
+def test_no_real_home_path_is_read_or_written(device, capsys, monkeypatch, mode,
+                                              real_home_guard):
     break_client_include(device)
     device.ssh_config(SSH_WITHOUT_CLIENT)
     seed_snapshot_machine(device)
     argv = {"checklist": [], "apply-no": ["--apply"], "apply-yes": ["--apply"],
             "snapshot": ["--snapshot"]}[mode]
     answer(monkeypatch, "n\n" if mode == "apply-no" else "y\n")
-    watch_real_home(lambda: install_device.main(argv))
+    install_device.main(argv)  # the conftest guard fails the test on any real-home access
     capsys.readouterr()
+    assert real_home_guard.seen, "the audit hook recorded nothing; the test is not observing"
     if mode == "apply-yes":
         assert (device.home / ".gitconfig-example-client").is_file()
 

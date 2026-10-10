@@ -74,9 +74,11 @@ Because the manifest lives outside your workspace, cloning your workspace does n
 The scripts behind the command:
 
 ```bash
-python3 scripts/audit_device.py [--audit] [--json] [--full] [--no-liveness] [--manifest PATH] [--workspace-root PATH]
-python3 scripts/install_device.py [--apply | --snapshot] [--yes] [--clone DIR_NAME]... [--force] [--manifest PATH] [--workspace-root PATH]
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/organize-device/scripts/audit_device.py" [--audit] [--json] [--full] [--no-liveness] [--manifest PATH] [--workspace-root PATH]
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/organize-device/scripts/install_device.py" [--apply | --snapshot] [--yes] [--clone DIR_NAME]... [--force] [--manifest PATH] [--workspace-root PATH]
 ```
+
+Flags go to the script that owns them: `--json`, `--full`, and `--no-liveness` to the audit; `--install`, `--apply`, `--yes`, `--clone`, `--snapshot`, and `--force` to the installer; `--manifest` and `--workspace-root` to either.
 
 Both scripts need Python 3.11 or newer. `--audit` is accepted as another way of asking for the default audit, and `--install` the same for the default checklist. `--no-liveness` keeps `--full` off the network.
 
@@ -88,6 +90,8 @@ Both scripts need Python 3.11 or newer. `--audit` is accepted as another way of 
 | 1 | at least one `wrong` finding (ACTION REQUIRED) |
 | 2 | only `missing` findings (WARNING) |
 | 3 | the audit could not run: Python older than 3.11, a manifest that is not valid, or a bad argument |
+
+Exit codes 1 and 2 mean the audit ran and reported findings, not that the command failed, so read its output and present the findings rather than reporting an error.
 
 `install_device.py` exits 0 when it finished, found nothing to do, or was declined; 1 when an `--apply` step failed; and 3 when it could not run (the same three causes, plus `--snapshot` refusing to overwrite a manifest). `--yes` works only with `--apply`, `--clone` only with `--yes`, and `--force` only with `--snapshot`.
 
@@ -104,12 +108,12 @@ curl -fsSL https://raw.githubusercontent.com/GruntworkAI/gruntwork-lastmilefirst
 It also runs as a downloaded file (`bash bootstrap.sh`). It is the only shell script in the skill, because Python is one of the things it installs. In order, it:
 
 1. Detects the platform. On macOS it installs Homebrew if it is absent. On Linux with `apt` it refreshes the package list. On any other Linux it stops and names the package manager it found. On Windows (including the older WSL1) it stops and points you to WSL2.
-2. Installs the baseline tools that are missing: git, gh, jq, python3, node, ripgrep. python3 counts as present only at version 3.11 or newer, because the audit needs it. On macOS an older one is replaced by Homebrew's, which is put first on PATH; on apt-based Linux it warns, names the version it found, and leaves the upgrade to you.
+2. Installs the baseline tools that are missing: git, gh, jq, python3, node, ripgrep. python3 counts as present only at version 3.11 or newer, because the audit needs it. On macOS an older one is replaced by Homebrew's, which is put first on PATH; on apt-based Linux it warns, names the version it found, and leaves the upgrade to you. There it also warns when gh is older than 2.40 (the release the audit needs to look up each account's login) and points to GitHub's own apt repository, which it does not add for you.
 3. Installs Claude Code with Anthropic's native installer if `claude` is not already on the machine.
 4. Adds the lastmilefirst marketplace and installs the plugin, unless both are already there. If either command does not complete, it prints the two commands for you to run.
 5. Prints the handoff.
 
-Every step checks before it acts, so rerunning it on a set-up machine changes nothing. It knows nothing about your orgs, workspace, or accounts. The only coordinates it names are the public marketplace's.
+Every step checks before it acts, so rerunning it on a set-up machine changes nothing. A failed download or installer run stops with a line saying what failed, and a failed `apt-get update` is a warning, so the run never ends at a bare prompt. Warnings are repeated in the handoff. It knows nothing about your orgs, workspace, or accounts. The only coordinates it names are the public marketplace's.
 
 ### The handoff
 
@@ -257,7 +261,7 @@ Contributions are welcome. A provider is one Python module, `scripts/network/<na
 
 `scripts/network/__init__.py` exposes `available()`, the shipped provider names (it lists files and imports nothing), and `load(name)`, which imports a provider only if its name is in that list, so a manifest value can never become an arbitrary import. A provider that raises an error becomes one `wrong` finding naming the provider, and the rest of the audit carries on.
 
-A `missing` finding can also carry an optional `action`: a small dictionary with a `kind` and the parameters needed, so the installer can run the step without reading the remedy text. The installer understands six kinds: `package`, `git_include`, `ssh_block`, `plugin_marketplace_add`, `plugin_install`, and `clone`. A finding with any other kind (or none) stays a `you` step, so a provider that sets no action is safe by default.
+A `missing` finding can also carry an optional `action`: a small dictionary with a `kind` and the parameters needed, so the installer can run the step without reading the remedy text. The installer understands six kinds: `package`, `git_include`, `ssh_block`, `plugin_marketplace_add`, `plugin_install`, and `clone`. A finding with any other kind (or none) stays a `you` step, so a provider that sets no action is safe by default. The audit also emits a seventh kind, `plugin_enable`, for a plugin that is installed but disabled; the installer does not run it, and it stays a `you` step because enabling changes a setting you already have.
 
 The module's docstring documents its manifest keys, and that docstring is what the table above is built from. Tests follow the existing pattern: a stub of the tool's binary on PATH and one test per finding. A provider reads names and states and never a key, token, or auth key. A contribution is a pull request with one module, one test file, and one row in the table.
 
@@ -269,7 +273,7 @@ Session start runs one cheap device check. For each identity contract, it looks 
 ACTION REQUIRED: this machine cannot commit as <account> for <org>; run /run-organize-device
 ```
 
-Only an absent stanza alerts here; a stanza that exists but is wrong is left to the full audit. A clean result is cached for a day, and a failing one is checked again next session, so the alert stops as soon as the fix is in. The check stays silent when `gh` is not installed, when Python is older than 3.11, when there are no contracts, or when `gh` does not answer in time. Tools and the network provider do not alert at session start, because a missing optional tool is not urgent.
+Only an absent stanza alerts here; a stanza that exists but is wrong is left to the full audit. A clean result is cached for a day, and a failing one is checked again next session, so the alert stops as soon as the fix is in. The check stays silent when `gh` is not installed, when there are no contracts, or when `gh` does not answer in time. When the hook's Python is older than 3.11, it prints one WARNING naming the version instead of running the check, at most once a day. Tools and the network provider do not alert at session start, because a missing optional tool is not urgent.
 
 ## Platforms
 
