@@ -76,6 +76,12 @@ try:
 except ImportError:
     _identity_findings = None
 
+# The device check imports organize-device lazily, inside the call.
+try:
+    from device_check import device_alerts as _device_alerts
+except Exception:
+    _device_alerts = None
+
 # Path to todos-summary scripts (sibling skill)
 TODOS_SUMMARY_SCRIPTS = Path(__file__).parent.parent.parent / "skills" / "todos-summary" / "scripts"
 
@@ -782,6 +788,24 @@ def check_identity_contracts(config: Dict) -> List[str]:
     return alerts
 
 
+def check_device(config: Dict) -> List[str]:
+    """One line per org this machine cannot commit for (organize-device 3.6).
+
+    A `gh` login and an `includeIf` stanza per contract, both read locally,
+    cached for a day when clean. Silent on any failure.
+    """
+    if _device_alerts is None:
+        return []
+    try:
+        return _device_alerts(
+            config,
+            lambda: get_scoped_state("global", None),
+            lambda field, value: update_scoped_state("global", None, field, value),
+        )
+    except Exception:
+        return []
+
+
 def _get_last_commit_ts(repo_path: Path) -> int:
     """
     Return Unix timestamp of the latest commit in repo_path, or 0 if the
@@ -1203,6 +1227,10 @@ def main() -> None:
         identity_alerts = check_identity_contracts(config)
         if identity_alerts:
             alerts.extend(identity_alerts)
+
+    # Check 15b: Can this machine commit as each contract's account?
+    if config:
+        alerts.extend(check_device(config))
 
     # Check 16: Workspace-level project summary (summary or full)
     if config:
