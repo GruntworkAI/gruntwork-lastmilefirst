@@ -1,8 +1,8 @@
 ---
 title: organize-device, a device bootstrap and audit skill, replacing the stack-wisdom setup scripts
-version: 1.6
+version: 1.7
 date: 2026-10-09
-status: approved
+status: built; in review
 type: feat
 component: skills/organize-device/{SKILL.md,scripts/bootstrap.sh,scripts/audit_device.py,scripts/device_manifest.py,scripts/install_device.py,scripts/network/,tests/}, commands/run-organize-device.md, hooks/scripts/session_start.py, hooks/tests/, README.md, CHANGELOG.md; plus a cleanup PR on gruntwork-stack-wisdom/setup-scripts/
 target_version: 0.38.0
@@ -17,7 +17,7 @@ refs:
 
 # organize-device, a device bootstrap and audit skill, replacing the stack-wisdom setup scripts
 
-Delta: 1.6 simplifies the write rule to two finding classes: `missing` (apply may create) and `wrong` (ACTION REQUIRED, never auto-fixed, replacement text shown); the marker-comment rewrite rule is dropped, so `--apply` only ever creates. 1.5 stated the existing-machine behavior (3.9): append-only means a wrong existing stanza is a `you` step with the replacement text, and `--apply` rewrites only files it created and marked; verification step 2 corrected to match. 1.4 closed decision 8.3 (signing is reported, not required, in v1; a `signing` field on the identity contract is the follow-up) and marks the plan approved for build. 1.3 closed decision 8.2: `--install` prints a complete checklist and writes nothing; `--install --apply` performs the deterministic steps after one confirmation. 1.2 settled the manifest location at `~/.config/lastmilefirst/device.toml` (decision 8.1 closed: it describes the device, so it lives outside any workspace) and adds how a new machine receives it. 1.1 made the network section optional and provider-based (3.4, 3.8). Tailscale is the one provider shipped in v1, off unless the manifest names it, behind a small interface that a contributor can implement for another tool. Earlier decisions stand: same plugin, not a new marketplace entry; nothing personal in the plugin; Mac and Linux both supported, Windows detected and declined; mobile SSH guide and config wizard dropped.
+Delta: 1.7 records the behavior rules decided during the build that the code review (PR #39) found undocumented here, as section 9. 1.6 simplified the write rule to two finding classes: `missing` (apply may create) and `wrong` (ACTION REQUIRED, never auto-fixed, replacement text shown); the marker-comment rewrite rule is dropped, so `--apply` only ever creates. 1.5 stated the existing-machine behavior (3.9): append-only means a wrong existing stanza is a `you` step with the replacement text, and `--apply` rewrites only files it created and marked; verification step 2 corrected to match. 1.4 closed decision 8.3 (signing is reported, not required, in v1; a `signing` field on the identity contract is the follow-up) and marks the plan approved for build. 1.3 closed decision 8.2: `--install` prints a complete checklist and writes nothing; `--install --apply` performs the deterministic steps after one confirmation. 1.2 settled the manifest location at `~/.config/lastmilefirst/device.toml` (decision 8.1 closed: it describes the device, so it lives outside any workspace) and adds how a new machine receives it. 1.1 made the network section optional and provider-based (3.4, 3.8). Tailscale is the one provider shipped in v1, off unless the manifest names it, behind a small interface that a contributor can implement for another tool. Earlier decisions stand: same plugin, not a new marketplace entry; nothing personal in the plugin; Mac and Linux both supported, Windows detected and declined; mobile SSH guide and config wizard dropped.
 
 ## 1. Problem
 
@@ -210,7 +210,19 @@ Windows beyond detection and the WSL2 pointer. Dotfiles (shell, editor, prompt).
 2. **What `--install` runs versus prints.** Closed 2026-10-09: both, split by flag. `--install` is the checklist generator and writes nothing; `--install --apply` runs the `script`-tagged steps after one confirmation. The checklist is useful on its own (notes, a second person, a machine where you do not want the skill writing), and the apply path still removes the hand errors.
 3. **Commit signing as a contract field.** Closed 2026-10-09: report only in v1. The audit prints, per org, whether signing is on and which key path it uses, and flags nothing. Follow-up (its own todo, organize-orgs): add a `signing` field to the identity contract (`"signing": {"format": "ssh", "key": "~/.ssh/<name>.pub"}` or absent), after which the device audit can require it and `--apply` can write the signing lines into the org's include file. Whether an org signs is a per-org fact, so the manifest is not its home.
 
+## 9. Decided during the build (2026-10-09)
+
+Rules the implementation carries that sections 3 to 5 did not state. Each was decided in conversation during the build and is confirmed here.
+
+1. **The default org needs no includeIf.** The one contract without an `ssh_host_alias` commits with the global identity, which the audit checks against that contract separately. The audit and the Overwatch check both exempt it. Section 3.4's "for every org directory with a contract" reads "for every non-default org directory".
+2. **Non-interactive apply.** Claude's shell has no terminal, so `--apply` alone prompts and reads "no" there. `--apply --yes` performs the `script` steps without the prompt; clones run under `--yes` only when named with `--clone <dir-name>`; `--yes` needs `--apply` and `--clone` needs `--yes`. In a person's own terminal `--apply` prompts once and then once per clone.
+3. **Python 3.11 floor.** The skill's scripts use the standard-library TOML reader. The audit and installer exit 3 below 3.11 with one line saying so; the bootstrap installs Homebrew's python on macOS and warns with a pointer on apt. The Overwatch check prints one cached WARNING per day naming the version when the hook's interpreter is below the floor, rather than going silent (review finding #6; the earlier silent design is withdrawn).
+4. **Structured actions.** A `missing` finding may carry an `action` dict (kinds: package, git_include, ssh_block, plugin_marketplace_add, plugin_install, clone, and plugin_enable which the installer leaves to a person). The installer executes from the action and no longer classifies steps by matching remedy prose.
+5. **Manifest-less audit and transfer.** With no manifest the audit runs on the contracts alone; `--manifest <path>` reads one from anywhere; `--snapshot` writes one, names only.
+
 ## Change log
+
+- 1.7 (2026-10-09): section 9 records the five build-time rules the review flagged as undocumented (#19, #20, #21) and closes the #6 question as a daily WARNING.
 
 - 1.6 (2026-10-09): two finding classes, `missing` and `wrong`; apply creates only; marker rule dropped.
 - 1.5 (2026-10-09): existing-machine behavior stated as 3.9; marker-comment rule for rewrites; verification step 2 corrected.

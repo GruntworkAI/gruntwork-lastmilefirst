@@ -1,0 +1,34 @@
+# Device manifest for /run-organize-device.
+#
+# Copy to ~/.config/lastmilefirst/device.toml (or $XDG_CONFIG_HOME/lastmilefirst/device.toml)
+# and edit. Every table and key is optional; a missing key takes its default.
+#
+# This file holds only facts about the device that have no other home. Accounts,
+# commit emails, and SSH host aliases belong in each org's .claude/org.json
+# identity block; do not copy them here. Record names of things only, never a
+# key, token, password, or credential value.
+
+[workspace]
+root = "~/Code"
+
+[tools]
+extra = []                                  # beyond the baseline, e.g. ["uv", "terraform", "awscli"]
+
+[claude]
+marketplaces = ["GruntworkAI/gruntwork-lastmilefirst"]
+plugins = ["lastmilefirst@gruntwork-lastmilefirst"]
+hooks = ["pre-commit", "pre-push"]          # scan-secrets hooks expected installed
+
+[aws]
+profiles = []                               # names only, e.g. ["default"]
+default_profile_is = "(specify)"            # a label the audit repeats when a client profile is in play
+
+[keychain]
+items = []                                  # names only; presence checked, value never read
+
+[network]
+provider = "none"                           # "none" (default) or a shipped provider name; v1 ships "tailscale"
+
+[network.tailscale]                         # read only when provider = "tailscale"
+tailnet = "(specify)"                       # the tailnet name tailscale status reports
+ssh = true                                  # Tailscale SSH expected on this device

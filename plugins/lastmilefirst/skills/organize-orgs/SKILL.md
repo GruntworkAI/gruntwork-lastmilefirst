@@ -260,6 +260,13 @@ contributions are all normal. Only an owner claimed by a *different GitHub
 account* blocks. Claims key on account rather than org directory, so two
 workspace orgs sharing one account is not a conflict.
 
+**The machine is organize-device's side.** This skill checks that the contracts
+and the repos agree. The [organize-device](../organize-device/SKILL.md) skill
+checks that this machine can produce the commits the contracts call for: a `gh`
+login for each account, the SSH keys and host aliases, and a git identity include
+for each org directory that needs one. A wrong author on a commit shows up here;
+the missing include that caused it shows up there.
+
 Directories marked `external` or `scratch` in a `.claude-workspace` marker carry
 no identity obligation, so the hook and the audit skip them. See
 [Workspace Markers](#workspace-markers).
