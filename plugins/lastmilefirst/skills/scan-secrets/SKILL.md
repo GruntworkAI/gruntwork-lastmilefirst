@@ -1,6 +1,6 @@
 ---
 name: scan-secrets
-description: Scan repositories for secrets, credentials, and sensitive data. Includes pre-commit hooks, repo auditing, public repo awareness, and custom secret format libraries.
+description: Scan repositories for secrets, credentials, and sensitive data. Includes pre-commit and pre-push hooks, repo auditing, public repo awareness, and custom secret format libraries.
 ---
 
 # Scan Secrets
@@ -31,11 +31,13 @@ gitleaks version && gh auth status && python3 --version
 | `/run-scan-secrets --audit --github --deep` | Audit GitHub account, per repo | Adds the per-call checks on every listed repo (about eight API calls per repo) |
 | `/run-scan-secrets --audit --propose` | Audit plus proposed changes | Itemized list of setting changes with a consequence each; applies nothing |
 | `/run-scan-secrets --apply <id> [<id>...]` | Apply named changes | Fresh audit, applies exactly the named items, re-reads, prints before and after |
-| `/run-scan-secrets --install-hooks` | Install pre-commit | Global hook via core.hooksPath |
-| `/run-scan-secrets --uninstall-hooks` | Remove pre-commit | Restore previous hook config |
+| `/run-scan-secrets --install-hooks` | Install hooks | Global pre-commit and pre-push hooks via core.hooksPath |
+| `/run-scan-secrets --uninstall-hooks` | Remove hooks | Remove both hooks and restore the previous hook config |
 | `/run-scan-secrets --add-format` | Add custom format | Interactive: add org-specific secret pattern |
 | `/run-scan-secrets --list-formats` | List format rules | Show all active rules with source |
 | `/run-scan-secrets --update-formats` | Update common rules | Refresh plugin-shipped rules (preserves org rules) |
+
+`--pre-commit` and `--pre-push` are the modes the installed hooks call. They are not meant to be run by hand.
 
 ## Mode Details
 
@@ -44,12 +46,15 @@ gitleaks version && gh auth status && python3 --version
 Scans full git history of the current repository using gitleaks' built-in default rules plus merged custom format rules.
 
 **Steps:**
-1. Check repo visibility (public/private) via `gh repo view`
+1. Check repo visibility: the declared value (`git config lastmilefirst.visibility`) first, then `gh repo view`
 2. If PUBLIC: show warning banner, bump all finding severities
 3. Load merged config: gitleaks default rules (`useDefault`) + custom rules (common + org)
 4. Run `gitleaks git` with `--redact` on full history
-5. Display findings sorted by severity
-6. Update overwatch `last_secret_scan` timestamp
+5. Apply the visibility policy (see [Rule kinds and what blocks](#rule-kinds-and-what-blocks))
+6. Display findings, blocking ones first and WARNING rows last
+7. Update overwatch `last_secret_scan` timestamp
+
+Exit code 1 means at least one blocking finding. Warnings alone exit 0.
 
 **Run:**
 ```bash
@@ -102,31 +107,72 @@ python3 ${SKILL_DIR}/scripts/scan_secrets.py --audit --github --deep   # plus pe
 
 `--deep` runs the seven per-call checks on every listed repo. That is about eight API calls per repo (the repo read plus seven checks), plus one more per ruleset and one for the selected-actions list where it applies. A running count prints to stderr. On an account with many repos, mind the API rate limit (5,000 calls an hour for an authenticated user).
 
-### `--install-hooks`: Pre-commit Hook
+### `--install-hooks`: Pre-commit and Pre-push Hooks
 
-Installs a global pre-commit hook that scans staged changes before every commit.
+Installs two global hooks. The pre-commit hook scans staged changes before every commit. The pre-push hook scans the commits being pushed, and on a branch's first push it audits the whole history (see the next section). `--uninstall-hooks` removes both. If you installed the hooks before 0.37.0, run `--install-hooks` again: an older install has the pre-commit hook only.
 
 **How it works:**
-- Sets `git config --global core.hooksPath` to `~/.claude/lastmilefirst/git-hooks/`
-- Hook calls `scan_secrets.py --pre-commit` which runs `gitleaks git --pre-commit --staged`
-- If secrets found: blocks commit, shows findings
-- If repo is public: adds reminder line to every commit output
-- Detects and warns about existing `core.hooksPath` before overriding
+- Sets `git config --global core.hooksPath` to `~/.claude/lastmilefirst/git-hooks/`, where both hook files live
+- The pre-commit hook calls `scan_secrets.py --pre-commit`, which runs `gitleaks git --pre-commit --staged`
+- The pre-push hook calls `scan_secrets.py --pre-push`, which reads the refs git passes the hook on stdin
+- A blocking finding stops the commit or push and shows the findings; warnings are shown and let it through
+- If the repo is public, each commit and push prints a reminder line
+- Detects and warns about an existing `core.hooksPath` before overriding, and backs up a hook file it did not write to `<name>.backup`
+- If the plugin cannot be found, either hook warns and lets the commit or push through; if the plugin is found but its check scripts are not, the hook says the install looks incomplete
+
+`git commit --no-verify` and `git push --no-verify` skip the hooks. GitHub's push protection (see the posture section below) is the server-side check that cannot be skipped.
 
 **Run:**
 ```bash
 python3 ${SKILL_DIR}/scripts/scan_secrets.py --install-hooks
 ```
 
+### `--pre-push`: What a Push Scans
+
+Git hands the pre-push hook one line per ref being pushed. What gets scanned depends on whether the remote already has that branch:
+
+| Ref being pushed | What is scanned |
+|---|---|
+| A branch the remote already has | Only the new commits (`<remote sha>..<local sha>`). If this clone lacks the remote commit (e.g. after a force push over commits never fetched), the scan widens to the full local history rather than scanning nothing |
+| A branch the remote does not have yet (a first push) | Every commit reachable from the pushed one, plus the first-push audit below |
+| A deleted branch | Nothing |
+
+The scan is `gitleaks git --log-opts <range>` with the same merged rules and the same [visibility policy](#rule-kinds-and-what-blocks) as every other mode. It needs gitleaks 8.19.0 or later, the same minimum as the rest of the skill.
+
+**The first-push audit** runs once per push when any pushed ref is new, which in practice means a new repo's first push after `gh repo create`, or a new branch. On top of the whole-history scan it reports:
+
+- gitignore gaps and dangerous committed files (the same checks as `--audit`), as warnings
+- the declared visibility against what GitHub reports (table below)
+- when GitHub reports the repo as public, its secret-scanning and push-protection posture, as a warning that does not block
+
+| Declared (`lastmilefirst.visibility`) | GitHub reports | Result |
+|---|---|---|
+| PRIVATE or INTERNAL | PUBLIC | Blocks the push. The scan applied private-repo rules to content that would be public |
+| PUBLIC | PRIVATE or INTERNAL | Warning. Public-repo rules were applied, which is stricter than needed |
+| PRIVATE | INTERNAL, or the reverse | Warning |
+| Not declared, or `gh` cannot answer | anything | Not a finding |
+
+The blocked push prints both ways out:
+
+```bash
+gh repo edit --visibility private --accept-visibility-change-consequences   # make the repo private
+git config lastmilefirst.visibility public                                  # or declare it public and push again
+```
+
+On a first push the declared value decides the policy, and GitHub's answer is used when nothing is declared. Later pushes resolve visibility the same way the other modes do.
+
+**Fails closed.** Hook input that is not four fields per line, a gitleaks run that ends without writing its report, and the five-minute scan timeout all block the push with the reason.
+
 ### `--add-format`: Add Custom Format (Interactive)
 
 When user runs this mode, Claude guides them through adding a custom secret format:
 
 1. Ask what kind of secret they want to detect
-2. Help them write the regex pattern
-3. Generate the gitleaks TOML rule
-4. Write it to `~/.claude/lastmilefirst/secret-formats/org_secret_formats.toml`
-5. Verify it works with a test string
+2. If it is a name, ask whether it names an organization or a person (see below)
+3. Help them write the regex pattern
+4. Generate the gitleaks TOML rule
+5. Write it to `~/.claude/lastmilefirst/secret-formats/org_secret_formats.toml`
+6. Verify it works with a test string
 
 **Example interaction:**
 ```
@@ -143,20 +189,45 @@ tags = ["org", "api-token"]
 keywords = ["gw_live_"]
 ```
 
-For a term that is fine in private repos but must never reach a public one,
-add the `public-only` tag (see [Public-only rules](#public-only-rules)):
+**Names: organization or person.** A name is never shipped in the plugin; it
+goes in your org rules file, in one of two rules, and which one decides where
+it blocks (see [Rule kinds and what blocks](#rule-kinds-and-what-blocks)).
+Ask which kind the term is before writing anything:
+
+| The term names | Rule id | Tags | Blocks |
+|---|---|---|---|
+| An organization (a client's company, a product codename) | `lmf-private-names` | `org`, `public-only`, `private-name` | In public repos only; allowed in private and internal ones |
+| A person (a client's staff member, a private individual) | `lmf-private-people` | `org`, `private-name` | In every repo |
+
+Add the term to that rule's regex alternation and keywords. If the rule does
+not exist yet, create it in the shape below. (A new org rules file carries
+both as commented examples; a file created before 0.37.0 does not, because
+the plugin never rewrites it.) With placeholder terms:
 
 ```
-User: Flag our client's name, but only in public repos
-Claude: I'll add this rule to your org formats:
+User: Flag the name Example Org, and also Jane Placeholder who works there
+Claude: Example Org is an organization and Jane Placeholder is a person, so
+they go in different rules:
 
 [[rules]]
-id = "org-client-name-acme"
-description = "Client name (allowed in private repos)"
-regex = '''(?i)\bacme\b'''
-tags = ["org", "public-only"]
-keywords = ["acme"]
+id = "lmf-private-names"
+description = "Organization name (allowed in private repos)"
+regex = '''(?i)\b(example org)\b'''
+tags = ["org", "public-only", "private-name"]
+keywords = ["example org"]
+
+[[rules]]
+id = "lmf-private-people"
+description = "Person's name (blocked in every repo)"
+regex = '''(?i)\b(jane placeholder)\b'''
+tags = ["org", "private-name"]
+keywords = ["jane placeholder"]
 ```
+
+**Declaring a severity.** gitleaks reports no severity of its own, so a rule
+declares one with a `severity-<level>` tag (`severity-low`, `severity-medium`,
+`severity-high`, `severity-critical`). A rule without the tag reads MEDIUM.
+The public-repo bump still applies on top.
 
 Read the org formats file, append the new rule, and write it back:
 ```bash
@@ -306,6 +377,7 @@ Cover gaps in gitleaks defaults:
 - Webhook URLs (Slack, Discord)
 - Private key files (PEM, PKCS8)
 - JWT secret assignments
+- Personal data, tagged `pii` and declared low severity: personal-mailbox email addresses (GitHub noreply addresses are allowed), phone numbers next to a phone label or in `+` international form, US Social Security numbers next to an SSN or tax-id label, AWS account ids next to an account label or inside an ARN, and IBAN or card numbers next to a banking label. Each regex requires its label within a few characters of the value, so a bare ten-digit order id or a twelve-digit invoice number does not match. Run `--update-formats` after upgrading to get them
 
 ### Org Rules (User-Managed)
 
@@ -315,18 +387,36 @@ Add patterns specific to your organization:
 - Internal service URLs with embedded tokens
 - Proprietary secret formats
 
-### Public-only rules
+### Rule kinds and what blocks
 
-A rule tagged `public-only` fires only in repositories whose GitHub visibility
-is PUBLIC. It is for names and terms that are fine inside private repos but
-must never reach a public one: a client's name in a private engagement repo is
-allowed, and the same name in a public plugin repo is a finding. The names
-themselves belong in your org rules file (`org_secret_formats.toml`), never in
-the plugin.
+Every mode that reports findings (the default scan, `--pre-commit`,
+`--pre-push`, and `--all` for each repo) runs them through one policy, which
+decides per finding whether it is kept and whether it blocks. The decision
+depends on the rule's tags and the repo's visibility.
 
-Every mode that reports findings applies it the same way (the default scan,
-`--pre-commit`, and `--all` for each repo). Visibility comes from the repo's
-own git config first, then from what `gh` reports for the active account:
+| Kind | Tags | What it is for | Where it lives |
+|---|---|---|---|
+| Ordinary | none of the below | Secrets and credentials | Common rules, gitleaks defaults, your org rules |
+| Organization | `public-only` | A name that is fine in a private repo and a finding in a public one | Your org rules (`lmf-private-names`) |
+| PII | `pii` | Generic personal data: personal emails, phone numbers, SSNs, AWS account ids, bank identifiers | Common rules |
+| Person | `private-name` without `public-only` | A person's name, which should not be committed anywhere | Your org rules (`lmf-private-people`) |
+
+| Kind | PUBLIC repo | PRIVATE or INTERNAL repo | Visibility unknown |
+|---|---|---|---|
+| Ordinary | Kept, blocks | Kept, blocks | Kept, blocks |
+| Organization | Kept, blocks | Dropped, with one summary line | Kept, blocks, with a line saying why |
+| PII | Kept, blocks | Kept as a WARNING, does not block | Kept, blocks |
+| Person | Kept, blocks | Kept, blocks | Kept, blocks |
+
+A line that matches both a PII rule and a person rule is reported once, as
+the person, and blocks. The summary line for dropped organization findings
+reads "N finding(s) from public-only rules suppressed in a private repo" (or
+"an internal repo"). Unknown visibility means no GitHub remote, or `gh`
+missing or not logged in; the line printed then says to push the repo or run
+`gh auth login`.
+
+Visibility comes from the repo's own git config first, then from what `gh`
+reports for the active account:
 
 ```bash
 git config lastmilefirst.visibility private   # or public, internal
@@ -334,17 +424,37 @@ git config lastmilefirst.visibility private   # or public, internal
 
 Declare it in any repo owned by an account other than the one `gh` usually
 has active. The `gh` active account is machine-global, and a private repo it
-cannot see reads as unknown, which applies the rules. The declared value is a
-local claim and settles it without a network call.
+cannot see reads as unknown, which applies the public rules. The declared
+value is a local claim and settles it without a network call. Because the
+policy trusts it, a declaration that disagrees with GitHub is checked on a
+first push (see [`--pre-push`](#--pre-push-what-a-push-scans)) and at session
+start (see [Overwatch Integration](#overwatch-integration)).
 
-| Visibility | Findings from `public-only` rules |
-|------------|-----------------------------------|
-| PUBLIC | Kept, like any other finding |
-| PRIVATE or INTERNAL | Dropped, with one line: "N finding(s) from public-only rules suppressed in a private repo" |
-| Unknown (no GitHub remote, `gh` missing or not logged in) | Kept, with one line saying so: push the repo or run `gh auth login` |
+**What the report shows.** The summary header reads "Found N blocking
+finding(s)", with "and M warning(s)" when there are warnings. Non-blocking
+findings show `WARNING` in the severity column, sort after the blocking ones,
+and carry a footnote: "WARNING rows are personal data in a private repo:
+reported, not blocking." The exit code is 1 only when at least one finding
+blocks, so a commit or push with warnings alone goes through. Under `--all`, a
+repo with no blocking findings reads `clean`, with the suppression line or
+`(N warning(s))` beside it, and a repo with warnings has its report printed
+below so the warnings can be read.
 
-A rule without the tag is never dropped. Under `--all`, a repo whose only
-findings were suppressed reads as clean, with the suppression line beside it.
+### Splitting an existing names list
+
+Before 0.37.0 there was one names rule, tagged `public-only`, so every name on
+it (people included) was suppressed in private repos. The plugin cannot tell
+which of your terms are people, so the split is a one-time edit by hand. Until
+you make it, people on the old list are still treated as organizations.
+
+1. Open `~/.claude/lastmilefirst/secret-formats/org_secret_formats.toml` and find the rule tagged `public-only` and `private-name` (usually `lmf-private-names`).
+2. Add a second rule, `lmf-private-people`, with tags `["org", "private-name"]` and no `public-only`.
+3. Move each term that names a person out of the first rule's regex and keywords and into the second's. Leave organization names where they are.
+4. Run `/run-scan-secrets --list-formats` to confirm both rules load, then test a person term in a scratch private repo: the commit should be blocked.
+
+With placeholder terms, a list of `example-org|jane placeholder|another-org`
+becomes `example-org|another-org` in `lmf-private-names` and
+`jane placeholder` in `lmf-private-people`.
 
 ## Severity Classification
 
@@ -355,7 +465,9 @@ findings were suppressed reads as clean, with the suppression line beside it.
 | **MEDIUM** | Hardcoded passwords (test excluded), env var secrets | Review and remediate |
 | **LOW** | Generic high-entropy strings, possible false positives | Investigate |
 
-**Public repo bump:** In public repos, all severities are bumped one level (MEDIUM→HIGH, HIGH→CRITICAL).
+**Public repo bump:** In public repos, all severities are bumped one level (LOW→MEDIUM, MEDIUM→HIGH, HIGH→CRITICAL).
+
+A rule's level comes from its `severity-<level>` tag; an untagged rule reads MEDIUM. The PII rules are LOW, so they sort below any secret. In a private repo they show as WARNING instead of a level.
 
 ## Public Repo Awareness
 
@@ -366,8 +478,8 @@ This skill is designed to protect unsophisticated users from accidentally exposi
 - All findings get severity bumped
 - Recommendations include making repo private
 
-**Pre-commit hook** on public repos:
-- Prints "Reminder: you are committing to a PUBLIC repository" on every commit
+**Pre-commit and pre-push hooks** on public repos:
+- Print "Reminder: you are committing to a PUBLIC repository" on every commit, and "Reminder: you are pushing to a PUBLIC repository" on every push
 
 **Overwatch integration** (session start):
 - Shows "You're working in a PUBLIC repo (owner/name)" at session start
@@ -385,6 +497,7 @@ The scan-secrets skill integrates with Overwatch:
 | Scan freshness | Every session start | "Never scanned" or "N days since last scan" |
 | Repo visibility | Every session start | "You're working in a PUBLIC repo" |
 | GitHub protections | Every session start (cached 24h) | "PUBLIC repo has push protection disabled" + the enable command |
+| Visibility drift | Every session start in a git repo with a remote and a declared visibility (GitHub's answer cached 24h in Overwatch state under the `repos` scope, keyed by repo root) | `ACTION REQUIRED: this repo is declared <x> but GitHub reports <y>; run /run-scan-secrets --audit` |
 | Scan timestamp | After scan completes | Updates `last_secret_scan` in overwatch state |
 
 ## Related Skills

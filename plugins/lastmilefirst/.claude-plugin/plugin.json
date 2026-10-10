@@ -1,6 +1,6 @@
 {
   "name": "lastmilefirst",
-  "version": "0.36.2",
+  "version": "0.37.0",
   "description": "Opinionated structure and workflow for projects built by people and coding agents: project structure, tiered CLAUDE.md, PARC workflow, AI expert agents, org-level operatives and stack-wisdom, and Overwatch drift checks.",
   "author": {
     "name": "GruntworkAI",

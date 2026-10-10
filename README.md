@@ -46,12 +46,12 @@ must re-install rather than update:
 /plugin marketplace remove gruntwork-marketplace
 /plugin marketplace add GruntworkAI/gruntwork-lastmilefirst
 /plugin install lastmilefirst@gruntwork-lastmilefirst   # install, NOT update
-/run-scan-secrets --install-hooks                       # refresh the pre-commit hook
+/run-scan-secrets --install-hooks                       # refresh the pre-commit and pre-push hooks
 /reload-plugins                                          # activate in this session
 ```
 
 **Optional cleanup:** delete the now-orphaned old cache directory so the
-secret-scan pre-commit hook can't fall back to a stale version:
+secret-scan hooks (pre-commit and pre-push) can't fall back to a stale version:
 
 ```bash
 rm -rf ~/.claude/plugins/cache/gruntwork-marketplace
@@ -71,7 +71,7 @@ rm -rf ~/.claude/plugins/cache/gruntwork-marketplace
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [lastmilefirst](plugins/lastmilefirst/) | 0.36.2 | Opinionated structure and workflow for projects built by people and coding agents. Includes PARC, expert agents, operatives, stack-wisdom, and stack-knowledge. |
+| [lastmilefirst](plugins/lastmilefirst/) | 0.37.0 | Opinionated structure and workflow for projects built by people and coding agents. Includes PARC, expert agents, operatives, stack-wisdom, and stack-knowledge. |
 
 ## Other runtimes
 
