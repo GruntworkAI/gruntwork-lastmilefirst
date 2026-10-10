@@ -76,6 +76,30 @@ ORG_TEMPLATE = """\
 # keywords = ["myorg_"]
 #
 # See: https://github.com/gitleaks/gitleaks#configuration
+#
+# Private names go in one of two rules, by what the term names. The tags
+# decide how the scanner treats a match:
+#
+# Organizations (a client's company name, a product codename). Tagged
+# `public-only`: allowed in a private or internal repo, a blocking finding in
+# a public one.
+#
+# [[rules]]
+# id = "lmf-private-names"
+# description = "Organization name (allowed in private repos)"
+# regex = '''(?i)\\b(example-org|another-org)\\b'''
+# tags = ["org", "public-only", "private-name"]
+# keywords = ["example-org", "another-org"]
+#
+# People (a client's staff, a private individual). Tagged `private-name` and
+# NOT `public-only`: a blocking finding in every repo, private ones included.
+#
+# [[rules]]
+# id = "lmf-private-people"
+# description = "Person's name (blocked in every repo)"
+# regex = '''(?i)\\b(jane placeholder|john example)\\b'''
+# tags = ["org", "private-name"]
+# keywords = ["placeholder", "example"]
 
 title = "Organization Secret Formats"
 

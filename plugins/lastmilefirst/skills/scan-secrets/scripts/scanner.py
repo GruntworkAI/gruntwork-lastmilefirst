@@ -196,6 +196,23 @@ def _run_gitleaks(
         return 2, "", "gitleaks not found"
 
 
+SEVERITY_TAG_PREFIX = "severity-"
+
+
+def _declared_severity(finding: Dict[str, Any]) -> str:
+    """gitleaks reports no severity, so a rule declares one with a `severity-<level>` tag.
+
+    A tagged level wins over the report's (always absent) Severity field; the default stays MEDIUM.
+    """
+    for tag in finding.get("Tags") or []:
+        text = str(tag).strip().lower()
+        if text.startswith(SEVERITY_TAG_PREFIX):
+            level = text[len(SEVERITY_TAG_PREFIX):].upper()
+            if level in SEVERITY_BUMP:
+                return level
+    return str(finding.get("Severity") or "MEDIUM").upper()
+
+
 def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
     """Parse gitleaks JSON output and apply severity bumps."""
     if not json_output.strip():
@@ -209,7 +226,7 @@ def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
         return []
 
     for finding in findings:
-        original = finding.get("Severity", "MEDIUM")
+        original = _declared_severity(finding)
         finding["Severity"] = _bump_severity(original, is_public)
         if is_public and original != finding["Severity"]:
             finding["_bumped"] = True
@@ -217,11 +234,20 @@ def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
     return findings
 
 
-# A rule tagged `public-only` names something that is fine inside a private
-# repo but must never reach a public one (e.g. a client's name: allowed in a
-# private engagement repo, a finding in a public plugin repo). The names live
-# in the user's org rules file, never in the plugin.
+# Three kinds of tagged rule, one policy (plan 2026-10-09-001, section 3.1).
+#
+# - `public-only`: an organization's name (e.g. a client's), fine inside a
+#   private repo and a finding in a public one. Dropped in PRIVATE/INTERNAL.
+# - `pii`: generic personal data (a personal email, a phone number). Kept in
+#   every repo; in PRIVATE/INTERNAL it is a WARNING that does not block.
+# - `private-name` without `public-only`: a person from the user's people
+#   list. Kept and blocking in every repo.
+#
+# Everything else is an ordinary secret and always blocks. The names
+# themselves live in the user's org rules file, never in the plugin.
 PUBLIC_ONLY_TAG = "public-only"
+PII_TAG = "pii"
+PRIVATE_NAME_TAG = "private-name"
 
 _VISIBILITY_UNKNOWN_NOTE = (
     "public-only rules applied because visibility could not be determined; "
@@ -229,49 +255,112 @@ _VISIBILITY_UNKNOWN_NOTE = (
 )
 
 
-def _is_public_only(finding: Dict[str, Any]) -> bool:
+def _tags(finding: Dict[str, Any]) -> set:
     tags = finding.get("Tags") or []
     if isinstance(tags, str):
         tags = [tags]
-    return any(str(t).strip().lower() == PUBLIC_ONLY_TAG for t in tags)
+    return {str(t).strip().lower() for t in tags}
+
+
+def _is_public_only(finding: Dict[str, Any]) -> bool:
+    return PUBLIC_ONLY_TAG in _tags(finding)
+
+
+def _finding_kind(finding: Dict[str, Any]) -> str:
+    """One of "organization", "person", "pii", "ordinary"."""
+    tags = _tags(finding)
+    if PUBLIC_ONLY_TAG in tags:
+        return "organization"
+    if PRIVATE_NAME_TAG in tags:
+        return "person"
+    if PII_TAG in tags:
+        return "pii"
+    return "ordinary"
+
+
+def apply_visibility_policy(
+    findings: List[Dict[str, Any]], visibility: Optional[str]
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Decide, per finding, whether it is kept and whether it blocks.
+
+    PUBLIC, or unknown visibility (no remote, `gh` missing or not logged in):
+    every finding is kept and blocks; when unknown and a public-only rule
+    fired, one line says why it was applied. PRIVATE or INTERNAL: public-only
+    findings are dropped with one summary line, pii findings are kept with
+    Blocking False, everything else blocks.
+
+    A pii finding on the same File and StartLine as a person finding is
+    dropped, so the line is reported once, as the person.
+
+    Returns (kept_findings, report_lines). Kept findings are copies carrying a
+    `Blocking` boolean; the input is not modified.
+    """
+    kinds = [(f, _finding_kind(f)) for f in findings]
+    person_lines = {(f.get("File"), f.get("StartLine")) for f, k in kinds if k == "person"}
+    kinds = [(f, k) for f, k in kinds
+             if not (k == "pii" and (f.get("File"), f.get("StartLine")) in person_lines)]
+
+    vis = (visibility or "").upper()
+    private = vis in ("PRIVATE", "INTERNAL")
+    organization_count = sum(1 for _, k in kinds if k == "organization")
+
+    kept: List[Dict[str, Any]] = []
+    for finding, kind in kinds:
+        if private and kind == "organization":
+            continue
+        kept.append(dict(finding, Blocking=not (private and kind == "pii")))
+
+    lines: List[str] = []
+    if organization_count:
+        if private:
+            where = "a private" if vis == "PRIVATE" else "an internal"
+            lines.append(f"{organization_count} finding(s) from public-only rules "
+                         f"suppressed in {where} repo")
+        elif vis != "PUBLIC":
+            lines.append(_VISIBILITY_UNKNOWN_NOTE)
+    return kept, lines
 
 
 def apply_public_only(
     findings: List[Dict[str, Any]], visibility: Optional[str]
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """Drop findings from `public-only` rules unless the repo may be public.
+    """Deprecated alias of apply_visibility_policy, kept for one release.
 
-    PUBLIC: every finding is kept. PRIVATE or INTERNAL: public-only findings
-    are dropped, with one summary line. Unknown visibility (no remote, `gh`
-    missing or not logged in): public-only findings are kept, with one line
-    saying why. A finding without the tag is never dropped.
-
-    Returns (kept_findings, report_lines).
+    Returns the kept findings without the `Blocking` flag, as before 0.37.0.
     """
-    tagged = [f for f in findings if _is_public_only(f)]
-    if not tagged:
-        return findings, []
-    vis = (visibility or "").upper()
-    if vis == "PUBLIC":
-        return findings, []
-    if vis in ("PRIVATE", "INTERNAL"):
-        kept = [f for f in findings if not _is_public_only(f)]
-        where = "a private" if vis == "PRIVATE" else "an internal"
-        return kept, [f"{len(tagged)} finding(s) from public-only rules suppressed in {where} repo"]
-    return findings, [_VISIBILITY_UNKNOWN_NOTE]
+    kept, lines = apply_visibility_policy(findings, visibility)
+    return [{k: v for k, v in f.items() if k != "Blocking"} for f in kept], lines
+
+
+def _is_blocking(finding: Dict[str, Any]) -> bool:
+    """A finding that never went through the policy blocks."""
+    return finding.get("Blocking", True) is not False
+
+
+def _summary_counts(findings: List[Dict[str, Any]]) -> str:
+    blocking = sum(1 for f in findings if _is_blocking(f))
+    warnings = len(findings) - blocking
+    parts = []
+    if blocking:
+        parts.append(f"{blocking} blocking finding(s)")
+    if warnings:
+        parts.append(f"{warnings} warning(s)")
+    return " and ".join(parts)
 
 
 def _format_findings(findings: List[Dict[str, Any]]) -> str:
-    """Format findings for display."""
+    """Format findings for display. Non-blocking findings read WARNING."""
     if not findings:
         return "No secrets detected."
 
-    lines = [f"\nFound {len(findings)} potential secret(s):\n"]
+    lines = [f"\nFound {_summary_counts(findings)}:\n"]
     lines.append(f"{'Severity':<10} {'Rule':<35} {'File':<40} Line")
     lines.append("-" * 90)
 
-    for f in sorted(findings, key=lambda x: x.get("Severity", ""), reverse=True):
-        severity = f.get("Severity", "?")
+    ordered = sorted(findings, key=lambda x: x.get("Severity", ""), reverse=True)
+    ordered.sort(key=lambda x: not _is_blocking(x))  # stable: blocking first
+    for f in ordered:
+        severity = f.get("Severity", "?") if _is_blocking(f) else "WARNING"
         rule = f.get("RuleID", f.get("Description", "unknown"))[:34]
         filepath = f.get("File", "?")
         # Truncate long paths
@@ -284,6 +373,8 @@ def _format_findings(findings: List[Dict[str, Any]]) -> str:
     bumped_count = sum(1 for f in findings if f.get("_bumped"))
     if bumped_count:
         lines.append(f"\n* {bumped_count} finding(s) severity bumped due to PUBLIC repo")
+    if any(not _is_blocking(f) for f in findings):
+        lines.append("\nWARNING rows are personal data in a private repo: reported, not blocking.")
 
     return "\n".join(lines)
 
@@ -534,17 +625,18 @@ def scan_repo(
 
         # gitleaks cannot see inside archives, so scan them separately.
         findings.extend(scan_archives(repo_path, config_path, is_public))
-        findings, public_only_lines = apply_public_only(findings, visibility)
+        findings, policy_lines = apply_visibility_policy(findings, visibility)
 
         # Build report
         lines = _public_repo_banner(visibility)
         sync_note = consume_sync_note()
         if sync_note:
             lines.append(sync_note)
-        lines.extend(public_only_lines)
+        lines.extend(policy_lines)
         lines.append(_format_findings(findings))
 
-        return (1 if findings else 0), "\n".join(lines)
+        blocked = any(_is_blocking(f) for f in findings)
+        return (1 if blocked else 0), "\n".join(lines)
     finally:
         config_path.unlink(missing_ok=True)
 
@@ -603,7 +695,7 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             scan_archives(repo_path, config_path, is_public, staged_only=True)
         )
         # Same visibility answer as the full scan (check_repo_visibility above).
-        findings, public_only_lines = apply_public_only(findings, visibility)
+        findings, policy_lines = apply_visibility_policy(findings, visibility)
 
         lines = []
         sync_note = consume_sync_note()
@@ -611,11 +703,16 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             lines.append(sync_note)
         if is_public:
             lines.append("Reminder: you are committing to a PUBLIC repository")
-        lines.extend(public_only_lines)
+        lines.extend(policy_lines)
 
-        if findings:
+        if any(_is_blocking(f) for f in findings):
             lines.append(_format_findings(findings))
             return 1, "\n".join(lines)
+        if findings:
+            # Warnings only (personal data in a private repo): shown, not blocking.
+            lines.append(_format_findings(findings))
+            lines.append("No blocking findings; commit allowed.")
+            return 0, "\n".join(lines)
 
         lines.append("No secrets detected in staged changes.")
         return 0, "\n".join(lines)
@@ -716,10 +813,18 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
         exit_code, report = scan_repo(repo)
         if exit_code == 0:
             # A clean repo's report is not printed, so carry the public-only
-            # suppression line (if any) onto its one line.
-            suppressed = next((l for l in report.splitlines()
-                               if "from public-only rules suppressed" in l), None)
-            lines.append(f"  {repo_name}: clean" + (f" ({suppressed})" if suppressed else ""))
+            # suppression line and any warning count onto its one line. A
+            # repo with warnings (personal data in a private repo) also gets
+            # its report, so the warnings can be read.
+            notes = [l for l in report.splitlines()
+                     if "from public-only rules suppressed" in l]
+            warned = re.search(r"\b(\d+) warning\(s\)", report)
+            if warned:
+                notes.append(f"{warned.group(1)} warning(s)")
+            lines.append(f"  {repo_name}: clean"
+                         + (f" ({'; '.join(notes)})" if notes else ""))
+            if warned:
+                lines.append(report)
         else:
             lines.append(f"  {repo_name}: FINDINGS DETECTED")
             lines.append(report)
