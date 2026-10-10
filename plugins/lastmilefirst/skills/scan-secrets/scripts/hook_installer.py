@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Global pre-commit hook installer.
+Global pre-commit and pre-push hook installer.
 
 Uses git config --global core.hooksPath to apply to all repos.
-Installs to ~/.claude/lastmilefirst/git-hooks/pre-commit.
+Installs to ~/.claude/lastmilefirst/git-hooks/pre-commit and .../pre-push.
 
-The installed hook is a *dispatcher*: it resolves the plugin root once, then
+Each installed hook is a *dispatcher*: it resolves the plugin root once, then
 runs each registered check in order and fails on the first non-zero exit.
-Checks are listed in CHECKS below. Adding one is a single entry — the hook was
-previously a single-purpose script, which meant a second concern could not be
-added without rewriting it.
+Checks are listed in CHECKS (pre-commit) and PRE_PUSH_CHECKS (pre-push) below.
+Adding one is a single entry — the hook was previously a single-purpose
+script, which meant a second concern could not be added without rewriting it.
 """
 from __future__ import annotations
 
@@ -18,10 +18,11 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 HOOKS_DIR = Path.home() / ".claude" / "lastmilefirst" / "git-hooks"
 HOOK_FILE = HOOKS_DIR / "pre-commit"
+PRE_PUSH_HOOK_FILE = HOOKS_DIR / "pre-push"
 
 # Registered pre-commit checks, in run order.
 #
@@ -54,7 +55,35 @@ CHECKS = [
 ]
 
 
-def _render_check(label: str, rel_path: str, failure_message: str) -> str:
+# Registered pre-push checks, in run order.
+#
+# One entry on purpose: git passes the pushed refs on the hook's stdin, and
+# stdin can be read once. The dispatcher reads nothing itself, so the single
+# check inherits it. A second check here would need the dispatcher to buffer
+# stdin and replay it to each.
+PRE_PUSH_CHECKS = [
+    (
+        "secret scan",
+        "skills/scan-secrets/scripts/scan_secrets.py",
+        "\n".join(
+            [
+                "Push blocked by the secret scan (see the report above).",
+                "Remove the finding from the commits being pushed (amend or",
+                "rewrite them), or fix the visibility mismatch it names, then",
+                "push again. A gitleaks:allow comment marks a false positive.",
+            ]
+        ),
+    ),
+]
+
+# kind -> (registry, flag passed to each check, what the hook gates)
+_HOOK_KINDS = {
+    "pre-commit": (CHECKS, "--pre-commit", "commit"),
+    "pre-push": (PRE_PUSH_CHECKS, "--pre-push", "push"),
+}
+
+
+def _render_check(label: str, rel_path: str, failure_message: str, flag: str) -> str:
     """Emit the bash for one check: skip if absent, else run and gate on it."""
     message_block = ""
     if failure_message:
@@ -67,26 +96,37 @@ def _render_check(label: str, rel_path: str, failure_message: str) -> str:
 CHECK_PATH="$PLUGIN_ROOT/{rel_path}"
 if [ -f "$CHECK_PATH" ]; then
     CHECKS_RUN=$((CHECKS_RUN + 1))
-    python3 "$CHECK_PATH" --pre-commit
+    python3 "$CHECK_PATH" {flag} "$@"
     if [ $? -ne 0 ]; then{message_block}
         exit 1
     fi
 fi"""
 
 
-def build_hook_script() -> str:
-    """Assemble the dispatcher installed as the global pre-commit hook."""
+def build_hook_script(kind: str = "pre-commit") -> str:
+    """Assemble the dispatcher installed as the global `kind` hook.
+
+    `kind` is "pre-commit" or "pre-push". Both share the plugin-root glob, the
+    CHECKS_RUN counter, and the plugin-missing warning; they differ only in the
+    registry and the flag each check receives. For pre-push the dispatcher
+    reads nothing from stdin, so the check inherits the ref lines git sends,
+    and `"$@"` hands it the remote name and URL git passes as arguments (the
+    pre-commit hook gets no arguments, so it passes nothing).
+    """
+    if kind not in _HOOK_KINDS:
+        raise ValueError(f"unknown hook kind: {kind!r}")
+    registry, flag, action = _HOOK_KINDS[kind]
     checks = "".join(
-        _render_check(label, rel, msg) for label, rel, msg in CHECKS
+        _render_check(label, rel, msg, flag) for label, rel, msg in registry
     )
     return f"""\
 #!/usr/bin/env bash
-# lastmilefirst pre-commit hook (dispatcher)
+# lastmilefirst {kind} hook (dispatcher)
 # Installed by: /run-scan-secrets --install-hooks
 # Remove with:  /run-scan-secrets --uninstall-hooks
 #
 # Runs each registered check in order, failing on the first non-zero exit.
-# Checks: {', '.join(label for label, _, _ in CHECKS)}
+# Checks: {', '.join(label for label, _, _ in registry)}
 
 # Resolve the plugin root. The marketplace name and version are globbed rather
 # than hard-coded so a marketplace rename (e.g. gruntwork-marketplace ->
@@ -102,19 +142,19 @@ for candidate in \\
 done
 
 if [ -z "$PLUGIN_ROOT" ]; then
-    # Plugin not found — don't block commits, just warn.
-    echo "lastmilefirst: plugin not found, skipping pre-commit checks" >&2
+    # Plugin not found — don't block, just warn.
+    echo "lastmilefirst: plugin not found, skipping {kind} checks" >&2
     exit 0
 fi
 
 # Counted so a resolved-but-incomplete install (plugin root present, check
-# scripts missing) reports instead of silently passing every commit.
+# scripts missing) reports instead of silently passing every {action}.
 CHECKS_RUN=0
 {checks}
 
 if [ "$CHECKS_RUN" -eq 0 ]; then
     echo "lastmilefirst: no check scripts found under $PLUGIN_ROOT" >&2
-    echo "lastmilefirst: commit allowed, but the install looks incomplete" >&2
+    echo "lastmilefirst: {action} allowed, but the install looks incomplete" >&2
 fi
 
 exit 0
@@ -122,7 +162,8 @@ exit 0
 
 
 # Rendered once at import so callers can still read HOOK_SCRIPT directly.
-HOOK_SCRIPT = build_hook_script()
+HOOK_SCRIPT = build_hook_script("pre-commit")
+PRE_PUSH_HOOK_SCRIPT = build_hook_script("pre-push")
 
 
 def get_current_hooks_path() -> Optional[str]:
@@ -141,8 +182,23 @@ def get_current_hooks_path() -> Optional[str]:
     return None
 
 
+def _write_hook(hook_file: Path, script: str, lines: List[str]) -> None:
+    """Write one hook file, backing up a foreign one to <name>.backup first."""
+    if hook_file.exists():
+        existing = hook_file.read_text(encoding="utf-8")
+        if "lastmilefirst" in existing:
+            lines.append(f"{hook_file.name} hook already installed. Updating to latest version...")
+        else:
+            lines.append(f"WARNING: Existing {hook_file.name} hook at {hook_file}")
+            lines.append(f"Backing up to {hook_file.name}.backup before overwriting.")
+            hook_file.rename(hook_file.parent / f"{hook_file.name}.backup")
+
+    hook_file.write_text(script, encoding="utf-8")
+    hook_file.chmod(hook_file.stat().st_mode | stat.S_IEXEC)
+
+
 def install_hooks() -> str:
-    """Install global pre-commit hook for secret scanning."""
+    """Install the global pre-commit and pre-push hooks."""
     lines = []
 
     # Check for existing hooksPath
@@ -156,20 +212,9 @@ def install_hooks() -> str:
     # Create hooks directory
     HOOKS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Check for existing hook file
-    if HOOK_FILE.exists():
-        existing = HOOK_FILE.read_text(encoding="utf-8")
-        if "lastmilefirst" in existing:
-            lines.append("Hook already installed. Updating to latest version...")
-        else:
-            lines.append(f"WARNING: Existing pre-commit hook at {HOOK_FILE}")
-            lines.append("Backing up to pre-commit.backup before overwriting.")
-            backup = HOOKS_DIR / "pre-commit.backup"
-            HOOK_FILE.rename(backup)
-
-    # Write hook script
-    HOOK_FILE.write_text(HOOK_SCRIPT, encoding="utf-8")
-    HOOK_FILE.chmod(HOOK_FILE.stat().st_mode | stat.S_IEXEC)
+    # Write both hook scripts, backing up any foreign hook first.
+    _write_hook(HOOK_FILE, HOOK_SCRIPT, lines)
+    _write_hook(PRE_PUSH_HOOK_FILE, PRE_PUSH_HOOK_SCRIPT, lines)
 
     # Set global hooksPath
     try:
@@ -184,10 +229,14 @@ def install_hooks() -> str:
         return f"Error setting core.hooksPath: {e}"
 
     lines.append(f"Pre-commit hook installed at: {HOOK_FILE}")
+    lines.append(f"Pre-push hook installed at:   {PRE_PUSH_HOOK_FILE}")
     lines.append(f"Global core.hooksPath set to: {HOOKS_DIR}")
     lines.append("")
     lines.append("Checks run before every commit, in order:")
     for label, rel_path, _ in CHECKS:
+        lines.append(f"  - {label} ({rel_path})")
+    lines.append("Checks run before every push, in order:")
+    for label, rel_path, _ in PRE_PUSH_CHECKS:
         lines.append(f"  - {label} ({rel_path})")
     lines.append("")
     lines.append("To uninstall: /run-scan-secrets --uninstall-hooks")
@@ -196,7 +245,7 @@ def install_hooks() -> str:
 
 
 def uninstall_hooks() -> str:
-    """Remove the global pre-commit hook and reset core.hooksPath."""
+    """Remove the global pre-commit and pre-push hooks and reset core.hooksPath."""
     lines = []
 
     current = get_current_hooks_path()
@@ -217,18 +266,19 @@ def uninstall_hooks() -> str:
     else:
         lines.append("core.hooksPath was not set.")
 
-    if HOOK_FILE.exists():
-        HOOK_FILE.unlink()
-        lines.append(f"Removed hook file: {HOOK_FILE}")
-    else:
-        lines.append("No hook file to remove.")
+    for hook_file in (HOOK_FILE, PRE_PUSH_HOOK_FILE):
+        if hook_file.exists():
+            hook_file.unlink()
+            lines.append(f"Removed hook file: {hook_file}")
+        else:
+            lines.append(f"No {hook_file.name} hook file to remove.")
 
-    # Restore backup if exists
-    backup = HOOKS_DIR / "pre-commit.backup"
-    if backup.exists():
-        lines.append(f"Note: Backup exists at {backup}")
+        # A backed-up foreign hook is reported, not restored.
+        backup = hook_file.parent / f"{hook_file.name}.backup"
+        if backup.exists():
+            lines.append(f"Note: Backup exists at {backup}")
 
-    lines.append("\nPre-commit hook uninstalled.")
+    lines.append("\nPre-commit and pre-push hooks uninstalled.")
     return "\n".join(lines)
 
 
@@ -244,11 +294,12 @@ def hook_status() -> str:
     else:
         lines.append("Global core.hooksPath: not set")
 
-    if HOOK_FILE.exists():
-        lines.append(f"Hook file exists: {HOOK_FILE}")
-        is_executable = os.access(HOOK_FILE, os.X_OK)
-        lines.append(f"  Executable: {'yes' if is_executable else 'no'}")
-    else:
-        lines.append(f"Hook file: not installed")
+    for hook_file in (HOOK_FILE, PRE_PUSH_HOOK_FILE):
+        if hook_file.exists():
+            lines.append(f"Hook file exists: {hook_file}")
+            is_executable = os.access(hook_file, os.X_OK)
+            lines.append(f"  Executable: {'yes' if is_executable else 'no'}")
+        else:
+            lines.append(f"{hook_file.name} hook file: not installed")
 
     return "\n".join(lines)

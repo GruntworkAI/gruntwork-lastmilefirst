@@ -12,8 +12,10 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional, Tuple
 
 # Add script directory to path for local imports
@@ -35,6 +37,12 @@ SEVERITY_BUMP = {
 # "unknown command" error, so we detect it up front and surface an actionable one.
 MIN_GITLEAKS_VERSION = (8, 19, 0)
 
+# The pre-push scan hands the pushed range to `gitleaks git --log-opts`. That
+# flag shipped with the 'git' subcommand itself in v8.19.0 (cmd/git.go at the
+# v8.19.0 tag defines "staged", "pre-commit", and "log-opts"), so the floor is
+# the same release; it is named separately so the two can diverge.
+LOG_OPTS_MIN_GITLEAKS_VERSION = (8, 19, 0)
+
 _GITLEAKS_MISSING_MSG = (
     "gitleaks is not installed.\n"
     "Install: brew install gitleaks  (macOS)\n"
@@ -50,9 +58,15 @@ def _parse_gitleaks_version(output: str) -> Optional[Tuple[int, int, int]]:
     return (int(match.group(1)), int(match.group(2)), int(match.group(3) or 0))
 
 
-def _check_gitleaks() -> Optional[str]:
+def _check_gitleaks(
+    min_version: Tuple[int, int, int] = MIN_GITLEAKS_VERSION,
+    feature: str = "the 'git' subcommand",
+) -> Optional[str]:
     """
     Check gitleaks is installed and new enough. Returns an error message or None.
+
+    `min_version` and `feature` let a mode that needs a later flag raise the
+    floor (the pre-push scan passes LOG_OPTS_MIN_GITLEAKS_VERSION).
 
     Fail-closed by design: callers treat a returned message as a hard stop
     (blocked commit / errored scan), the same as missing gitleaks. "Too old to
@@ -79,11 +93,11 @@ def _check_gitleaks() -> Optional[str]:
         # on a parse miss; the report-file fail-closed check still catches a
         # genuinely broken binary.
         return None
-    if version < MIN_GITLEAKS_VERSION:
-        need = ".".join(str(n) for n in MIN_GITLEAKS_VERSION)
+    if version < min_version:
+        need = ".".join(str(n) for n in min_version)
         have = ".".join(str(n) for n in version)
         return (
-            f"gitleaks {have} is too old. This scanner uses the 'git' subcommand, "
+            f"gitleaks {have} is too old. This scanner uses {feature}, "
             f"which requires gitleaks {need} or later.\n"
             f"Upgrade: brew upgrade gitleaks  (macOS)\n"
             f"         or see https://github.com/gitleaks/gitleaks#installing"
@@ -196,6 +210,23 @@ def _run_gitleaks(
         return 2, "", "gitleaks not found"
 
 
+SEVERITY_TAG_PREFIX = "severity-"
+
+
+def _declared_severity(finding: Dict[str, Any]) -> str:
+    """gitleaks reports no severity, so a rule declares one with a `severity-<level>` tag.
+
+    A tagged level wins over the report's (always absent) Severity field; the default stays MEDIUM.
+    """
+    for tag in finding.get("Tags") or []:
+        text = str(tag).strip().lower()
+        if text.startswith(SEVERITY_TAG_PREFIX):
+            level = text[len(SEVERITY_TAG_PREFIX):].upper()
+            if level in SEVERITY_BUMP:
+                return level
+    return str(finding.get("Severity") or "MEDIUM").upper()
+
+
 def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
     """Parse gitleaks JSON output and apply severity bumps."""
     if not json_output.strip():
@@ -209,7 +240,7 @@ def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
         return []
 
     for finding in findings:
-        original = finding.get("Severity", "MEDIUM")
+        original = _declared_severity(finding)
         finding["Severity"] = _bump_severity(original, is_public)
         if is_public and original != finding["Severity"]:
             finding["_bumped"] = True
@@ -217,11 +248,20 @@ def _parse_findings(json_output: str, is_public: bool) -> List[Dict[str, Any]]:
     return findings
 
 
-# A rule tagged `public-only` names something that is fine inside a private
-# repo but must never reach a public one (e.g. a client's name: allowed in a
-# private engagement repo, a finding in a public plugin repo). The names live
-# in the user's org rules file, never in the plugin.
+# Three kinds of tagged rule, one policy.
+#
+# - `public-only`: an organization's name (e.g. a client's), fine inside a
+#   private repo and a finding in a public one. Dropped in PRIVATE/INTERNAL.
+# - `pii`: generic personal data (a personal email, a phone number). Kept in
+#   every repo; in PRIVATE/INTERNAL it is a WARNING that does not block.
+# - `private-name` without `public-only`: a person from the user's people
+#   list. Kept and blocking in every repo.
+#
+# Everything else is an ordinary secret and always blocks. The names
+# themselves live in the user's org rules file, never in the plugin.
 PUBLIC_ONLY_TAG = "public-only"
+PII_TAG = "pii"
+PRIVATE_NAME_TAG = "private-name"
 
 _VISIBILITY_UNKNOWN_NOTE = (
     "public-only rules applied because visibility could not be determined; "
@@ -229,49 +269,114 @@ _VISIBILITY_UNKNOWN_NOTE = (
 )
 
 
-def _is_public_only(finding: Dict[str, Any]) -> bool:
+def _tags(finding: Dict[str, Any]) -> set:
     tags = finding.get("Tags") or []
     if isinstance(tags, str):
         tags = [tags]
-    return any(str(t).strip().lower() == PUBLIC_ONLY_TAG for t in tags)
+    return {str(t).strip().lower() for t in tags}
+
+
+def _finding_kind(finding: Dict[str, Any]) -> str:
+    """One of "organization", "person", "pii", "ordinary"."""
+    tags = _tags(finding)
+    if PUBLIC_ONLY_TAG in tags:
+        return "organization"
+    if PRIVATE_NAME_TAG in tags:
+        return "person"
+    if PII_TAG in tags:
+        return "pii"
+    return "ordinary"
+
+
+def apply_visibility_policy(
+    findings: List[Dict[str, Any]], visibility: Optional[str]
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Decide, per finding, whether it is kept and whether it blocks.
+
+    PUBLIC, or unknown visibility (no remote, `gh` missing or not logged in):
+    every finding is kept and blocks; when unknown and a public-only rule
+    fired, one line says why it was applied. PRIVATE or INTERNAL: public-only
+    findings are dropped with one summary line, pii findings are kept with
+    Blocking False, everything else blocks.
+
+    A pii finding on the same File and StartLine as a person finding is
+    dropped, so the line is reported once, as the person.
+
+    Returns (kept_findings, report_lines). Kept findings are copies carrying a
+    `Blocking` boolean; the input is not modified.
+    """
+    kinds = [(f, _finding_kind(f)) for f in findings]
+    person_lines = {(f.get("File"), f.get("StartLine")) for f, k in kinds if k == "person"}
+    kinds = [(f, k) for f, k in kinds
+             if not (k == "pii" and (f.get("File"), f.get("StartLine")) in person_lines)]
+
+    vis = (visibility or "").upper()
+    private = vis in ("PRIVATE", "INTERNAL")
+    organization_count = sum(1 for _, k in kinds if k == "organization")
+
+    kept: List[Dict[str, Any]] = []
+    for finding, kind in kinds:
+        if private and kind == "organization":
+            continue
+        kept.append(dict(finding, Blocking=not (private and kind == "pii")))
+
+    lines: List[str] = []
+    if organization_count:
+        if private:
+            where = "a private" if vis == "PRIVATE" else "an internal"
+            lines.append(f"{organization_count} finding(s) from public-only rules "
+                         f"suppressed in {where} repo")
+        elif vis != "PUBLIC":
+            lines.append(_VISIBILITY_UNKNOWN_NOTE)
+    return kept, lines
 
 
 def apply_public_only(
     findings: List[Dict[str, Any]], visibility: Optional[str]
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """Drop findings from `public-only` rules unless the repo may be public.
+    """Deprecated alias of apply_visibility_policy, kept for one release.
 
-    PUBLIC: every finding is kept. PRIVATE or INTERNAL: public-only findings
-    are dropped, with one summary line. Unknown visibility (no remote, `gh`
-    missing or not logged in): public-only findings are kept, with one line
-    saying why. A finding without the tag is never dropped.
-
-    Returns (kept_findings, report_lines).
+    Returns the kept findings without the `Blocking` flag.
     """
-    tagged = [f for f in findings if _is_public_only(f)]
-    if not tagged:
-        return findings, []
-    vis = (visibility or "").upper()
-    if vis == "PUBLIC":
-        return findings, []
-    if vis in ("PRIVATE", "INTERNAL"):
-        kept = [f for f in findings if not _is_public_only(f)]
-        where = "a private" if vis == "PRIVATE" else "an internal"
-        return kept, [f"{len(tagged)} finding(s) from public-only rules suppressed in {where} repo"]
-    return findings, [_VISIBILITY_UNKNOWN_NOTE]
+    kept, lines = apply_visibility_policy(findings, visibility)
+    return [{k: v for k, v in f.items() if k != "Blocking"} for f in kept], lines
+
+
+def _is_blocking(finding: Dict[str, Any]) -> bool:
+    """A finding that never went through the policy blocks."""
+    return finding.get("Blocking", True) is not False
+
+
+def _summary_counts(findings: List[Dict[str, Any]]) -> str:
+    blocking = sum(1 for f in findings if _is_blocking(f))
+    warnings = len(findings) - blocking
+    parts = []
+    if blocking:
+        parts.append(f"{blocking} blocking finding(s)")
+    if warnings:
+        parts.append(f"{warnings} warning(s)")
+    return " and ".join(parts)
+
+
+# Display order, most severe first; an unknown severity sorts last.
+_SEVERITY_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
 
 def _format_findings(findings: List[Dict[str, Any]]) -> str:
-    """Format findings for display."""
+    """Format findings for display. Non-blocking findings read WARNING."""
     if not findings:
         return "No secrets detected."
 
-    lines = [f"\nFound {len(findings)} potential secret(s):\n"]
+    lines = [f"\nFound {_summary_counts(findings)}:\n"]
     lines.append(f"{'Severity':<10} {'Rule':<35} {'File':<40} Line")
     lines.append("-" * 90)
 
-    for f in sorted(findings, key=lambda x: x.get("Severity", ""), reverse=True):
-        severity = f.get("Severity", "?")
+    ordered = sorted(findings, key=lambda x: _SEVERITY_RANK.get(
+        str(x.get("Severity", "")).upper(), len(_SEVERITY_RANK)))
+    # Stable regroup: blocking first, keeping the severity order within each group.
+    ordered.sort(key=lambda x: not _is_blocking(x))
+    for f in ordered:
+        severity = f.get("Severity", "?") if _is_blocking(f) else "WARNING"
         rule = f.get("RuleID", f.get("Description", "unknown"))[:34]
         filepath = f.get("File", "?")
         # Truncate long paths
@@ -284,6 +389,8 @@ def _format_findings(findings: List[Dict[str, Any]]) -> str:
     bumped_count = sum(1 for f in findings if f.get("_bumped"))
     if bumped_count:
         lines.append(f"\n* {bumped_count} finding(s) severity bumped due to PUBLIC repo")
+    if any(not _is_blocking(f) for f in findings):
+        lines.append("\nWARNING rows are personal data in a private repo: reported, not blocking.")
 
     return "\n".join(lines)
 
@@ -416,7 +523,6 @@ def scan_archives(
     itself reported, because an unscannable committed binary is a finding.
     """
     import shutil
-    import tempfile
 
     cwd = str(repo_path) if repo_path else None
     root = Path(cwd) if cwd else Path.cwd()
@@ -484,6 +590,36 @@ def scan_archives(
     return results
 
 
+def _gitleaks_report(
+    args: List[str],
+    prefix: str,
+    config_path: Path,
+    cwd: Optional[str],
+    is_public: bool,
+) -> Tuple[Optional[List[Dict[str, Any]]], int, str]:
+    """Run gitleaks with a JSON report and parse it.
+
+    Returns (findings, exit_code, stderr). findings is None when gitleaks
+    aborted before writing the report, so the caller can fail closed with its
+    own message. Exit codes alone are ambiguous (gitleaks uses 1 for both
+    "leaks found" and "config load failure"); the reliable signal that the
+    scan completed is that the requested --report-path file exists. Treating
+    no-report as no-findings would silently hide config errors.
+    """
+    report_file = tempfile.mktemp(suffix=".json", prefix=prefix)
+    code, _stdout, stderr = _run_gitleaks(
+        args + ["--report-format", "json", "--report-path", report_file],
+        config_path=config_path,
+        cwd=cwd,
+    )
+    report_path = Path(report_file)
+    if not report_path.exists():
+        return None, code, stderr
+    findings = _parse_findings(report_path.read_text(encoding="utf-8"), is_public)
+    report_path.unlink(missing_ok=True)
+    return findings, code, stderr
+
+
 def scan_repo(
     repo_path: Optional[Path] = None,
     report_format: str = "text",
@@ -505,46 +641,30 @@ def scan_repo(
 
     config_path = write_merged_config()
     try:
-        # Use JSON report to temp file
-        import tempfile
-        report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-report-")
-
-        code, stdout, stderr = _run_gitleaks(
-            ["git", "--report-format", "json", "--report-path", report_file],
-            config_path=config_path,
-            cwd=cwd,
+        findings, code, stderr = _gitleaks_report(
+            ["git"], "gitleaks-report-", config_path, cwd, is_public
         )
-
-        # Fail-closed on gitleaks abort. Exit codes alone are ambiguous (gitleaks
-        # uses 1 for both "leaks found" and "config load failure"). The reliable
-        # signal: if we requested --report-path and the file doesn't exist, the
-        # scan never completed. Treating no-report as no-findings would silently
-        # hide config errors.
-        report_path = Path(report_file)
-        if not report_path.exists():
+        # Fail-closed on gitleaks abort (see _gitleaks_report).
+        if findings is None:
             return 1, (
                 f"gitleaks aborted before producing a report (exit {code}). "
                 f"Scan did not complete.\nstderr:\n{stderr or '(none)'}"
             )
 
-        findings = _parse_findings(
-            report_path.read_text(encoding="utf-8"), is_public
-        )
-        report_path.unlink(missing_ok=True)
-
         # gitleaks cannot see inside archives, so scan them separately.
         findings.extend(scan_archives(repo_path, config_path, is_public))
-        findings, public_only_lines = apply_public_only(findings, visibility)
+        findings, policy_lines = apply_visibility_policy(findings, visibility)
 
         # Build report
         lines = _public_repo_banner(visibility)
         sync_note = consume_sync_note()
         if sync_note:
             lines.append(sync_note)
-        lines.extend(public_only_lines)
+        lines.extend(policy_lines)
         lines.append(_format_findings(findings))
 
-        return (1 if findings else 0), "\n".join(lines)
+        blocked = any(_is_blocking(f) for f in findings)
+        return (1 if blocked else 0), "\n".join(lines)
     finally:
         config_path.unlink(missing_ok=True)
 
@@ -564,27 +684,12 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
 
     config_path = write_merged_config()
     try:
-        import tempfile
-        report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-staged-")
-
-        code, stdout, stderr = _run_gitleaks(
-            [
-                "git",
-                "--pre-commit",
-                "--staged",
-                "--report-format", "json",
-                "--report-path", report_file,
-            ],
-            config_path=config_path,
-            cwd=cwd,
+        findings, code, stderr = _gitleaks_report(
+            ["git", "--pre-commit", "--staged"],
+            "gitleaks-staged-", config_path, cwd, is_public,
         )
-
-        # Fail-closed on gitleaks abort. Gitleaks exit code 1 means either
-        # "leaks found" or "config load failure" — ambiguous. The reliable
-        # signal that the scan actually ran: the requested --report-path file
-        # exists. If it doesn't, treat as a hard failure and block the commit.
-        report_path = Path(report_file)
-        if not report_path.exists():
+        # Fail-closed on gitleaks abort (see _gitleaks_report): block the commit.
+        if findings is None:
             return 1, (
                 f"gitleaks aborted before producing a report (exit {code}). "
                 f"Pre-commit scan did not complete.\n"
@@ -593,17 +698,12 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
                 f"/run-scan-secrets --list-formats to inspect rules."
             )
 
-        findings = _parse_findings(
-            report_path.read_text(encoding="utf-8"), is_public
-        )
-        report_path.unlink(missing_ok=True)
-
         # Staged archives are invisible to gitleaks; expand and scan them too.
         findings.extend(
             scan_archives(repo_path, config_path, is_public, staged_only=True)
         )
         # Same visibility answer as the full scan (check_repo_visibility above).
-        findings, public_only_lines = apply_public_only(findings, visibility)
+        findings, policy_lines = apply_visibility_policy(findings, visibility)
 
         lines = []
         sync_note = consume_sync_note()
@@ -611,14 +711,369 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             lines.append(sync_note)
         if is_public:
             lines.append("Reminder: you are committing to a PUBLIC repository")
-        lines.extend(public_only_lines)
+        lines.extend(policy_lines)
 
-        if findings:
+        if any(_is_blocking(f) for f in findings):
             lines.append(_format_findings(findings))
             return 1, "\n".join(lines)
+        if findings:
+            # Warnings only (personal data in a private repo): shown, not blocking.
+            lines.append(_format_findings(findings))
+            lines.append("No blocking findings; commit allowed.")
+            return 0, "\n".join(lines)
 
         lines.append("No secrets detected in staged changes.")
         return 0, "\n".join(lines)
+    finally:
+        config_path.unlink(missing_ok=True)
+
+
+# --- Pre-push scan -------------------------------------------------------
+
+_ZERO_SHA = re.compile(r"^0+$")
+
+
+def parse_pre_push_lines(text: str) -> List[Dict[str, str]]:
+    """Parse the ref lines git writes to a pre-push hook's stdin.
+
+    Each line is `<local ref> <local sha> <remote ref> <remote sha>`. The
+    result carries those four fields plus `kind`: "deleted" when the local sha
+    is all zeros, "new" when the remote sha is all zeros (a first push of that
+    ref), otherwise "existing". Blank lines are ignored; any other line that
+    does not have four fields raises ValueError, so the caller can fail closed.
+    """
+    refs: List[Dict[str, str]] = []
+    for raw in text.splitlines():
+        if not raw.strip():
+            continue
+        parts = raw.split()
+        if len(parts) != 4:
+            raise ValueError(f"unexpected pre-push line: {raw!r}")
+        local_ref, local_sha, remote_ref, remote_sha = parts
+        if _ZERO_SHA.match(local_sha):
+            kind = "deleted"
+        elif _ZERO_SHA.match(remote_sha):
+            kind = "new"
+        else:
+            kind = "existing"
+        refs.append({"local_ref": local_ref, "local_sha": local_sha,
+                     "remote_ref": remote_ref, "remote_sha": remote_sha, "kind": kind})
+    return refs
+
+
+def _commit_exists(sha: str, cwd: Optional[str] = None) -> bool:
+    """True when this clone has the commit."""
+    try:
+        result = subprocess.run(
+            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+            capture_output=True, text=True, timeout=10, cwd=cwd,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
+
+
+NOT_ON_A_REMOTE = "--not --remotes"
+
+
+def _push_log_opts(ref: Dict[str, str], cwd: Optional[str]) -> str:
+    """The `--log-opts` value for one pushed ref.
+
+    An existing ref scans `remote..local`. A new ref scans every commit
+    reachable from the local sha that is not already on a remote-tracking ref
+    (`<sha> --not --remotes`; gitleaks splits --log-opts on spaces, verified
+    on 8.30.1), so a branch cut from a pushed main does not rescan main. A
+    repo with no remote-tracking refs yet still scans its whole history. When
+    this clone lacks the remote sha (e.g. a force push over commits never
+    fetched), the range would be invalid, and gitleaks 8.30.1 exits 0 with an
+    empty report on an invalid range, so that case widens the same way rather
+    than scanning nothing.
+    """
+    if ref["kind"] == "existing" and _commit_exists(ref["remote_sha"], cwd):
+        return f"{ref['remote_sha']}..{ref['local_sha']}"
+    return f"{ref['local_sha']} {NOT_ON_A_REMOTE}"
+
+
+def _push_scan_runs(refs: List[Dict[str, str]], cwd: Optional[str]) -> List[Tuple[str, str]]:
+    """(label, --log-opts) for each gitleaks run a push needs.
+
+    Each existing range is its own run. Every ref that scans "not on a remote"
+    shares one run, `<sha1> <sha2> --not --remotes`, so a push of several new
+    branches walks their shared history once.
+    """
+    runs: List[Tuple[str, str]] = []
+    widened: List[Dict[str, str]] = []
+    for ref in refs:
+        opts = _push_log_opts(ref, cwd)
+        if opts.endswith(NOT_ON_A_REMOTE):
+            widened.append(ref)
+        else:
+            runs.append((ref["local_ref"], opts))
+    if widened:
+        shas = " ".join(dict.fromkeys(r["local_sha"] for r in widened))
+        label = ", ".join(r["local_ref"] for r in widened)
+        runs.append((label, f"{shas} {NOT_ON_A_REMOTE}"))
+    return runs
+
+
+def _repo_auditor():
+    """The repo_auditor module, or None if it cannot load."""
+    try:
+        import repo_auditor
+        return repo_auditor
+    except Exception:
+        return None
+
+
+def _fetch_github_posture(
+    repo_path: Optional[Path], repo: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """GitHub's own answer (visibility plus posture), one `gh api` call.
+
+    `repo` ("owner/name") asks about that repo; without it, `gh` asks about
+    the clone's default repo. None when the posture module cannot load; a dict
+    with visibility None when `gh` is missing, unauthenticated, or there is no
+    GitHub remote.
+    """
+    auditor = _repo_auditor()
+    if auditor is None:
+        return None
+    try:
+        if repo:
+            return auditor._fetch_posture(repo_path or Path.cwd(), repo=repo)
+        return auditor._fetch_posture(repo_path or Path.cwd())
+    except Exception:
+        return None
+
+
+# Hosts that are clearly not GitHub, for scp-style remotes whose host may be
+# an ssh alias (e.g. `git@github-work:owner/repo.git`).
+_OTHER_GIT_HOSTS = ("gitlab", "bitbucket", "codeberg", "sr.ht", "gitea",
+                    "azure", "visualstudio", "sourceforge")
+_OWNER_REPO = re.compile(r"^/*([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/*$")
+
+
+def github_repo_from_url(url: Optional[str]) -> Optional[str]:
+    """"owner/repo" when `url` reads as a GitHub remote, else None.
+
+    Accepts https and ssh:// URLs whose host contains "github", and scp-style
+    `user@host:owner/repo(.git)` where the host is github.com or an ssh alias
+    that is not obviously another provider. Local paths and file:// URLs are
+    not GitHub.
+    """
+    if not url or not url.strip():
+        return None
+    url = url.strip()
+    if "://" in url:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if "github" not in host:
+            return None
+        path = parsed.path
+    else:
+        match = re.match(r"^(?:[^@/:]+@)?([^/:]+):(?!/)(.+)$", url)
+        if not match:
+            return None
+        host, path = match.group(1).lower(), match.group(2)
+        if any(other in host for other in _OTHER_GIT_HOSTS):
+            return None
+    found = _OWNER_REPO.match(path)
+    if not found:
+        return None
+    return f"{found.group(1)}/{found.group(2)}"
+
+
+def _describe_github_posture(posture: Dict[str, Any]) -> str:
+    auditor = _repo_auditor()
+    if auditor is None:
+        return ""
+    try:
+        return auditor._describe_posture(posture)
+    except Exception:
+        return ""
+
+
+def _hygiene_warnings(repo_path: Optional[Path]) -> List[str]:
+    """repo_auditor's gitignore-gap and dangerous-file checks, as warning lines."""
+    lines: List[str] = []
+    try:
+        auditor = _repo_auditor()
+        if auditor is None:
+            # Re-raise the original import error so the warning names its type.
+            import repo_auditor as auditor
+        missing, _present = auditor.check_gitignore(repo_path)
+        if missing:
+            lines.append(f"WARNING: .gitignore is missing {len(missing)} required "
+                         f"pattern(s): {', '.join(missing)}")
+        dangerous = sorted(auditor.check_dangerous_committed_files(repo_path))
+        if dangerous:
+            shown = ", ".join(dangerous[:10])
+            more = f" and {len(dangerous) - 10} more" if len(dangerous) > 10 else ""
+            lines.append(f"WARNING: {len(dangerous)} file(s) in git history that should "
+                         f"not be committed: {shown}{more}")
+    except Exception as exc:  # noqa: BLE001 - hygiene is advisory; never abort the push
+        lines.append(f"WARNING: hygiene checks could not run ({type(exc).__name__})")
+    return lines
+
+
+def visibility_mismatch(
+    declared: Optional[str], github: Optional[str]
+) -> Tuple[Optional[str], List[str]]:
+    """Compare the declared visibility with GitHub's answer.
+
+    Returns (level, lines) with level "block", "warn", or None. A declaration
+    of PRIVATE or INTERNAL against a PUBLIC repo blocks, because the policy
+    would treat the pushed content as private (PII warns, organization names
+    are suppressed) while it is on the internet. A declared PUBLIC against a
+    non-public repo only warns: the policy is stricter than it needs to be.
+    No declaration, or no answer from GitHub, is not a finding.
+    """
+    if not declared or not github or declared == github:
+        return None, []
+    if declared in ("PRIVATE", "INTERNAL") and github == "PUBLIC":
+        return "block", [
+            f"BLOCKED: this repo is declared {declared} (git config {VISIBILITY_CONFIG_KEY}) "
+            f"but GitHub reports PUBLIC.",
+            "The scan applied private-repo rules to content that would be public.",
+            "Fix one side, then push again:",
+            "  - make the repo private: gh repo edit --visibility private "
+            "--accept-visibility-change-consequences",
+            f"  - or declare it public, so the audit runs as public: "
+            f"git config {VISIBILITY_CONFIG_KEY} public",
+        ]
+    if declared == "PUBLIC":
+        return "warn", [
+            f"WARNING: this repo is declared PUBLIC but GitHub reports {github}. "
+            "Public-repo rules were applied (stricter than needed). To match: "
+            f"git config {VISIBILITY_CONFIG_KEY} {github.lower()}",
+        ]
+    return "warn", [
+        f"WARNING: this repo is declared {declared} but GitHub reports {github}.",
+    ]
+
+
+def scan_pushed(
+    stdin_text: str,
+    repo_path: Optional[Path] = None,
+    remote_url: Optional[str] = None,
+) -> Tuple[int, str]:
+    """
+    Pre-push mode: scan the commits being pushed, read from the hook's stdin.
+
+    Deleted refs are skipped. An existing remote ref scans `remote..local`. A
+    new remote ref scans every commit not already on a remote and runs the
+    first-push audit once per push: hygiene warnings, the visibility
+    consistency check, and (for a public repo) GitHub's posture as a warning.
+
+    `remote_url` is the URL git passes the hook. When it reads as a GitHub
+    repo and GitHub answers for it, that answer is used rather than the
+    clone's default repo, and a PUBLIC answer overrides a private or internal
+    declaration for the scan rules. With no answer for it, the declaration
+    then the default repo's answer decide, as before.
+
+    Exit 1 only on a blocking finding, a visibility block, or a scan that did
+    not complete. Returns (exit_code, report_text).
+    """
+    try:
+        refs = parse_pre_push_lines(stdin_text)
+    except ValueError as exc:
+        return 1, f"Push blocked: could not read the refs git passed the hook ({exc})."
+
+    to_scan = [r for r in refs if r["kind"] != "deleted"]
+    if not to_scan:
+        return 0, "Nothing to scan (no refs pushed, or only deletions)."
+
+    err = _check_gitleaks(LOG_OPTS_MIN_GITLEAKS_VERSION,
+                          "--log-opts on the 'git' subcommand")
+    if err:
+        return 1, err
+
+    cwd = str(repo_path) if repo_path else None
+    first_push = any(r["kind"] == "new" for r in to_scan)
+
+    lines: List[str] = []
+    blocked = False
+
+    if first_push:
+        declared = declared_visibility(repo_path)
+        pushed_repo = github_repo_from_url(remote_url)
+        posture = _fetch_github_posture(repo_path, repo=pushed_repo) if pushed_repo else None
+        github = (posture or {}).get("visibility")
+        if github == "PUBLIC":
+            # The remote being pushed to is public: content lands on the
+            # internet whatever the declaration says.
+            visibility = github
+        else:
+            if not github:
+                posture = _fetch_github_posture(repo_path)
+                github = (posture or {}).get("visibility")
+            # Declared wins, as in check_repo_visibility; GitHub's answer is
+            # already in hand, so it is not asked twice.
+            visibility = declared or github
+    else:
+        posture = None
+        github = None
+        visibility = check_repo_visibility(repo_path)
+    is_public = visibility == "PUBLIC"
+
+    config_path = write_merged_config()
+    try:
+        findings: List[Dict[str, Any]] = []
+        seen = set()
+        for label, log_opts in _push_scan_runs(to_scan, cwd):
+            ref_findings, code, stderr = _gitleaks_report(
+                ["git", "--log-opts", log_opts],
+                "gitleaks-push-", config_path, cwd, is_public,
+            )
+            # Fail-closed on gitleaks abort (see _gitleaks_report).
+            if ref_findings is None:
+                return 1, (
+                    f"gitleaks aborted before producing a report (exit {code}). "
+                    f"Pre-push scan of {label} did not complete.\n"
+                    f"stderr:\n{stderr or '(none)'}\n\n"
+                    f"Push blocked. If this is a config issue, run "
+                    f"/run-scan-secrets --list-formats to inspect rules."
+                )
+            for f in ref_findings:
+                key = f.get("Fingerprint") or (f.get("Commit"), f.get("File"),
+                                               f.get("StartLine"), f.get("RuleID"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                findings.append(f)
+
+        findings, policy_lines = apply_visibility_policy(findings, visibility)
+
+        sync_note = consume_sync_note()
+        if sync_note:
+            lines.append(sync_note)
+        if first_push:
+            lines.append("First push of a ref: auditing every commit not already on a remote.")
+            level, mismatch_lines = visibility_mismatch(declared, github)
+            lines.extend(mismatch_lines)
+            if declared and not github:
+                reason = (posture or {}).get("reason") or "no answer"
+                lines.append(f"WARNING: declared {declared}; GitHub could not confirm it "
+                             f"({reason}), so the declaration was not verified.")
+            blocked = blocked or level == "block"
+            lines.extend(_hygiene_warnings(repo_path))
+            if github == "PUBLIC" and posture is not None:
+                described = _describe_github_posture(posture)
+                if described:
+                    lines.append("WARNING (not blocking): GitHub posture for this public repo:")
+                    lines.append(described)
+        if is_public:
+            lines.append("Reminder: you are pushing to a PUBLIC repository")
+        lines.extend(policy_lines)
+
+        if findings:
+            lines.append(_format_findings(findings))
+        else:
+            lines.append("No secrets detected in the pushed commits.")
+        blocked = blocked or any(_is_blocking(f) for f in findings)
+        if not blocked and findings:
+            lines.append("No blocking findings; push allowed.")
+        return (1 if blocked else 0), "\n".join(lines)
     finally:
         config_path.unlink(missing_ok=True)
 
@@ -716,10 +1171,18 @@ def scan_workspace(workspace_path: Optional[Path] = None) -> Tuple[int, str]:
         exit_code, report = scan_repo(repo)
         if exit_code == 0:
             # A clean repo's report is not printed, so carry the public-only
-            # suppression line (if any) onto its one line.
-            suppressed = next((l for l in report.splitlines()
-                               if "from public-only rules suppressed" in l), None)
-            lines.append(f"  {repo_name}: clean" + (f" ({suppressed})" if suppressed else ""))
+            # suppression line and any warning count onto its one line. A
+            # repo with warnings (personal data in a private repo) also gets
+            # its report, so the warnings can be read.
+            notes = [l for l in report.splitlines()
+                     if "from public-only rules suppressed" in l]
+            warned = re.search(r"\b(\d+) warning\(s\)", report)
+            if warned:
+                notes.append(f"{warned.group(1)} warning(s)")
+            lines.append(f"  {repo_name}: clean"
+                         + (f" ({'; '.join(notes)})" if notes else ""))
+            if warned:
+                lines.append(report)
         else:
             lines.append(f"  {repo_name}: FINDINGS DETECTED")
             lines.append(report)
