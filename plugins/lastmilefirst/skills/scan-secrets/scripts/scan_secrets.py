@@ -6,6 +6,7 @@ Usage:
     python scan_secrets.py                      # Scan current repo
     python scan_secrets.py --all                # Scan all repos in workspace
     python scan_secrets.py --pre-commit         # Scan staged changes (for hook)
+    python scan_secrets.py --pre-push           # Scan pushed commits, refs on stdin (for hook)
     python scan_secrets.py --audit              # Audit current repo hygiene
     python scan_secrets.py --audit --github     # Audit all public GitHub repos
     python scan_secrets.py --audit --github --deep  # ...plus per-call checks per repo
@@ -58,6 +59,12 @@ Examples:
         help="Scan staged changes only (for pre-commit hook)",
     )
     mode.add_argument(
+        "--pre-push",
+        action="store_true",
+        help="Scan the commits being pushed; reads git's pre-push ref lines on stdin"
+             " (for pre-push hook)",
+    )
+    mode.add_argument(
         "--audit",
         action="store_true",
         help="Audit repo hygiene (.gitignore, visibility, dangerous files)",
@@ -73,12 +80,12 @@ Examples:
     mode.add_argument(
         "--install-hooks",
         action="store_true",
-        help="Install global pre-commit hook for secret scanning",
+        help="Install global pre-commit and pre-push hooks for secret scanning",
     )
     mode.add_argument(
         "--uninstall-hooks",
         action="store_true",
-        help="Remove pre-commit hook",
+        help="Remove the pre-commit and pre-push hooks",
     )
     mode.add_argument(
         "--hook-status",
@@ -172,6 +179,13 @@ Examples:
     if args.pre_commit:
         from scanner import scan_staged, update_scan_timestamp
         exit_code, report = scan_staged()
+        if report:
+            print(report, file=sys.stderr)
+        return exit_code
+
+    if args.pre_push:
+        import scanner
+        exit_code, report = scanner.scan_pushed(sys.stdin.read())
         if report:
             print(report, file=sys.stderr)
         return exit_code

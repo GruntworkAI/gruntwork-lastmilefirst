@@ -7,6 +7,7 @@ is worse than no hook, because it looks like coverage.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -124,3 +125,149 @@ def test_later_check_failure_still_blocks(script, tmp_path):
     )
     assert result.returncode == 1
     assert "Secret scan found potential secrets" in result.stderr
+
+
+# --- the pre-push dispatcher (plan 2026-10-09-001, U3) ------------------------
+
+KINDS = ["pre-commit", "pre-push"]
+
+
+def _registry(kind: str):
+    return hook_installer.CHECKS if kind == "pre-commit" else hook_installer.PRE_PUSH_CHECKS
+
+
+def test_default_kind_is_pre_commit():
+    assert hook_installer.build_hook_script() == hook_installer.build_hook_script("pre-commit")
+
+
+def test_pre_push_registry_is_the_scan_alone():
+    assert [rel for _, rel, _ in hook_installer.PRE_PUSH_CHECKS] == [
+        "skills/scan-secrets/scripts/scan_secrets.py"
+    ]
+
+
+def test_unknown_kind_is_refused():
+    with pytest.raises(ValueError):
+        hook_installer.build_hook_script("post-merge")
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_both_scripts_are_valid_bash(kind, tmp_path):
+    path = tmp_path / kind
+    path.write_text(hook_installer.build_hook_script(kind), encoding="utf-8")
+    result = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_each_script_passes_its_own_flag(kind):
+    script = hook_installer.build_hook_script(kind)
+    other = "--pre-push" if kind == "pre-commit" else "--pre-commit"
+    assert f'python3 "$CHECK_PATH" --{kind}' in script
+    assert other not in script
+
+
+def test_pre_push_dispatcher_reads_nothing_from_stdin():
+    """The check inherits the hook's stdin; a `read` in bash would consume it."""
+    script = hook_installer.build_hook_script("pre-push")
+    assert "read " not in script
+    assert "/dev/stdin" not in script
+
+
+def _run_kind(kind: str, tmp_path: Path, exit_codes: dict, stdin: str = "") -> subprocess.CompletedProcess:
+    plugin_root = tmp_path / ".claude" / "plugins" / "marketplaces" / "gruntwork-x" / "plugins" / "lastmilefirst"
+    for _, rel_path, _ in _registry(kind):
+        target = plugin_root / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        code = exit_codes.get(rel_path, 0)
+        # Echo stdin back so the test can see the check inherited it.
+        target.write_text(
+            "import sys\n"
+            f"print({rel_path!r}, sys.argv[1:], repr(sys.stdin.read()))\n"
+            f"sys.exit({code})\n",
+            encoding="utf-8",
+        )
+    hook = tmp_path / kind
+    hook.write_text(hook_installer.build_hook_script(kind), encoding="utf-8")
+    return subprocess.run(
+        ["bash", str(hook)],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+    )
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_both_scripts_fail_closed_on_a_check_failure(kind, tmp_path):
+    rel = "skills/scan-secrets/scripts/scan_secrets.py"
+    result = _run_kind(kind, tmp_path, {rel: 1})
+    assert result.returncode == 1
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_both_scripts_pass_when_every_check_passes(kind, tmp_path):
+    result = _run_kind(kind, tmp_path, {})
+    assert result.returncode == 0, result.stderr
+
+
+def test_pre_push_check_inherits_the_hook_stdin(tmp_path):
+    line = "refs/heads/main " + "a" * 40 + " refs/heads/main " + "0" * 40 + "\n"
+    result = _run_kind("pre-push", tmp_path, {}, stdin=line)
+    assert result.returncode == 0, result.stderr
+    assert "['--pre-push']" in result.stdout
+    assert repr(line) in result.stdout
+
+
+def test_pre_push_failure_message_names_the_push(tmp_path):
+    result = _run_kind("pre-push", tmp_path, {"skills/scan-secrets/scripts/scan_secrets.py": 1})
+    assert "Push blocked" in result.stderr
+
+
+@pytest.fixture
+def hooks_home(tmp_path, monkeypatch):
+    """Point the installer at tmp_path and stub the global git config call."""
+    hooks_dir = tmp_path / "git-hooks"
+    monkeypatch.setattr(hook_installer, "HOOKS_DIR", hooks_dir)
+    monkeypatch.setattr(hook_installer, "HOOK_FILE", hooks_dir / "pre-commit")
+    monkeypatch.setattr(hook_installer, "PRE_PUSH_HOOK_FILE", hooks_dir / "pre-push")
+    state = {"hooks_path": None, "calls": []}
+
+    def fake_run(cmd, **_kwargs):
+        state["calls"].append(cmd)
+        if cmd[:3] == ["git", "config", "--global"] and "--unset" in cmd:
+            state["hooks_path"] = None
+        elif cmd[:3] == ["git", "config", "--global"] and len(cmd) == 5:
+            state["hooks_path"] = cmd[4]
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(hook_installer.subprocess, "run", fake_run)
+    monkeypatch.setattr(hook_installer, "get_current_hooks_path", lambda: state["hooks_path"])
+    return hooks_dir, state
+
+
+def test_install_writes_both_hooks(hooks_home):
+    hooks_dir, state = hooks_home
+    hook_installer.install_hooks()
+    for name, kind in (("pre-commit", "pre-commit"), ("pre-push", "pre-push")):
+        path = hooks_dir / name
+        assert path.read_text(encoding="utf-8") == hook_installer.build_hook_script(kind)
+        assert os.access(path, os.X_OK)
+    assert state["hooks_path"] == str(hooks_dir)
+
+
+def test_install_backs_up_a_foreign_pre_push_hook(hooks_home):
+    hooks_dir, _ = hooks_home
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "pre-push").write_text("#!/bin/sh\necho someone else's\n", encoding="utf-8")
+    hook_installer.install_hooks()
+    assert "someone else's" in (hooks_dir / "pre-push.backup").read_text(encoding="utf-8")
+    assert "lastmilefirst" in (hooks_dir / "pre-push").read_text(encoding="utf-8")
+
+
+def test_uninstall_removes_both_hooks(hooks_home):
+    hooks_dir, _ = hooks_home
+    hook_installer.install_hooks()
+    hook_installer.uninstall_hooks()
+    assert not (hooks_dir / "pre-commit").exists()
+    assert not (hooks_dir / "pre-push").exists()
