@@ -84,7 +84,8 @@ def push_env(tmp_path, monkeypatch):
     config = tmp_path / "merged.toml"
     state = {"rows": [], "log_opts": [], "args": [], "posture_calls": 0,
              "hygiene_calls": 0, "declared": None, "github": None,
-             "hygiene": [], "known": {LOCAL, REMOTE, OTHER}, "floor": []}
+             "hygiene": [], "known": {LOCAL, REMOTE, OTHER}, "floor": [],
+             "by_repo": {}, "posture_repos": [], "reason": None}
 
     def write_config(*_a, **_k):
         config.write_text("")
@@ -96,10 +97,15 @@ def push_env(tmp_path, monkeypatch):
         Path(args[args.index("--report-path") + 1]).write_text(json.dumps(state["rows"]))
         return (1 if state["rows"] else 0), "", ""
 
-    def posture(_repo=None):
+    def posture(_repo_path=None, repo=None):
+        """The clone's default repo answers `state["github"]`; a named repo
+        answers from `state["by_repo"]` (absent means no answer)."""
         state["posture_calls"] += 1
-        return {"visibility": state["github"], "repo": "example/repo",
-                "scanning": "unknown", "push_protection": "unknown", "reason": None}
+        state["posture_repos"].append(repo)
+        visibility = state["by_repo"].get(repo) if repo else state["github"]
+        reason = None if visibility else (state["reason"] or "no remote, no access, or repo not found")
+        return {"visibility": visibility, "repo": repo or "example/repo",
+                "scanning": "unknown", "push_protection": "unknown", "reason": reason}
 
     def hygiene(_repo=None):
         state["hygiene_calls"] += 1
@@ -130,9 +136,24 @@ def test_existing_ref_hands_gitleaks_the_range(push_env, tmp_path):
     assert push_env["args"][0][0] == "git"
 
 
-def test_new_ref_hands_gitleaks_the_local_sha(push_env, tmp_path):
+def test_new_ref_scans_only_commits_not_already_on_a_remote(push_env, tmp_path):
     scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO), tmp_path)
-    assert push_env["log_opts"] == [LOCAL]
+    assert push_env["log_opts"] == [f"{LOCAL} --not --remotes"]
+
+
+def test_several_new_refs_share_one_gitleaks_run(push_env, tmp_path):
+    text = (line("refs/heads/main", LOCAL, "refs/heads/main", ZERO)
+            + line("refs/heads/feature", OTHER, "refs/heads/feature", ZERO))
+    scanner.scan_pushed(text, tmp_path)
+    assert push_env["log_opts"] == [f"{LOCAL} {OTHER} --not --remotes"]
+
+
+def test_one_finding_from_the_batched_run_is_reported_once(push_env, tmp_path):
+    push_env["rows"].extend([dict(ORDINARY), dict(ORDINARY)])
+    text = (line("refs/heads/main", LOCAL, "refs/heads/main", ZERO)
+            + line("refs/heads/feature", OTHER, "refs/heads/feature", ZERO))
+    _, report = scanner.scan_pushed(text, tmp_path)
+    assert "1 blocking finding(s)" in report
 
 
 def test_deleted_ref_is_not_scanned(push_env, tmp_path):
@@ -146,7 +167,7 @@ def test_each_line_gets_its_own_range(push_env, tmp_path):
             + line("refs/heads/feature", OTHER, "refs/heads/feature", ZERO)
             + line("(delete)", ZERO, "refs/heads/old", REMOTE))
     scanner.scan_pushed(text, tmp_path)
-    assert push_env["log_opts"] == [f"{REMOTE}..{LOCAL}", OTHER]
+    assert push_env["log_opts"] == [f"{REMOTE}..{LOCAL}", f"{OTHER} --not --remotes"]
 
 
 def test_unknown_remote_sha_widens_to_the_local_history(push_env, tmp_path):
@@ -154,7 +175,7 @@ def test_unknown_remote_sha_widens_to_the_local_history(push_env, tmp_path):
     remote sha this clone never fetched would otherwise scan nothing."""
     push_env["known"] = {LOCAL}
     scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", REMOTE), tmp_path)
-    assert push_env["log_opts"] == [LOCAL]
+    assert push_env["log_opts"] == [f"{LOCAL} --not --remotes"]
 
 
 def test_the_log_opts_floor_is_requested(push_env, tmp_path):
@@ -258,7 +279,7 @@ def test_declared_public_but_github_private_warns(push_env, tmp_path):
     assert "declared PUBLIC" in report
 
 
-@pytest.mark.parametrize("declared,github", [(None, "PUBLIC"), (None, None), ("PRIVATE", None),
+@pytest.mark.parametrize("declared,github", [(None, "PUBLIC"), (None, None),
                                              ("PRIVATE", "PRIVATE"), ("PUBLIC", "PUBLIC")])
 def test_no_mismatch_is_not_a_finding(push_env, tmp_path, declared, github):
     push_env["declared"] = declared
@@ -266,6 +287,24 @@ def test_no_mismatch_is_not_a_finding(push_env, tmp_path, declared, github):
     code, report = scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO), tmp_path)
     assert code == 0
     assert "declared" not in report
+
+
+def test_unconfirmed_declaration_warns_without_blocking(push_env, tmp_path):
+    push_env["declared"] = "PRIVATE"
+    push_env["github"] = None
+    push_env["reason"] = "gh unavailable or timed out"
+    code, report = scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO), tmp_path)
+    assert code == 0
+    assert ("WARNING: declared PRIVATE; GitHub could not confirm it (gh unavailable or timed out), "
+            "so the declaration was not verified.") in report
+
+
+def test_unconfirmed_declaration_without_a_posture_module_says_no_answer(push_env, tmp_path, monkeypatch):
+    push_env["declared"] = "INTERNAL"
+    monkeypatch.setattr(scanner, "_fetch_github_posture", lambda *_a, **_k: None)
+    code, report = scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO), tmp_path)
+    assert code == 0
+    assert "GitHub could not confirm it (no answer)" in report
 
 
 def test_mismatch_is_not_checked_on_a_range_push(push_env, tmp_path):
@@ -289,6 +328,82 @@ def test_private_repo_first_push_does_not_show_posture(push_env, tmp_path):
     assert "GitHub protections" not in report
 
 
+# --- the remote being pushed to ------------------------------------------------------
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://github.com/example-org/example-repo.git", "example-org/example-repo"),
+    ("https://github.com/example-org/example-repo", "example-org/example-repo"),
+    ("git@github.com:example-org/example-repo.git", "example-org/example-repo"),
+    ("ssh://git@github.com/example-org/example-repo.git", "example-org/example-repo"),
+    ("git@github-work:example-org/example-repo.git", "example-org/example-repo"),
+    ("git@gitlab.com:example-org/example-repo.git", None),
+    ("https://gitlab.com/example-org/example-repo.git", None),
+    ("/tmp/remote.git", None),
+    ("file:///tmp/remote.git", None),
+    ("", None),
+    (None, None),
+])
+def test_github_repo_is_read_from_the_remote_url(url, expected):
+    assert scanner.github_repo_from_url(url) == expected
+
+
+PUSHED_URL = "git@github.com:example-org/pushed-repo.git"
+
+
+def test_public_pushed_remote_overrides_a_private_declaration(push_env, tmp_path):
+    """The clone's default repo is private; the remote being pushed to is public."""
+    push_env["declared"] = "PRIVATE"
+    push_env["github"] = "PRIVATE"
+    push_env["by_repo"] = {"example-org/pushed-repo": "PUBLIC"}
+    push_env["rows"].append(dict(PII))
+    code, report = scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO),
+                                       tmp_path, remote_url=PUSHED_URL)
+    assert code == 1
+    assert "example-org/pushed-repo" in push_env["posture_repos"]
+    assert "declared PRIVATE" in report
+    assert "GitHub reports PUBLIC" in report
+    assert "gh repo edit --visibility private" in report
+    # Public rules: personal data blocks rather than warns.
+    assert "1 blocking finding(s)" in report
+    assert "Reminder: you are pushing to a PUBLIC repository" in report
+
+
+def test_private_pushed_remote_is_the_answer_used(push_env, tmp_path):
+    push_env["declared"] = "PRIVATE"
+    push_env["github"] = "PUBLIC"
+    push_env["by_repo"] = {"example-org/pushed-repo": "PRIVATE"}
+    code, report = scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO),
+                                       tmp_path, remote_url=PUSHED_URL)
+    assert code == 0
+    assert "declared" not in report
+
+
+def test_no_answer_for_the_pushed_remote_falls_back_to_the_default_repo(push_env, tmp_path):
+    push_env["declared"] = "PRIVATE"
+    push_env["github"] = "PUBLIC"
+    code, report = scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO),
+                                       tmp_path, remote_url=PUSHED_URL)
+    assert code == 1
+    assert push_env["posture_repos"] == ["example-org/pushed-repo", None]
+    assert "GitHub reports PUBLIC" in report
+
+
+def test_unparseable_remote_keeps_the_default_resolution(push_env, tmp_path):
+    push_env["declared"] = "PRIVATE"
+    push_env["github"] = "PRIVATE"
+    code, _ = scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO),
+                                  tmp_path, remote_url="/tmp/remote.git")
+    assert code == 0
+    assert push_env["posture_repos"] == [None]
+
+
+def test_pushed_remote_is_not_asked_on_a_range_push(push_env, tmp_path):
+    push_env["by_repo"] = {"example-org/pushed-repo": "PUBLIC"}
+    scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", REMOTE),
+                        tmp_path, remote_url=PUSHED_URL)
+    assert push_env["posture_calls"] == 0
+
+
 # --- CLI ------------------------------------------------------------------------
 
 def test_cli_pre_push_reads_stdin_and_returns_the_scan_code(monkeypatch, capsys):
@@ -297,8 +412,9 @@ def test_cli_pre_push_reads_stdin_and_returns_the_scan_code(monkeypatch, capsys)
 
     seen = {}
 
-    def fake_scan(text, repo_path=None):
+    def fake_scan(text, repo_path=None, remote_url=None):
         seen["text"] = text
+        seen["remote_url"] = remote_url
         return 1, "report text"
 
     monkeypatch.setattr(scanner, "scan_pushed", fake_scan)
@@ -307,7 +423,25 @@ def test_cli_pre_push_reads_stdin_and_returns_the_scan_code(monkeypatch, capsys)
     monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
     assert scan_secrets.main() == 1
     assert seen["text"] == stdin
+    assert seen["remote_url"] is None
     assert "report text" in capsys.readouterr().err
+
+
+def test_cli_pre_push_passes_the_hook_remote_url_through(monkeypatch, capsys):
+    import io
+    import scan_secrets
+
+    seen = {}
+
+    def fake_scan(text, repo_path=None, remote_url=None):
+        seen["remote_url"] = remote_url
+        return 0, ""
+
+    monkeypatch.setattr(scanner, "scan_pushed", fake_scan)
+    monkeypatch.setattr("sys.argv", ["scan_secrets.py", "--pre-push", "origin", PUSHED_URL])
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    assert scan_secrets.main() == 0
+    assert seen["remote_url"] == PUSHED_URL
 
 
 # --- end to end: a real git push through the generated dispatcher ------------------
@@ -319,8 +453,16 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 SYNTHETIC_TOKEN = "gh" + "p_" + "aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5"
 
 
-@pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks is not on PATH")
-def test_real_push_is_blocked_then_allowed(tmp_path):
+needs_gitleaks = pytest.mark.skipif(shutil.which("gitleaks") is None,
+                                    reason="gitleaks is not on PATH")
+
+
+def _e2e_repo(tmp_path):
+    """A working repo and a bare remote in tmp_path, with the pre-push hook.
+
+    HOME, the global git config, and the gh config all point into tmp_path,
+    and the plugin is found through the real marketplace path pattern via a
+    symlink. Returns (git, work, bare)."""
     home = tmp_path / "home"
     marketplace = home / ".claude" / "plugins" / "marketplaces" / "gruntwork-test" / "plugins"
     marketplace.mkdir(parents=True)
@@ -355,6 +497,18 @@ def test_real_push_is_blocked_then_allowed(tmp_path):
     hook = work / ".git" / "hooks" / "pre-push"
     hook.write_text(hook_installer.build_hook_script("pre-push"), encoding="utf-8")
     hook.chmod(0o755)
+    return git, work, bare
+
+
+def _commit(git, work, name, text, message):
+    (work / name).write_text(text)
+    git("add", name)
+    git("commit", "-q", "-m", message)
+
+
+@needs_gitleaks
+def test_real_push_is_blocked_then_allowed(tmp_path):
+    git, work, bare = _e2e_repo(tmp_path)
 
     (work / "README.md").write_text("A scratch repo.\n")
     git("add", "README.md")
@@ -388,3 +542,38 @@ def test_real_push_is_blocked_then_allowed(tmp_path):
     again = git("push", "origin", "main", check=False)
     assert again.returncode != 0
     assert "github-pat" in again.stderr
+
+
+@needs_gitleaks
+def test_new_branch_skips_a_finding_already_on_the_remote(tmp_path):
+    """A first push of a branch scans only commits no remote already holds."""
+    git, work, bare = _e2e_repo(tmp_path)
+    _commit(git, work, "README.md", "A scratch repo.\n", "init")
+    _commit(git, work, "settings.py", f'github_token = "{SYNTHETIC_TOKEN}"\n', "add settings")
+    landed = git("push", "--no-verify", "origin", "main", check=False)
+    assert landed.returncode == 0, landed.stderr
+
+    git("checkout", "-q", "-b", "feature")
+    _commit(git, work, "notes.md", "Nothing sensitive here.\n", "notes")
+    pushed = git("push", "origin", "feature", check=False)
+    assert pushed.returncode == 0, pushed.stderr
+    assert "github-pat" not in pushed.stderr
+    head = git("rev-parse", "HEAD").stdout.strip()
+    assert git("rev-parse", "refs/heads/feature", cwd=bare).stdout.strip() == head
+
+
+@needs_gitleaks
+def test_range_push_skips_a_finding_already_on_the_remote(tmp_path):
+    """An existing branch scans only the pushed range, not what is under it."""
+    git, work, bare = _e2e_repo(tmp_path)
+    _commit(git, work, "README.md", "A scratch repo.\n", "init")
+    _commit(git, work, "settings.py", f'github_token = "{SYNTHETIC_TOKEN}"\n', "add settings")
+    landed = git("push", "--no-verify", "origin", "main", check=False)
+    assert landed.returncode == 0, landed.stderr
+
+    _commit(git, work, "notes.md", "Nothing sensitive here.\n", "notes")
+    pushed = git("push", "origin", "main", check=False)
+    assert pushed.returncode == 0, pushed.stderr
+    assert "github-pat" not in pushed.stderr
+    head = git("rev-parse", "HEAD").stdout.strip()
+    assert git("rev-parse", "refs/heads/main", cwd=bare).stdout.strip() == head

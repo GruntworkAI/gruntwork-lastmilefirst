@@ -315,3 +315,12 @@ def test_severity_tag_sets_the_reported_level():
     assert public[0]["Severity"] == "MEDIUM" and public[0].get("_bumped") is True
     untagged = scanner._parse_findings(_json.dumps([{"RuleID": "x", "File": "f", "StartLine": 1}]), is_public=False)
     assert untagged[0]["Severity"] == "MEDIUM"
+
+
+def test_rows_are_ordered_by_severity_rank_not_by_name():
+    rows = [dict(ORDINARY, Severity=sev, RuleID=f"rule-{sev.lower()}", Fingerprint=sev)
+            for sev in ("LOW", "CRITICAL", "MEDIUM")]
+    text = scanner._format_findings(rows)
+    order = [line.split()[0] for line in text.splitlines()
+             if line.split() and line.split()[-1].isdigit()]
+    assert order == ["CRITICAL", "MEDIUM", "LOW"]

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional, Tuple
 
 # Add script directory to path for local imports
@@ -357,6 +358,10 @@ def _summary_counts(findings: List[Dict[str, Any]]) -> str:
     return " and ".join(parts)
 
 
+# Display order, most severe first; an unknown severity sorts last.
+_SEVERITY_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
 def _format_findings(findings: List[Dict[str, Any]]) -> str:
     """Format findings for display. Non-blocking findings read WARNING."""
     if not findings:
@@ -366,7 +371,8 @@ def _format_findings(findings: List[Dict[str, Any]]) -> str:
     lines.append(f"{'Severity':<10} {'Rule':<35} {'File':<40} Line")
     lines.append("-" * 90)
 
-    ordered = sorted(findings, key=lambda x: x.get("Severity", ""), reverse=True)
+    ordered = sorted(findings, key=lambda x: _SEVERITY_RANK.get(
+        str(x.get("Severity", "")).upper(), len(_SEVERITY_RANK)))
     # Stable regroup: blocking first, keeping the severity order within each group.
     ordered.sort(key=lambda x: not _is_blocking(x))
     for f in ordered:
@@ -767,18 +773,47 @@ def _commit_exists(sha: str, cwd: Optional[str] = None) -> bool:
     return result.returncode == 0
 
 
+NOT_ON_A_REMOTE = "--not --remotes"
+
+
 def _push_log_opts(ref: Dict[str, str], cwd: Optional[str]) -> str:
     """The `--log-opts` value for one pushed ref.
 
-    A new ref scans everything reachable from the local sha. An existing ref
-    scans `remote..local`, unless this clone lacks the remote sha (e.g. a force
-    push over commits never fetched): gitleaks 8.30.1 exits 0 with an empty
-    report on an invalid range, so that case widens to the local history
-    rather than scanning nothing.
+    An existing ref scans `remote..local`. A new ref scans every commit
+    reachable from the local sha that is not already on a remote-tracking ref
+    (`<sha> --not --remotes`; gitleaks splits --log-opts on spaces, verified
+    on 8.30.1), so a branch cut from a pushed main does not rescan main. A
+    repo with no remote-tracking refs yet still scans its whole history. When
+    this clone lacks the remote sha (e.g. a force push over commits never
+    fetched), the range would be invalid, and gitleaks 8.30.1 exits 0 with an
+    empty report on an invalid range, so that case widens the same way rather
+    than scanning nothing.
     """
     if ref["kind"] == "existing" and _commit_exists(ref["remote_sha"], cwd):
         return f"{ref['remote_sha']}..{ref['local_sha']}"
-    return ref["local_sha"]
+    return f"{ref['local_sha']} {NOT_ON_A_REMOTE}"
+
+
+def _push_scan_runs(refs: List[Dict[str, str]], cwd: Optional[str]) -> List[Tuple[str, str]]:
+    """(label, --log-opts) for each gitleaks run a push needs.
+
+    Each existing range is its own run. Every ref that scans "not on a remote"
+    shares one run, `<sha1> <sha2> --not --remotes`, so a push of several new
+    branches walks their shared history once.
+    """
+    runs: List[Tuple[str, str]] = []
+    widened: List[Dict[str, str]] = []
+    for ref in refs:
+        opts = _push_log_opts(ref, cwd)
+        if opts.endswith(NOT_ON_A_REMOTE):
+            widened.append(ref)
+        else:
+            runs.append((ref["local_ref"], opts))
+    if widened:
+        shas = " ".join(dict.fromkeys(r["local_sha"] for r in widened))
+        label = ", ".join(r["local_ref"] for r in widened)
+        runs.append((label, f"{shas} {NOT_ON_A_REMOTE}"))
+    return runs
 
 
 def _repo_auditor():
@@ -790,19 +825,62 @@ def _repo_auditor():
         return None
 
 
-def _fetch_github_posture(repo_path: Optional[Path]) -> Optional[Dict[str, Any]]:
+def _fetch_github_posture(
+    repo_path: Optional[Path], repo: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """GitHub's own answer (visibility plus posture), one `gh api` call.
 
-    None when the posture module cannot load; a dict with visibility None when
-    `gh` is missing, unauthenticated, or there is no GitHub remote.
+    `repo` ("owner/name") asks about that repo; without it, `gh` asks about
+    the clone's default repo. None when the posture module cannot load; a dict
+    with visibility None when `gh` is missing, unauthenticated, or there is no
+    GitHub remote.
     """
     auditor = _repo_auditor()
     if auditor is None:
         return None
     try:
+        if repo:
+            return auditor._fetch_posture(repo_path or Path.cwd(), repo=repo)
         return auditor._fetch_posture(repo_path or Path.cwd())
     except Exception:
         return None
+
+
+# Hosts that are clearly not GitHub, for scp-style remotes whose host may be
+# an ssh alias (e.g. `git@github-work:owner/repo.git`).
+_OTHER_GIT_HOSTS = ("gitlab", "bitbucket", "codeberg", "sr.ht", "gitea",
+                    "azure", "visualstudio", "sourceforge")
+_OWNER_REPO = re.compile(r"^/*([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/*$")
+
+
+def github_repo_from_url(url: Optional[str]) -> Optional[str]:
+    """"owner/repo" when `url` reads as a GitHub remote, else None.
+
+    Accepts https and ssh:// URLs whose host contains "github", and scp-style
+    `user@host:owner/repo(.git)` where the host is github.com or an ssh alias
+    that is not obviously another provider. Local paths and file:// URLs are
+    not GitHub.
+    """
+    if not url or not url.strip():
+        return None
+    url = url.strip()
+    if "://" in url:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if "github" not in host:
+            return None
+        path = parsed.path
+    else:
+        match = re.match(r"^(?:[^@/:]+@)?([^/:]+):(?!/)(.+)$", url)
+        if not match:
+            return None
+        host, path = match.group(1).lower(), match.group(2)
+        if any(other in host for other in _OTHER_GIT_HOSTS):
+            return None
+    found = _OWNER_REPO.match(path)
+    if not found:
+        return None
+    return f"{found.group(1)}/{found.group(2)}"
 
 
 def _describe_github_posture(posture: Dict[str, Any]) -> str:
@@ -874,14 +952,24 @@ def visibility_mismatch(
     ]
 
 
-def scan_pushed(stdin_text: str, repo_path: Optional[Path] = None) -> Tuple[int, str]:
+def scan_pushed(
+    stdin_text: str,
+    repo_path: Optional[Path] = None,
+    remote_url: Optional[str] = None,
+) -> Tuple[int, str]:
     """
     Pre-push mode: scan the commits being pushed, read from the hook's stdin.
 
     Deleted refs are skipped. An existing remote ref scans `remote..local`. A
-    new remote ref scans everything reachable from the local sha and runs the
+    new remote ref scans every commit not already on a remote and runs the
     first-push audit once per push: hygiene warnings, the visibility
     consistency check, and (for a public repo) GitHub's posture as a warning.
+
+    `remote_url` is the URL git passes the hook. When it reads as a GitHub
+    repo and GitHub answers for it, that answer is used rather than the
+    clone's default repo, and a PUBLIC answer overrides a private or internal
+    declaration for the scan rules. With no answer for it, the declaration
+    then the default repo's answer decide, as before.
 
     Exit 1 only on a blocking finding, a visibility block, or a scan that did
     not complete. Returns (exit_code, report_text).
@@ -908,11 +996,20 @@ def scan_pushed(stdin_text: str, repo_path: Optional[Path] = None) -> Tuple[int,
 
     if first_push:
         declared = declared_visibility(repo_path)
-        posture = _fetch_github_posture(repo_path)
+        pushed_repo = github_repo_from_url(remote_url)
+        posture = _fetch_github_posture(repo_path, repo=pushed_repo) if pushed_repo else None
         github = (posture or {}).get("visibility")
-        # Declared wins, as in check_repo_visibility; GitHub's answer is
-        # already in hand, so it is not asked twice.
-        visibility = declared or github
+        if github == "PUBLIC":
+            # The remote being pushed to is public: content lands on the
+            # internet whatever the declaration says.
+            visibility = github
+        else:
+            if not github:
+                posture = _fetch_github_posture(repo_path)
+                github = (posture or {}).get("visibility")
+            # Declared wins, as in check_repo_visibility; GitHub's answer is
+            # already in hand, so it is not asked twice.
+            visibility = declared or github
     else:
         posture = None
         github = None
@@ -923,16 +1020,16 @@ def scan_pushed(stdin_text: str, repo_path: Optional[Path] = None) -> Tuple[int,
     try:
         findings: List[Dict[str, Any]] = []
         seen = set()
-        for ref in to_scan:
+        for label, log_opts in _push_scan_runs(to_scan, cwd):
             ref_findings, code, stderr = _gitleaks_report(
-                ["git", "--log-opts", _push_log_opts(ref, cwd)],
+                ["git", "--log-opts", log_opts],
                 "gitleaks-push-", config_path, cwd, is_public,
             )
             # Fail-closed on gitleaks abort (see _gitleaks_report).
             if ref_findings is None:
                 return 1, (
                     f"gitleaks aborted before producing a report (exit {code}). "
-                    f"Pre-push scan of {ref['local_ref']} did not complete.\n"
+                    f"Pre-push scan of {label} did not complete.\n"
                     f"stderr:\n{stderr or '(none)'}\n\n"
                     f"Push blocked. If this is a config issue, run "
                     f"/run-scan-secrets --list-formats to inspect rules."
@@ -951,9 +1048,13 @@ def scan_pushed(stdin_text: str, repo_path: Optional[Path] = None) -> Tuple[int,
         if sync_note:
             lines.append(sync_note)
         if first_push:
-            lines.append("First push of a ref: auditing its whole history.")
+            lines.append("First push of a ref: auditing every commit not already on a remote.")
             level, mismatch_lines = visibility_mismatch(declared, github)
             lines.extend(mismatch_lines)
+            if declared and not github:
+                reason = (posture or {}).get("reason") or "no answer"
+                lines.append(f"WARNING: declared {declared}; GitHub could not confirm it "
+                             f"({reason}), so the declaration was not verified.")
             blocked = blocked or level == "block"
             lines.extend(_hygiene_warnings(repo_path))
             if github == "PUBLIC" and posture is not None:

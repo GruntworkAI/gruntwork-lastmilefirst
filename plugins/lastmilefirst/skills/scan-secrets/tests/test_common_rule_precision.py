@@ -161,6 +161,10 @@ PII_CASES = [
     # phone
     ("phone_labeled", "lmf-pii-phone", "phone: (415) 555-0142\n", True),  # gitleaks:allow
     ("phone_e164", "lmf-pii-phone", "emergency contact +44 20 7946 0958\n", True),  # gitleaks:allow
+    # The `+` branch needs no label: any number written with a leading + and a
+    # country code matches on its own. That is deliberate (E.164 is rarely
+    # anything but a phone number) and is the rule's main precision trade-off.
+    ("phone_e164_unlabeled", "lmf-pii-phone", "+44 20 7946 0958\n", True),  # gitleaks:allow
     ("phone_bare_order_id", "lmf-pii-phone", "order_id = 4155550142\n", False),
     ("phone_hotel_word", "lmf-pii-phone", "hotel booking ref 4155550142\n", False),
     # ssn

@@ -109,7 +109,7 @@ python3 ${SKILL_DIR}/scripts/scan_secrets.py --audit --github --deep   # plus pe
 
 ### `--install-hooks`: Pre-commit and Pre-push Hooks
 
-Installs two global hooks. The pre-commit hook scans staged changes before every commit. The pre-push hook scans the commits being pushed, and on a branch's first push it audits the whole history (see the next section). `--uninstall-hooks` removes both. If you installed the hooks before 0.37.0, run `--install-hooks` again: an older install has the pre-commit hook only.
+Installs two global hooks. The pre-commit hook scans staged changes before every commit. The pre-push hook scans the commits being pushed, and on a branch's first push it audits every commit not already on a remote (see the next section). `--uninstall-hooks` removes both. If you installed the hooks before 0.37.0, run `--install-hooks` again: an older install has the pre-commit hook only.
 
 **How it works:**
 - Sets `git config --global core.hooksPath` to `~/.claude/lastmilefirst/git-hooks/`, where both hook files live
@@ -133,13 +133,13 @@ Git hands the pre-push hook one line per ref being pushed. What gets scanned dep
 
 | Ref being pushed | What is scanned |
 |---|---|
-| A branch the remote already has | Only the new commits (`<remote sha>..<local sha>`). If this clone lacks the remote commit (e.g. after a force push over commits never fetched), the scan widens to the full local history rather than scanning nothing |
-| A branch the remote does not have yet (a first push) | Every commit reachable from the pushed one, plus the first-push audit below |
+| A branch the remote already has | Only the new commits (`<remote sha>..<local sha>`). If this clone lacks the remote commit (e.g. after a force push over commits never fetched), the scan widens to every local commit not already on a remote rather than scanning nothing |
+| A branch the remote does not have yet (a first push) | Every commit reachable from the pushed one that is not already on a remote (on a repo's first push, its whole history), plus the first-push audit below |
 | A deleted branch | Nothing |
 
 The scan is `gitleaks git --log-opts <range>` with the same merged rules and the same [visibility policy](#rule-kinds-and-what-blocks) as every other mode. It needs gitleaks 8.19.0 or later, the same minimum as the rest of the skill.
 
-**The first-push audit** runs once per push when any pushed ref is new, which in practice means a new repo's first push after `gh repo create`, or a new branch. On top of the whole-history scan it reports:
+**The first-push audit** runs once per push when any pushed ref is new, which in practice means a new repo's first push after `gh repo create`, or a new branch. On top of that scan it reports:
 
 - gitignore gaps and dangerous committed files (the same checks as `--audit`), as warnings
 - the declared visibility against what GitHub reports (table below)
@@ -150,7 +150,8 @@ The scan is `gitleaks git --log-opts <range>` with the same merged rules and the
 | PRIVATE or INTERNAL | PUBLIC | Blocks the push. The scan applied private-repo rules to content that would be public |
 | PUBLIC | PRIVATE or INTERNAL | Warning. Public-repo rules were applied, which is stricter than needed |
 | PRIVATE | INTERNAL, or the reverse | Warning |
-| Not declared, or `gh` cannot answer | anything | Not a finding |
+| Declared | `gh` cannot answer | Warning that the declaration was not verified, with the reason |
+| Not declared | anything | Not a finding |
 
 The blocked push prints both ways out:
 
@@ -159,7 +160,7 @@ gh repo edit --visibility private --accept-visibility-change-consequences   # ma
 git config lastmilefirst.visibility public                                  # or declare it public and push again
 ```
 
-On a first push the declared value decides the policy, and GitHub's answer is used when nothing is declared. Later pushes resolve visibility the same way the other modes do.
+On a first push GitHub is asked about the remote being pushed to (falling back to the clone's default repo when that remote is not a GitHub URL or gets no answer). If the pushed remote is public, public-repo rules apply whatever the declaration says. Otherwise the declared value decides the policy, and GitHub's answer is used when nothing is declared. Later pushes resolve visibility the same way the other modes do.
 
 **Fails closed.** Hook input that is not four fields per line, a gitleaks run that ends without writing its report, and the five-minute scan timeout all block the push with the reason.
 
@@ -497,7 +498,7 @@ The scan-secrets skill integrates with Overwatch:
 | Scan freshness | Every session start | "Never scanned" or "N days since last scan" |
 | Repo visibility | Every session start | "You're working in a PUBLIC repo" |
 | GitHub protections | Every session start (cached 24h) | "PUBLIC repo has push protection disabled" + the enable command |
-| Visibility drift | Every session start in a git repo with a remote and a declared visibility (GitHub's answer cached 24h in Overwatch state under the `repos` scope, keyed by repo root) | `ACTION REQUIRED: this repo is declared <x> but GitHub reports <y>; run /run-scan-secrets --audit` |
+| Visibility drift | Every session start in a git repo with a remote and a declared visibility (one GitHub answer per session start, shared with the public-repo check and cached 24h per project, or per repo root outside a project; an answer that disagrees with the declaration is not cached, so the next session asks again) | `ACTION REQUIRED: this repo is declared <x> but GitHub reports <y>; run /run-scan-secrets --audit` |
 | Scan timestamp | After scan completes | Updates `last_secret_scan` in overwatch state |
 
 ## Related Skills

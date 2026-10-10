@@ -367,12 +367,6 @@ def _current_rules_fingerprint() -> Optional[str]:
         return None
 
 
-# GitHub's visibility answer changes rarely and the `gh` call is the slow part
-# of session start, so it is cached per repo path for a day, the same window
-# as the posture cache below.
-VISIBILITY_CACHE_TTL = 24 * 60 * 60
-
-
 def _git_output(args: List[str], cwd: Optional[Path]) -> Optional[str]:
     """stdout of a git command, or None when it fails or git is unusable."""
     try:
@@ -385,69 +379,29 @@ def _git_output(args: List[str], cwd: Optional[Path]) -> Optional[str]:
     return result.stdout if result.returncode == 0 else None
 
 
-def _github_visibility(repo_key: str, repo_root: Path, scanner, now: int) -> Optional[str]:
-    """What GitHub reports for this repo, from a day-old cache or one `gh` call.
-
-    Only a determinate answer is cached; `gh` missing, unauthenticated, or
-    unable to see the repo is retried next session rather than remembered.
-    """
-    try:
-        entry = get_scoped_state("repos", repo_key).get("github_visibility")
-        if isinstance(entry, dict):
-            checked_at = entry.get("checked_at", 0)
-            if isinstance(checked_at, int) and now - checked_at <= VISIBILITY_CACHE_TTL:
-                cached = entry.get("visibility")
-                if isinstance(cached, str) and cached:
-                    return cached
-    except Exception:
-        pass
-
-    posture = scanner._fetch_github_posture(repo_root)
-    visibility = posture.get("visibility") if isinstance(posture, dict) else None
-    if not visibility:
-        return None
-    visibility = str(visibility).upper()
-    try:
-        update_scoped_state(
-            "repos", repo_key, "github_visibility",
-            {"visibility": visibility, "checked_at": now},
-        )
-    except Exception:
-        pass  # cache is an optimization, never a correctness requirement
-    return visibility
+def _declared_visibility(cwd: Optional[Path] = None) -> Optional[str]:
+    """`git config lastmilefirst.visibility`, upper-cased, or None."""
+    raw = _git_output(["git", "config", "--get", "lastmilefirst.visibility"], cwd)
+    declared = (raw or "").strip().upper()
+    return declared if declared in ("PUBLIC", "PRIVATE", "INTERNAL") else None
 
 
-def check_visibility_drift(cwd: Optional[Path] = None) -> Optional[str]:
+def check_visibility_drift(
+    cwd: Optional[Path] = None, github_visibility: Optional[str] = None
+) -> Optional[str]:
     """ACTION REQUIRED when the declared visibility disagrees with GitHub's.
 
     The declaration (`git config lastmilefirst.visibility`) is what the
     secret-scan policy trusts, so a repo declared private that GitHub serves
-    publicly has been scanned under the wrong rules. Silent when the directory
-    is not a git repo, has no remote, carries no declaration, or `gh` cannot
-    answer. Never raises.
+    publicly has been scanned under the wrong rules. `github_visibility` is
+    the answer `_github_posture` already fetched for this session. Silent when
+    there is no declaration or no answer (not a git repo, no remote, `gh`
+    unable to answer). Never raises.
     """
     try:
-        # Cheap checks first: the declaration, then the repo and its remotes;
-        # the scanner module loads only once all three are present.
-        raw = _git_output(["git", "config", "--get", "lastmilefirst.visibility"], cwd)
-        declared = (raw or "").strip().upper()
-        if declared not in ("PUBLIC", "PRIVATE", "INTERNAL"):
-            return None
-
-        top = _git_output(["git", "rev-parse", "--show-toplevel"], cwd)
-        if not top or not top.strip():
-            return None
-        repo_root = Path(top.strip())
-        remotes = _git_output(["git", "remote"], repo_root)
-        if not remotes or not remotes.strip():
-            return None
-
-        scanner = _scan_secrets_module()
-        if scanner is None:
-            return None
-
-        reported = _github_visibility(str(repo_root), repo_root, scanner, int(time.time()))
-        if not reported or reported == declared:
+        declared = _declared_visibility(cwd)
+        reported = str(github_visibility or "").upper()
+        if not declared or not reported or reported == declared:
             return None
         return (
             f"ACTION REQUIRED: this repo is declared {declared.lower()} but GitHub "
@@ -533,10 +487,14 @@ def check_claude_review_status(
 POSTURE_CACHE_TTL = 24 * 60 * 60
 
 
-def _cached_posture(project_key: str, now: int) -> Optional[Dict[str, Any]]:
-    """Return a still-fresh cached posture for this repo, else None."""
+def _cached_posture(project_key: str, now: int, scope: str = "projects") -> Optional[Dict[str, Any]]:
+    """Return a still-fresh cached posture for this repo, else None.
+
+    `scope` is "projects" (keyed by project) or "repos" (keyed by repo root,
+    for a git repo outside any configured project).
+    """
     try:
-        entry = get_scoped_state("projects", project_key).get("github_protections")
+        entry = get_scoped_state(scope, project_key).get("github_protections")
         if not isinstance(entry, dict):
             return None
         checked_at = entry.get("checked_at", 0)
@@ -548,12 +506,17 @@ def _cached_posture(project_key: str, now: int) -> Optional[Dict[str, Any]]:
         return None
 
 
-def check_repo_visibility(project_key: Optional[str] = None) -> Optional[str]:
+def check_repo_visibility(
+    project_key: Optional[str] = None,
+    posture: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
     """Warn on public repos, and on public repos missing GitHub's free
     protections.
 
     One `gh api` call returns visibility and security posture together, so
-    this costs no more than the `gh repo view` it replaces.
+    this costs no more than the `gh repo view` it replaces. `posture`, when
+    given, is the answer session start already fetched (`_github_posture`),
+    and nothing is fetched or cached here.
     """
     try:
         # First check if we're in a git repo with a remote
@@ -570,7 +533,8 @@ def check_repo_visibility(project_key: Optional[str] = None) -> Optional[str]:
 
     now = int(time.time())
 
-    posture = _cached_posture(project_key, now) if project_key else None
+    if posture is None:
+        posture = _cached_posture(project_key, now) if project_key else None
     if posture is None:
         posture = fetch_posture()
         if project_key:
@@ -594,6 +558,71 @@ def check_repo_visibility(project_key: Optional[str] = None) -> Optional[str]:
     if alert:
         messages.append(alert)
     return "\n".join(messages)
+
+
+def _github_posture(
+    project_key: Optional[str],
+    declared: Optional[str],
+    cwd: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """GitHub's posture for the repo this session is in, at most one `gh` call.
+
+    Shared by the drift check and Check 8 so session start asks GitHub once.
+    Inside a configured project it uses Check 8's per-project cache; outside
+    one, a cache keyed by the repo root. None when the directory is not a git
+    repo, or when neither check needs an answer (no `origin`, and no remote at
+    all or no declaration).
+
+    An answer that disagrees with the declaration is not cached, so the
+    session after a remedy asks again instead of alerting for a day. With a
+    declaration, an empty answer (`gh` missing or unable to see the repo) is
+    not cached either, so the drift check retries next session.
+    """
+    top = _git_output(["git", "rev-parse", "--show-toplevel"], cwd)
+    if not top or not top.strip():
+        return None
+    repo_root = Path(top.strip())
+    remotes = (_git_output(["git", "remote"], repo_root) or "").split()
+    if not remotes or not ("origin" in remotes or declared):
+        return None
+
+    now = int(time.time())
+    scope, key = ("projects", project_key) if project_key else ("repos", str(repo_root))
+    posture = _cached_posture(key, now, scope=scope)
+    if posture is not None:
+        return posture
+
+    posture = fetch_posture(repo_path=repo_root)
+    reported = str(posture.get("visibility") or "").upper()
+    mismatch = bool(declared and reported and reported != declared)
+    unanswered_declaration = bool(declared and not reported)
+    if not (mismatch or unanswered_declaration):
+        try:
+            update_scoped_state(scope, key, "github_protections",
+                                {"posture": posture, "checked_at": now})
+        except Exception:
+            pass  # cache is an optimization, never a correctness requirement
+    return posture
+
+
+def _visibility_checks(project_key: Optional[str], cwd: Optional[Path] = None) -> List[str]:
+    """Checks 7c and 8 from one GitHub answer: declared-vs-GitHub drift, then
+    the public-repo warning. Never raises."""
+    alerts: List[str] = []
+    try:
+        declared = _declared_visibility(cwd)
+        posture = _github_posture(project_key, declared, cwd)
+    except Exception:
+        return alerts
+    reported = posture.get("visibility") if isinstance(posture, dict) else None
+    drift_alert = check_visibility_drift(cwd, github_visibility=reported)
+    if drift_alert:
+        alerts.append(drift_alert)
+    if posture is not None:
+        visibility_alert = check_repo_visibility(project_key, posture=posture)
+        if visibility_alert:
+            alerts.append(visibility_alert)
+    return alerts
 
 
 def check_claude_md(project_dir: Optional[Path]) -> Optional[str]:
@@ -1131,14 +1160,8 @@ def main() -> None:
 
     # Check 7c: Declared visibility vs GitHub's. Runs in any git repo with a
     # remote, project or not, since the declaration lives in the repo itself.
-    drift_alert = check_visibility_drift()
-    if drift_alert:
-        alerts.append(drift_alert)
-
-    # Check 8: Repo visibility
-    visibility_alert = check_repo_visibility(ctx["project"])
-    if visibility_alert:
-        alerts.append(visibility_alert)
+    # Check 8: Repo visibility. Both read one GitHub answer per session start.
+    alerts.extend(_visibility_checks(ctx["project"]))
 
     # Check 9: CLAUDE.md at the project root (project-scoped, skip if not in a project)
     if project_dir is not None:

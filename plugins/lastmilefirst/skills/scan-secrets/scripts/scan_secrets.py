@@ -124,6 +124,11 @@ Examples:
         action="store_true",
         help="With --audit: add an itemized list of setting changes (applies nothing)",
     )
+    parser.add_argument(
+        "hook_args",
+        nargs="*",
+        help=argparse.SUPPRESS,  # With --pre-push: the remote name and URL git passes the hook
+    )
 
     args = parser.parse_args()
 
@@ -185,7 +190,9 @@ Examples:
 
     if args.pre_push:
         import scanner
-        exit_code, report = scanner.scan_pushed(sys.stdin.read())
+        # git passes the pre-push hook `<remote name> <remote url>`.
+        remote_url = args.hook_args[1] if len(args.hook_args) > 1 else None
+        exit_code, report = scanner.scan_pushed(sys.stdin.read(), remote_url=remote_url)
         if report:
             print(report, file=sys.stderr)
         return exit_code

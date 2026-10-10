@@ -163,7 +163,7 @@ def test_both_scripts_are_valid_bash(kind, tmp_path):
 def test_each_script_passes_its_own_flag(kind):
     script = hook_installer.build_hook_script(kind)
     other = "--pre-push" if kind == "pre-commit" else "--pre-commit"
-    assert f'python3 "$CHECK_PATH" --{kind}' in script
+    assert f'python3 "$CHECK_PATH" --{kind} "$@"' in script
     assert other not in script
 
 
@@ -174,7 +174,8 @@ def test_pre_push_dispatcher_reads_nothing_from_stdin():
     assert "/dev/stdin" not in script
 
 
-def _run_kind(kind: str, tmp_path: Path, exit_codes: dict, stdin: str = "") -> subprocess.CompletedProcess:
+def _run_kind(kind: str, tmp_path: Path, exit_codes: dict, stdin: str = "",
+              args: tuple = ()) -> subprocess.CompletedProcess:
     plugin_root = tmp_path / ".claude" / "plugins" / "marketplaces" / "gruntwork-x" / "plugins" / "lastmilefirst"
     for _, rel_path, _ in _registry(kind):
         target = plugin_root / rel_path
@@ -190,7 +191,7 @@ def _run_kind(kind: str, tmp_path: Path, exit_codes: dict, stdin: str = "") -> s
     hook = tmp_path / kind
     hook.write_text(hook_installer.build_hook_script(kind), encoding="utf-8")
     return subprocess.run(
-        ["bash", str(hook)],
+        ["bash", str(hook), *args],
         input=stdin,
         capture_output=True,
         text=True,
@@ -217,6 +218,20 @@ def test_pre_push_check_inherits_the_hook_stdin(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "['--pre-push']" in result.stdout
     assert repr(line) in result.stdout
+
+
+def test_pre_push_check_receives_the_remote_name_and_url(tmp_path):
+    """git calls pre-push with `<remote name> <remote url>`; the check needs the URL."""
+    url = "git@github.com:example-org/example-repo.git"
+    result = _run_kind("pre-push", tmp_path, {}, args=("origin", url))
+    assert result.returncode == 0, result.stderr
+    assert f"['--pre-push', 'origin', '{url}']" in result.stdout
+
+
+def test_pre_commit_check_gets_only_its_flag(tmp_path):
+    result = _run_kind("pre-commit", tmp_path, {})
+    assert result.returncode == 0, result.stderr
+    assert "['--pre-commit']" in result.stdout
 
 
 def test_pre_push_failure_message_names_the_push(tmp_path):

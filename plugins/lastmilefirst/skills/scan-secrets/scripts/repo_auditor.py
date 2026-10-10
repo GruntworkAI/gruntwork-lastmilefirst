@@ -125,10 +125,12 @@ def _load_github_protections():
         return None
 
 
-def _fetch_posture(cwd: Path):
+def _fetch_posture(cwd: Path, repo: Optional[str] = None):
     gp = _load_github_protections()
     if gp is None:
         return None
+    if repo:
+        return gp.fetch_posture(repo_path=cwd, repo=repo)
     return gp.fetch_posture(repo_path=cwd)
 
 

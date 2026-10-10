@@ -96,7 +96,7 @@ def _render_check(label: str, rel_path: str, failure_message: str, flag: str) ->
 CHECK_PATH="$PLUGIN_ROOT/{rel_path}"
 if [ -f "$CHECK_PATH" ]; then
     CHECKS_RUN=$((CHECKS_RUN + 1))
-    python3 "$CHECK_PATH" {flag}
+    python3 "$CHECK_PATH" {flag} "$@"
     if [ $? -ne 0 ]; then{message_block}
         exit 1
     fi
@@ -109,7 +109,9 @@ def build_hook_script(kind: str = "pre-commit") -> str:
     `kind` is "pre-commit" or "pre-push". Both share the plugin-root glob, the
     CHECKS_RUN counter, and the plugin-missing warning; they differ only in the
     registry and the flag each check receives. For pre-push the dispatcher
-    reads nothing from stdin, so the check inherits the ref lines git sends.
+    reads nothing from stdin, so the check inherits the ref lines git sends,
+    and `"$@"` hands it the remote name and URL git passes as arguments (the
+    pre-commit hook gets no arguments, so it passes nothing).
     """
     if kind not in _HOOK_KINDS:
         raise ValueError(f"unknown hook kind: {kind!r}")
