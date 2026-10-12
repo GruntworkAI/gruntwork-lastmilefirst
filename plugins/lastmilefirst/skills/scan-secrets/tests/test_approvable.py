@@ -436,3 +436,304 @@ def test_a_marker_on_a_non_people_rule_approves_nothing():
                                           approved=True)
     assert subset == []
     assert out == rows
+
+
+# --- the ask in scan_staged (U2) ------------------------------------------------------
+#
+# scan_staged with gitleaks, the merged config, the marker, and visibility
+# replaced. /dev/tty is replaced too, so no test reads the real terminal.
+
+class FakeTty:
+    """A terminal that records what is written and answers one line."""
+
+    def __init__(self, answer):
+        self.answer = answer
+        self.written = ""
+        self.opened = 0
+
+    def __call__(self):
+        self.opened += 1
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def write(self, text):
+        self.written += text
+
+    def flush(self):
+        pass
+
+    def readline(self):
+        return self.answer
+
+
+def no_tty():
+    raise OSError(6, "Device not configured")
+
+
+def must_not_open_tty():
+    raise AssertionError("the tty was opened")
+
+
+class Staged:
+    """Knobs for one scan_staged run."""
+
+    def __init__(self, monkeypatch, stand_in, tmp_path):
+        self.monkeypatch = monkeypatch
+        self.stand_in = stand_in
+        self.tmp_path = tmp_path
+        self.archive_rows: list = []
+        self.marker = {PEOPLE_RULE}
+        self.visibility = "PRIVATE"
+        self.tty = no_tty
+
+    def person(self, line, secret, file="copy.md", column=1):
+        fp = f"{file}:{PEOPLE_RULE}:{line}"
+        row = dict(PERSON, File=file, StartLine=line, StartColumn=column, Fingerprint=fp)
+        self.stand_in.rows.append(row)
+        self.stand_in.clear.append(dict(row, Match=f"by {secret}", Secret=secret))
+
+    def run(self):
+        config = self.tmp_path / "merged.toml"
+        mp = self.monkeypatch
+        mp.setattr(scanner, "_check_gitleaks", lambda: None)
+        mp.setattr(scanner, "write_merged_config",
+                   lambda *a, **k: (config.write_text(MERGED_CONFIG), config)[1])
+        mp.setattr(scanner, "consume_sync_note", lambda: None)
+        mp.setattr(scanner, "scan_archives", lambda *a, **k: [dict(r) for r in self.archive_rows])
+        mp.setattr(scanner, "approvable_rules", lambda _repo=None: set(self.marker))
+        mp.setattr(scanner, "check_repo_visibility", lambda _repo=None: self.visibility)
+        mp.setattr(scanner, "_open_tty", self.tty)
+        return scanner.scan_staged(self.tmp_path)
+
+
+@pytest.fixture
+def staged(stand_in, monkeypatch, tmp_path):
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.delenv("LMF_APPROVE", raising=False)
+    return Staged(monkeypatch, stand_in, tmp_path)
+
+
+RERUN = "to approve these terms, re-run: LMF_APPROVE='{}' git commit <your arguments>"
+AGENT_RERUN = ("show the user the terms above and get their confirmation, then re-run: "
+               "LMF_APPROVE='{}' git commit <your arguments>")
+NO_VERIFY = "--no-verify would also skip the identity check"
+HEADER = f"{PEOPLE_RULE} in 1 file (3 lines)"
+
+
+def two_terms(staged):
+    staged.person(1, "Examplesurname")
+    staged.person(2, "Examplesurname")
+    staged.person(3, "Otherperson")
+
+
+def test_env_naming_every_shown_term_approves_and_prints_the_block(staged, monkeypatch):
+    two_terms(staged)
+    staged.tty = must_not_open_tty
+    monkeypatch.setenv("LMF_APPROVE", "Examplesurname, OTHERPERSON")
+    code, out = staged.run()
+    assert code == 0
+    assert HEADER in out
+    assert "examplesurname" in out and "otherperson" in out
+    assert (f"approved: {PEOPLE_RULE}, terms: examplesurname, otherperson "
+            f"(3 findings) [env]") in out.splitlines()
+    assert "agent:" not in out
+    # The block comes before the approval it records.
+    assert out.index(HEADER) < out.index("approved:")
+
+
+def test_env_missing_one_shown_term_blocks_and_reprints_the_block(staged, monkeypatch):
+    two_terms(staged)
+    staged.tty = must_not_open_tty
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = staged.run()
+    assert code == 1
+    assert HEADER in out and "otherperson" in out
+    assert "LMF_APPROVE does not name every term shown above; nothing was approved" in out
+    assert RERUN.format("examplesurname,otherperson") in out
+    assert NO_VERIFY in out
+    assert "approved:" not in out
+
+
+@pytest.mark.parametrize("value", ["1", "0", "yes"])
+def test_a_bare_value_approves_nothing(staged, monkeypatch, value):
+    staged.person(1, "Examplesurname")
+    staged.tty = must_not_open_tty
+    monkeypatch.setenv("LMF_APPROVE", value)
+    code, out = staged.run()
+    assert code == 1
+    assert "approved:" not in out
+    assert RERUN.format("examplesurname") in out
+
+
+def test_tty_answering_y_approves(staged):
+    two_terms(staged)
+    staged.tty = FakeTty("y\n")
+    code, out = staged.run()
+    assert code == 0
+    # The block and the question went to the terminal, block first.
+    assert HEADER in staged.tty.written
+    assert staged.tty.written.endswith("Approve these for this commit? [y/N] ")
+    # The returned text carries what follows it, not the block a second time.
+    assert out == (f"approved: {PEOPLE_RULE}, terms: examplesurname, otherperson "
+                   f"(3 findings) [tty]")
+
+
+@pytest.mark.parametrize("answer", ["n\n", "\n", ""])
+def test_tty_answering_anything_else_blocks(staged, answer):
+    two_terms(staged)
+    staged.tty = FakeTty(answer)
+    code, out = staged.run()
+    assert code == 1
+    assert HEADER in staged.tty.written
+    assert RERUN.format("examplesurname,otherperson") in out
+    assert NO_VERIFY in out
+    assert "approved:" not in out
+
+
+def test_no_tty_blocks_with_the_rerun_line_and_the_warning(staged):
+    two_terms(staged)
+    code, out = staged.run()
+    assert code == 1
+    assert HEADER in out
+    lines = out.splitlines()
+    assert RERUN.format("examplesurname,otherperson") in lines
+    assert NO_VERIFY in lines
+    assert out.index(HEADER) < out.index("re-run:")
+
+
+def test_under_claude_code_the_rerun_line_asks_for_the_users_confirmation(staged, monkeypatch):
+    staged.person(1, "Examplesurname")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    code, out = staged.run()
+    assert code == 1
+    assert AGENT_RERUN.format("examplesurname") in out.splitlines()
+    assert NO_VERIFY in out
+
+
+def test_under_claude_code_the_approved_line_carries_the_agent_marker(staged, monkeypatch):
+    staged.person(1, "Examplesurname")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = staged.run()
+    assert code == 0
+    assert (f"approved: {PEOPLE_RULE}, terms: examplesurname (1 finding) "
+            f"[env] agent: claude-code") in out.splitlines()
+
+
+def test_a_real_secret_beside_an_approvable_finding_blocks_without_asking(staged, monkeypatch):
+    staged.person(1, "Examplesurname")
+    staged.stand_in.rows.append(dict(ORDINARY, Fingerprint="config.py:generic-api-key:9"))
+    staged.tty = must_not_open_tty
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = staged.run()
+    assert code == 1
+    assert "generic-api-key" in out
+    assert f"{PEOPLE_RULE} in 1 file (1 line)" in out
+    assert (f"the {PEOPLE_RULE} findings above could be approved once "
+            f"the blocking findings are fixed") in out
+    # The secret's table comes first; the approvable block below it.
+    assert out.index("generic-api-key") < out.index(f"{PEOPLE_RULE} in 1 file")
+    assert "approved:" not in out and "re-run:" not in out
+
+
+def test_no_unredacted_report_blocks_without_asking(staged, monkeypatch):
+    staged.person(1, "Examplesurname")
+    staged.stand_in.unredacted_writes = False
+    staged.tty = must_not_open_tty
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = staged.run()
+    assert code == 1
+    assert (f"could not fetch the matched text for {PEOPLE_RULE}; "
+            f"nothing was approved") in out
+    assert "examplesurname" not in out
+    assert "approved:" not in out and "re-run:" not in out
+
+
+@pytest.mark.parametrize("visibility", ["PUBLIC", None])
+def test_a_public_or_unconfirmed_repo_ignores_the_marker(staged, monkeypatch, visibility):
+    staged.person(1, "Examplesurname")
+    staged.visibility = visibility
+    staged.tty = must_not_open_tty
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = staged.run()
+    assert code == 1
+    assert (f"this repo is marked approvable for {PEOPLE_RULE}, but it is public "
+            f"or unconfirmed; the marker applies to private repos only") in out
+    # Today's table, and no unredacted pass.
+    assert "Found 1 blocking finding(s)" in out
+    assert [c["redact"] for c in staged.stand_in.calls] == [True]
+    assert "examplesurname" not in out
+    assert "approved:" not in out and "re-run:" not in out
+    # The repo is marked, so the hint to mark it is not shown.
+    assert "mark it approvable" not in out
+
+
+def test_an_unmarked_repo_with_a_people_finding_says_how_to_mark_it(staged):
+    staged.person(1, "Examplesurname")
+    staged.marker = set()
+    code, out = staged.run()
+    assert code == 1
+    assert "Found 1 blocking finding(s)" in out
+    assert (f"if this repo's subject is on the list, mark it approvable: "
+            f"git config --add lastmilefirst.approvable {PEOPLE_RULE} "
+            f"(the match is then shown and asked about on each commit)") in out
+    assert [c["redact"] for c in staged.stand_in.calls] == [True]
+
+
+def test_an_unmarked_repo_with_only_a_secret_gets_no_hint(staged):
+    staged.stand_in.rows.append(dict(ORDINARY))
+    staged.marker = set()
+    code, out = staged.run()
+    assert code == 1
+    assert "mark it approvable" not in out
+
+
+def test_a_marker_naming_a_secret_rule_is_warned_and_ignored(staged):
+    staged.stand_in.rows.append(dict(ORDINARY))
+    staged.marker = {PEOPLE_RULE, "lmf-example-token"}
+    code, out = staged.run()
+    assert code == 1
+    assert ("lastmilefirst.approvable names lmf-example-token, which is not a people rule; "
+            "ignored") in out.splitlines()
+
+
+def test_an_archive_finding_is_shown_and_approved_with_the_diff(staged, monkeypatch):
+    staged.person(1, "Examplesurname")
+    staged.archive_rows = [dict(PERSON, File="copy.docx -> word/document.xml", StartLine=1,
+                                Match="Examplesurname", Secret="Examplesurname",
+                                _unredacted=True)]
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = staged.run()
+    assert code == 0
+    assert f"{PEOPLE_RULE} in 2 files (2 lines)" in out
+    assert "copy.docx -> word/document.xml (1)" in out
+    assert "(2 findings) [env]" in out
+
+
+def test_personal_data_warnings_show_above_the_block_and_do_not_block(staged, monkeypatch):
+    staged.person(1, "Examplesurname")
+    staged.stand_in.rows.append(dict(PII))
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = staged.run()
+    assert code == 0
+    assert "WARNING" in out and "lmf-pii-personal-email" in out
+    assert out.index("lmf-pii-personal-email") < out.index(f"{PEOPLE_RULE} in 1 file")
+
+
+@pytest.mark.parametrize("visibility", ["PRIVATE", "PUBLIC"])
+def test_a_marked_repo_with_nothing_staged_passes(staged, visibility):
+    staged.visibility = visibility
+    staged.tty = must_not_open_tty
+    code, out = staged.run()
+    assert code == 0
+    assert "No secrets detected in staged changes." in out
+
+
+def test_a_term_with_a_quote_is_escaped_for_the_shell(monkeypatch):
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    assert scanner._rerun_line(["o'example"]) == RERUN.format("o'\\''example")

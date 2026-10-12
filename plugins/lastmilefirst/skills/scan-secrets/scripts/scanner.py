@@ -928,6 +928,106 @@ def apply_approvals(
     return out, subset
 
 
+# --- The approval ask -------------------------------------------------------
+#
+# A commit whose only blocking findings come from approvable rules shows them
+# grouped by term (see _format_approvable) and asks. LMF_APPROVE answers for a
+# scripted run; otherwise the hook asks on /dev/tty; with neither it blocks and
+# prints the exact re-run. Under Claude Code the agent reads the hook's output,
+# so the re-run line tells it to get the user's confirmation first.
+
+APPROVE_ENV = "LMF_APPROVE"
+CLAUDE_CODE_ENV = "CLAUDECODE"
+NO_VERIFY_WARNING = "--no-verify would also skip the identity check"
+
+
+def _under_claude_code() -> bool:
+    return bool(os.environ.get(CLAUDE_CODE_ENV))
+
+
+def _open_tty():
+    """The controlling terminal, for the y/n question. Raises OSError when there is none."""
+    return open("/dev/tty", "r+")
+
+
+def _approval_terms(approvable: List[Dict[str, Any]]) -> List[str]:
+    """The distinct terms of the approvable findings, most frequent first, as shown."""
+    counts: Dict[str, int] = {}
+    for f in approvable:
+        term = _term(f)
+        counts[term] = counts.get(term, 0) + 1
+    return [t for t, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def _approval(
+    prompt_lines: List[str], terms: List[str], action: str = "commit"
+) -> Tuple[bool, str]:
+    """Ask whether the shown terms are approved. Returns (approved, source).
+
+    1. LMF_APPROVE, when set and not blank, is the answer: a comma-separated
+       list of terms, compared the way terms are grouped. Every shown term
+       listed gives (True, "env"); a shown term left out, a bare `1`, or `0`
+       gives (False, "env"). The tty is never touched on this route.
+    2. Otherwise the block and the question are written to /dev/tty and one
+       line is read: `y` or `yes` gives (True, "tty"), anything else
+       (False, "tty").
+    3. No terminal (any OSError opening or using it): (False, "none").
+    """
+    value = os.environ.get(APPROVE_ENV, "")
+    if value.strip():
+        listed = {" ".join(part.split()).lower() for part in value.split(",")}
+        return (bool(terms) and all(t in listed for t in terms)), "env"
+
+    try:
+        with _open_tty() as tty:
+            tty.write("\n".join(prompt_lines) + "\n")
+            tty.write(f"Approve these for this {action}? [y/N] ")
+            tty.flush()
+            answer = tty.readline()
+    except OSError:
+        return False, "none"
+    return answer.strip().lower() in ("y", "yes"), "tty"
+
+
+def _rerun_line(terms: List[str], action: str = "commit") -> str:
+    """The exact re-run that approves the shown terms.
+
+    The hook does not see the user's arguments, so it says `<your arguments>`.
+    Under Claude Code it tells the agent to get the user's confirmation first.
+    """
+    value = ",".join(terms).replace("'", "'\\''")
+    command = f"{APPROVE_ENV}='{value}' git {action} <your arguments>"
+    if _under_claude_code():
+        return ("show the user the terms above and get their confirmation, "
+                f"then re-run: {command}")
+    return f"to approve these terms, re-run: {command}"
+
+
+def _approved_lines(approvable: List[Dict[str, Any]], source: str) -> List[str]:
+    """One `approved:` line per rule, naming its terms, count, and how it was answered."""
+    by_rule: Dict[str, List[Dict[str, Any]]] = {}
+    for f in approvable:
+        by_rule.setdefault(str(f.get("RuleID") or "unknown"), []).append(f)
+    agent = " agent: claude-code" if _under_claude_code() else ""
+    lines = []
+    for rule in sorted(by_rule):
+        rows = by_rule[rule]
+        lines.append(f"approved: {rule}, terms: {', '.join(_approval_terms(rows))} "
+                     f"({len(rows)} finding{'s' if len(rows) != 1 else ''}) [{source}]{agent}")
+    return lines
+
+
+def _marker_hint_lines(findings: List[Dict[str, Any]], marker: set) -> List[str]:
+    """How to mark the repo, once per blocking people rule it is not marked for."""
+    rules = sorted({str(f.get("RuleID")) for f in findings
+                    if _is_blocking(f) and _finding_kind(f) == "person"
+                    and str(f.get("RuleID") or "").strip().lower() not in marker})
+    return [f"if this repo's subject is on the list, mark it approvable: "
+            f"git config --add {APPROVABLE_CONFIG_KEY} {rule} "
+            f"(the match is then shown and asked about on each commit)"
+            for rule in rules]
+
+
 def scan_repo(
     repo_path: Optional[Path] = None,
     report_format: str = "text",
@@ -981,6 +1081,13 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
     """
     Pre-commit mode: scan only staged changes.
     Returns (exit_code, report_text).
+
+    In a private or internal repo marked approvable (approvable_rules), a
+    commit whose only blocking findings come from marked people rules shows
+    them grouped by matched term and asks (see _approval). Any other blocking
+    finding blocks without an ask. When the answer came from the terminal, the
+    block was already written there, so the returned text carries only what
+    follows it.
     """
     err = _check_gitleaks()
     if err:
@@ -989,12 +1096,17 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
     cwd = str(repo_path) if repo_path else None
     visibility = check_repo_visibility(repo_path)
     is_public = visibility == "PUBLIC"
+    marker = approvable_rules(repo_path)
+    # The marker applies only where visibility resolved private or internal;
+    # otherwise a name approved at commit would block at push.
+    private = (visibility or "").upper() in ("PRIVATE", "INTERNAL")
+    active = marker if private else set()
 
     config_path = write_merged_config()
     try:
         findings, code, stderr = _gitleaks_report(
             ["git", "--pre-commit", "--staged"],
-            "gitleaks-staged-", config_path, cwd, is_public,
+            "gitleaks-staged-", config_path, cwd, is_public, approvable=active,
         )
         # Fail-closed on gitleaks abort (see _gitleaks_report): block the commit.
         if findings is None:
@@ -1008,7 +1120,8 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
 
         # Staged archives are invisible to gitleaks; expand and scan them too.
         findings.extend(
-            scan_archives(repo_path, config_path, is_public, staged_only=True)
+            scan_archives(repo_path, config_path, is_public, staged_only=True,
+                          approvable=active)
         )
         # Same visibility answer as the full scan (check_repo_visibility above).
         findings, policy_lines = apply_visibility_policy(findings, visibility)
@@ -1021,8 +1134,62 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             lines.append("Reminder: you are committing to a PUBLIC repository")
         lines.extend(policy_lines)
 
+        lines.extend(marker_warnings(marker, config_path))
+        if marker and not private:
+            for rule in sorted(k for k in marker if not marker_warnings({k}, config_path)):
+                lines.append(f"this repo is marked approvable for {rule}, but it is public "
+                             f"or unconfirmed; the marker applies to private repos only")
+
+        _, approvable = apply_approvals(findings, active, approved=False)
+        other = [f for f in findings if not is_approvable(f, active)]
+        unmatched = unmatched_rules(findings, active)
+        hints = _marker_hint_lines(findings, marker)
+
+        if any(_is_blocking(f) for f in other):
+            # A real secret is never approved past: block without asking.
+            if approvable and not unmatched:
+                lines.append(_format_findings(other))
+                lines.append(_format_approvable(approvable))
+                for rule in sorted({str(f.get("RuleID")) for f in approvable}):
+                    lines.append(f"the {rule} findings above could be approved once "
+                                 f"the blocking findings are fixed")
+            else:
+                lines.append(_format_findings(findings))
+            lines.extend(hints)
+            return 1, "\n".join(lines)
+
+        if approvable:
+            if unmatched:
+                # An approval is never taken against a blank term.
+                lines.append(_format_findings(findings))
+                for rule in unmatched:
+                    lines.append(f"could not fetch the matched text for {rule}; "
+                                 f"nothing was approved")
+                lines.extend(hints)
+                return 1, "\n".join(lines)
+
+            if other:
+                # Warnings only (personal data in a private repo), shown above the block.
+                lines.append(_format_findings(other))
+            lines.append(_format_approvable(approvable))
+            terms = _approval_terms(approvable)
+            approved, source = _approval(lines, terms)
+            # The terminal already showed the block; the rest goes after it.
+            after: List[str] = [] if source == "tty" else lines
+            if approved:
+                after.extend(_approved_lines(approvable, source))
+                return 0, "\n".join(after)
+            if source == "env":
+                after.append(f"{APPROVE_ENV} does not name every term shown above; "
+                             f"nothing was approved")
+            after.append(_rerun_line(terms))
+            after.append(NO_VERIFY_WARNING)
+            after.extend(hints)
+            return 1, "\n".join(after)
+
         if any(_is_blocking(f) for f in findings):
             lines.append(_format_findings(findings))
+            lines.extend(hints)
             return 1, "\n".join(lines)
         if findings:
             # Warnings only (personal data in a private repo): shown, not blocking.
