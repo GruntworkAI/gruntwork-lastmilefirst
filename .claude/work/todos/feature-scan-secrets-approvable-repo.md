@@ -1,6 +1,6 @@
 # Feature: a repo marked approvable for a people-rule finding, instead of exempt
 
-**Status:** planned (`.claude/work/plans/2026-10-12-001-feat-approvable-repo-plan.md`, v1.0)
+**Status:** planned and reviewed (`.claude/work/plans/2026-10-12-001-feat-approvable-repo-plan.md`, v1.3; five-persona doc review 2026-10-12, 4 corrections applied, 7 fixes approved, 2 decisions settled: soft route under Claude Code, push asks too)
 **Priority:** high
 **Created:** 2026-10-11
 
