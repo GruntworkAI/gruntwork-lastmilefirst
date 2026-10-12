@@ -350,8 +350,9 @@ def test_casings_of_one_name_are_one_row():
     text = scanner._format_approvable(rows)
     lines = text.splitlines()
     assert lines[0] == f"{PEOPLE_RULE} in 3 files (6 lines)"
-    assert len([line for line in lines if "examplesurname" in line]) == 1
-    assert "6×" in lines[1]
+    # One row for every casing, shown in the casing first seen.
+    assert len([line for line in lines if "examplesurname" in line.lower()]) == 1
+    assert lines[1].split()[:2] == ["Examplesurname", "6×"]
     # Files under the term, most lines first.
     assert [line.split()[-2] for line in lines[1:]] == [
         "copy.md", "word/document.xml", "notes.md"]
@@ -364,14 +365,14 @@ def test_a_second_term_is_its_own_row():
             person("notes.md", 9, "Otherperson")]
     lines = scanner._format_approvable(rows).splitlines()
     assert lines[0] == f"{PEOPLE_RULE} in 2 files (3 lines)"
-    assert lines[1].split()[:2] == ["examplesurname", "2×"]
-    assert lines[2].split()[:2] == ["otherperson", "1×"]
+    assert lines[1].split()[:2] == ["Examplesurname", "2×"]
+    assert lines[2].split()[:2] == ["Otherperson", "1×"]
 
 
 def test_the_term_is_the_capture_group_not_the_label_text():
     rows = [person("copy.md", 1, "Examplesurname", match="author: Examplesurname")]
     text = scanner._format_approvable(rows)
-    assert "examplesurname" in text
+    assert "Examplesurname" in text
     assert "author" not in text
 
 
@@ -379,7 +380,7 @@ def test_the_term_falls_back_to_match_and_collapses_whitespace():
     rows = [person("copy.md", 1, "", match="Example   Surname"),
             person("copy.md", 2, "", match="example surname")]
     lines = scanner._format_approvable(rows).splitlines()
-    assert lines[1].split()[:3] == ["example", "surname", "2×"]
+    assert lines[1].split()[:3] == ["Example", "Surname", "2×"]
 
 
 def test_files_under_a_term_are_capped_at_five():
@@ -538,8 +539,8 @@ def test_env_naming_every_shown_term_approves_and_prints_the_block(staged, monke
     code, out = staged.run()
     assert code == 0
     assert HEADER in out
-    assert "examplesurname" in out and "otherperson" in out
-    assert (f"approved: {PEOPLE_RULE}, terms: examplesurname, otherperson "
+    assert "Examplesurname" in out and "Otherperson" in out
+    assert (f"approved: {PEOPLE_RULE}, terms: Examplesurname, Otherperson "
             f"(3 findings) [env]") in out.splitlines()
     assert "agent:" not in out
     # The block comes before the approval it records.
@@ -552,9 +553,9 @@ def test_env_missing_one_shown_term_blocks_and_reprints_the_block(staged, monkey
     monkeypatch.setenv("LMF_APPROVE", "examplesurname")
     code, out = staged.run()
     assert code == 1
-    assert HEADER in out and "otherperson" in out
+    assert HEADER in out and "Otherperson" in out
     assert "LMF_APPROVE does not name every term shown above; nothing was approved" in out
-    assert RERUN.format("examplesurname,otherperson") in out
+    assert RERUN.format("Examplesurname,Otherperson") in out
     assert NO_VERIFY in out
     assert "approved:" not in out
 
@@ -567,7 +568,7 @@ def test_a_bare_value_approves_nothing(staged, monkeypatch, value):
     code, out = staged.run()
     assert code == 1
     assert "approved:" not in out
-    assert RERUN.format("examplesurname") in out
+    assert RERUN.format("Examplesurname") in out
 
 
 def test_tty_answering_y_approves(staged):
@@ -579,7 +580,7 @@ def test_tty_answering_y_approves(staged):
     assert HEADER in staged.tty.written
     assert staged.tty.written.endswith("Approve these for this commit? [y/N] ")
     # The returned text carries what follows it, not the block a second time.
-    assert out == (f"approved: {PEOPLE_RULE}, terms: examplesurname, otherperson "
+    assert out == (f"approved: {PEOPLE_RULE}, terms: Examplesurname, Otherperson "
                    f"(3 findings) [tty]")
 
 
@@ -590,7 +591,7 @@ def test_tty_answering_anything_else_blocks(staged, answer):
     code, out = staged.run()
     assert code == 1
     assert HEADER in staged.tty.written
-    assert RERUN.format("examplesurname,otherperson") in out
+    assert RERUN.format("Examplesurname,Otherperson") in out
     assert NO_VERIFY in out
     assert "approved:" not in out
 
@@ -601,7 +602,7 @@ def test_no_tty_blocks_with_the_rerun_line_and_the_warning(staged):
     assert code == 1
     assert HEADER in out
     lines = out.splitlines()
-    assert RERUN.format("examplesurname,otherperson") in lines
+    assert RERUN.format("Examplesurname,Otherperson") in lines
     assert NO_VERIFY in lines
     assert out.index(HEADER) < out.index("re-run:")
 
@@ -611,7 +612,7 @@ def test_under_claude_code_the_rerun_line_asks_for_the_users_confirmation(staged
     monkeypatch.setenv("CLAUDECODE", "1")
     code, out = staged.run()
     assert code == 1
-    assert AGENT_RERUN.format("examplesurname") in out.splitlines()
+    assert AGENT_RERUN.format("Examplesurname") in out.splitlines()
     assert NO_VERIFY in out
 
 
@@ -621,7 +622,7 @@ def test_under_claude_code_the_approved_line_carries_the_agent_marker(staged, mo
     monkeypatch.setenv("LMF_APPROVE", "examplesurname")
     code, out = staged.run()
     assert code == 0
-    assert (f"approved: {PEOPLE_RULE}, terms: examplesurname (1 finding) "
+    assert (f"approved: {PEOPLE_RULE}, terms: Examplesurname (1 finding) "
             f"[env] agent: claude-code") in out.splitlines()
 
 
@@ -650,7 +651,7 @@ def test_no_unredacted_report_blocks_without_asking(staged, monkeypatch):
     assert code == 1
     assert (f"could not fetch the matched text for {PEOPLE_RULE}; "
             f"nothing was approved") in out
-    assert "examplesurname" not in out
+    assert "examplesurname" not in out.lower()
     assert "approved:" not in out and "re-run:" not in out
 
 
@@ -667,7 +668,7 @@ def test_a_public_or_unconfirmed_repo_ignores_the_marker(staged, monkeypatch, vi
     # Today's table, and no unredacted pass.
     assert "Found 1 blocking finding(s)" in out
     assert [c["redact"] for c in staged.stand_in.calls] == [True]
-    assert "examplesurname" not in out
+    assert "examplesurname" not in out.lower()
     assert "approved:" not in out and "re-run:" not in out
     # The repo is marked, so the hint to mark it is not shown.
     assert "mark it approvable" not in out
@@ -737,3 +738,43 @@ def test_a_marked_repo_with_nothing_staged_passes(staged, visibility):
 def test_a_term_with_a_quote_is_escaped_for_the_shell(monkeypatch):
     monkeypatch.delenv("CLAUDECODE", raising=False)
     assert scanner._rerun_line(["o'example"]) == RERUN.format("o'\\''example")
+
+
+# --- review fixes -------------------------------------------------------------------
+
+def test_a_blank_term_in_the_unredacted_pass_blocks_even_on_a_yes(staged):
+    staged.person(1, "Examplesurname")
+    staged.stand_in.clear[-1].update(Match="", Secret="")
+    staged.tty = FakeTty("y\n")
+    code, out = staged.run()
+    assert code == 1
+    assert (f"could not fetch the matched text for {PEOPLE_RULE}; "
+            f"nothing was approved") in out
+    assert staged.tty.opened == 0
+    assert "approved:" not in out
+
+
+def test_a_term_with_a_comma_is_approved_by_the_printed_rerun_value(staged, monkeypatch):
+    staged.person(1, "smith, jr")
+    staged.person(2, "examplesurname")
+    code, out = staged.run()
+    assert code == 1
+    value = "examplesurname,smith, jr"
+    assert RERUN.format(value) in out.splitlines()
+
+    staged.tty = must_not_open_tty
+    monkeypatch.setenv("LMF_APPROVE", value)
+    code, out = staged.run()
+    assert code == 0
+    assert (f"approved: {PEOPLE_RULE}, terms: examplesurname, smith, jr "
+            f"(2 findings) [env]") in out.splitlines()
+
+
+def test_an_unmarked_public_repo_gets_no_hint_to_mark_it(staged):
+    staged.person(1, "Examplesurname")
+    staged.marker = set()
+    staged.visibility = "PUBLIC"
+    code, out = staged.run()
+    assert code == 1
+    assert "Found 1 blocking finding(s)" in out
+    assert "mark it approvable" not in out

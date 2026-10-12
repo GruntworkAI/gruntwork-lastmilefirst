@@ -839,6 +839,10 @@ def _attach_matches(
             f["_match_error"] = "no matching row in the unredacted pass"
             continue
         row = candidates.pop(0)
+        if not _term(row):
+            # An approval is never taken against a blank term.
+            f["_match_error"] = "blank match in the unredacted pass"
+            continue
         f["Match"] = row.get("Match", "")
         f["Secret"] = row.get("Secret", "")
         f["_unredacted"] = True
@@ -851,13 +855,30 @@ def unmatched_rules(findings: List[Dict[str, Any]], approvable: set) -> List[str
                    if is_approvable(f, approvable) and not f.get("_unredacted")})
 
 
-def _term(finding: Dict[str, Any]) -> str:
-    """The matched term: the rule's capture group (Secret) when present, else Match.
+def _term_text(finding: Dict[str, Any]) -> str:
+    """The matched term as written: the capture group (Secret) when present, else Match.
 
-    Lower-cased and whitespace-collapsed, so two casings of one name are one row.
+    Whitespace-collapsed, casing kept. This is what the block displays.
     """
     text = str(finding.get("Secret") or "").strip() or str(finding.get("Match") or "")
-    return " ".join(text.split()).lower()
+    return " ".join(text.split())
+
+
+def _term(finding: Dict[str, Any]) -> str:
+    """The grouping key for a term: _term_text lower-cased.
+
+    Two casings of one name share a key, so they are one row; the row shows
+    the casing first seen (see _term_display).
+    """
+    return _term_text(finding).lower()
+
+
+def _term_display(findings: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Each term key mapped to its text in the first finding seen with that key."""
+    display: Dict[str, str] = {}
+    for f in findings:
+        display.setdefault(_term(f), _term_text(f))
+    return display
 
 
 APPROVABLE_FILE_CAP = 5
@@ -873,6 +894,7 @@ def _format_approvable(findings: List[Dict[str, Any]]) -> str:
     by_rule: Dict[str, List[Dict[str, Any]]] = {}
     for f in findings:
         by_rule.setdefault(str(f.get("RuleID") or "unknown"), []).append(f)
+    display = _term_display(findings)
 
     lines: List[str] = []
     for rule in sorted(by_rule):
@@ -888,7 +910,7 @@ def _format_approvable(findings: List[Dict[str, Any]]) -> str:
             per_file[path] = per_file.get(path, 0) + 1
 
         ordered_terms = sorted(by_term.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))
-        term_width = max(len(term) for term in by_term) + 2
+        term_width = max(len(display[term]) for term in by_term) + 2
         count_width = max(len(f"{sum(c.values())}×") for c in by_term.values()) + 2
         for term, per_file in ordered_terms:
             ordered_files = sorted(per_file.items(), key=lambda kv: (-kv[1], kv[0]))
@@ -896,7 +918,7 @@ def _format_approvable(findings: List[Dict[str, Any]]) -> str:
             count = f"{sum(per_file.values())}×"
             for i, (path, n) in enumerate(shown):
                 if i == 0:
-                    lines.append(f"  {term:<{term_width}}{count:<{count_width}}{path} ({n})")
+                    lines.append(f"  {display[term]:<{term_width}}{count:<{count_width}}{path} ({n})")
                 else:
                     lines.append(f"  {'':<{term_width}}{'':<{count_width}}{path} ({n})")
             hidden = len(ordered_files) - len(shown)
@@ -950,13 +972,20 @@ def _open_tty():
     return open("/dev/tty", "r+")
 
 
-def _approval_terms(approvable: List[Dict[str, Any]]) -> List[str]:
-    """The distinct terms of the approvable findings, most frequent first, as shown."""
+def _approval_terms(
+    approvable: List[Dict[str, Any]], display: Optional[Dict[str, str]] = None
+) -> List[str]:
+    """The distinct terms of the approvable findings, most frequent first, as shown.
+
+    Each term is displayed as first seen; `display` (from _term_display) lets a
+    caller listing a subset use the first-seen form of the whole set.
+    """
+    display = display or _term_display(approvable)
     counts: Dict[str, int] = {}
     for f in approvable:
         term = _term(f)
         counts[term] = counts.get(term, 0) + 1
-    return [t for t, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    return [display[t] for t, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 def _approval(
@@ -967,7 +996,9 @@ def _approval(
     1. LMF_APPROVE, when set and not blank, is the answer: a comma-separated
        list of terms, compared the way terms are grouped. Every shown term
        listed gives (True, "env"); a shown term left out, a bare `1`, or `0`
-       gives (False, "env"). The tty is never touched on this route.
+       gives (False, "env"). The value the re-run line prints (the shown
+       terms joined by commas) names every term even when a term itself
+       contains a comma. The tty is never touched on this route.
     2. Otherwise the block and the question are written to /dev/tty and one
        line is read: `y` or `yes` gives (True, "tty"), anything else
        (False, "tty").
@@ -975,8 +1006,11 @@ def _approval(
     """
     value = os.environ.get(APPROVE_ENV, "")
     if value.strip():
+        keys = [" ".join(t.split()).lower() for t in terms]
+        if keys and " ".join(value.split()).lower() == " ".join(",".join(keys).split()):
+            return True, "env"
         listed = {" ".join(part.split()).lower() for part in value.split(",")}
-        return (bool(terms) and all(t in listed for t in terms)), "env"
+        return (bool(keys) and all(k in listed for k in keys)), "env"
 
     try:
         with _open_tty() as tty:
@@ -1009,16 +1043,23 @@ def _approved_lines(approvable: List[Dict[str, Any]], source: str) -> List[str]:
     for f in approvable:
         by_rule.setdefault(str(f.get("RuleID") or "unknown"), []).append(f)
     agent = " agent: claude-code" if _under_claude_code() else ""
+    display = _term_display(approvable)
     lines = []
     for rule in sorted(by_rule):
         rows = by_rule[rule]
-        lines.append(f"approved: {rule}, terms: {', '.join(_approval_terms(rows))} "
+        lines.append(f"approved: {rule}, terms: {', '.join(_approval_terms(rows, display))} "
                      f"({len(rows)} finding{'s' if len(rows) != 1 else ''}) [{source}]{agent}")
     return lines
 
 
-def _marker_hint_lines(findings: List[Dict[str, Any]], marker: set) -> List[str]:
-    """How to mark the repo, once per blocking people rule it is not marked for."""
+def _marker_hint_lines(findings: List[Dict[str, Any]], marker: Optional[set]) -> List[str]:
+    """How to mark the repo, once per blocking people rule it is not marked for.
+
+    `marker` is None where marking would do nothing (a public or unconfirmed
+    repo, or a remote reported public), and then there is no hint.
+    """
+    if marker is None:
+        return []
     rules = sorted({str(f.get("RuleID")) for f in findings
                     if _is_blocking(f) and _finding_kind(f) == "person"
                     and str(f.get("RuleID") or "").strip().lower() not in marker})
@@ -1032,14 +1073,15 @@ def _approvable_outcome(
     lines: List[str],
     findings: List[Dict[str, Any]],
     active: set,
-    marker: set,
+    marker: Optional[set],
     action: str,
 ) -> Optional[Tuple[int, str]]:
     """The approvable steps shared by the commit and the push hooks.
 
     `findings` have been through apply_visibility_policy, and the approvable
     ones already carry their matched text (or a match error). `active` is the
-    marker where it applies, `marker` the marker as read. `lines` holds what
+    marker where it applies, `marker` the marker as read where a hint to mark
+    the repo would help, else None (no hint). `lines` holds what
     the hook prints before the findings. A blocking finding from any other rule
     blocks without an ask; otherwise approvable findings are shown grouped by
     term and asked about (see _approval), with `action` naming the git command
@@ -1212,7 +1254,8 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
                              f"or unconfirmed; the marker applies to private repos only")
 
         # Every blocking finding, and every approvable one, is decided here.
-        outcome = _approvable_outcome(lines, findings, active, marker, "commit")
+        outcome = _approvable_outcome(lines, findings, active,
+                                      marker if private else None, "commit")
         if outcome is not None:
             return outcome
         if findings:
@@ -1634,9 +1677,12 @@ def scan_pushed(
                                  f"or unconfirmed; the marker applies to private repos only")
 
         # Every blocking finding, and every approvable one, is decided here.
-        outcome = _approvable_outcome(lines, findings, active, marker, "push")
+        hint_marker = marker if private and not remote_public else None
+        outcome = _approvable_outcome(lines, findings, active, hint_marker, "push")
         if outcome is not None:
-            return outcome
+            code, text = outcome
+            # A blocked push stays blocked whatever the approval said.
+            return (1 if blocked else code), text
         if findings:
             lines.append(_format_findings(findings))
         else:

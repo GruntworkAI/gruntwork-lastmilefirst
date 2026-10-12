@@ -497,8 +497,8 @@ lmf-private-people in 3 files (25 lines)
   jane placeholder  1×   notes/session-log.md (1)
 ```
 
-A term is what the rule's name pattern caught, lower-cased, so different
-casings of one name share a row. A second name from the same rule gets its own
+A term is what the rule's name pattern caught. Different casings of one name
+share a row, and the row shows the casing first seen. A second name from the same rule gets its own
 row, which is how a stray name shows up beside the expected one. Each term
 lists up to five files, most lines first, then `... and N more files`.
 
@@ -512,7 +512,8 @@ There are two ways to answer:
   The variable must name every term shown. One left out blocks with the block
   printed again and `LMF_APPROVE does not name every term shown above; nothing
   was approved`, so a name staged after the block was read cannot slip through.
-  A bare `1` (or `0`, or empty) approves nothing.
+  A bare `1` (or `0`, or empty) approves nothing. A term that contains a
+  comma is approved by pasting the re-run line as printed.
 
 Set the variable on the single command, as in the re-run line. Never export it.
 
@@ -536,7 +537,7 @@ line ends `git push <your arguments>`.
 | The repo is public, or its visibility is unknown | The marker is ignored and the finding blocks as usual, with `this repo is marked approvable for lmf-private-people, but it is public or unconfirmed; the marker applies to private repos only` |
 | A push to a remote GitHub reports as public | Checked on every push that has a people finding, not only a first push. Blocks with no question and `... but the remote is public; the marker applies to private remotes only`. If GitHub gives no answer, the declared visibility is used and the could-not-confirm warning prints |
 | The matched text could not be fetched | Blocks with no question and `could not fetch the matched text for lmf-private-people; nothing was approved`. An approval is never taken against a blank term |
-| The repo is not marked | Blocks as usual, with a line giving the marker command: `if this repo's subject is on the list, mark it approvable: git config --add lastmilefirst.approvable lmf-private-people (the match is then shown and asked about on each commit)` |
+| The repo is private and not marked | Blocks as usual, with a line giving the marker command: `if this repo's subject is on the list, mark it approvable: git config --add lastmilefirst.approvable lmf-private-people (the match is then shown and asked about on each commit)` |
 
 **Under Claude Code.** Claude never sets `LMF_APPROVE` or the
 `lastmilefirst.approvable` marker unless the user confirmed in the conversation

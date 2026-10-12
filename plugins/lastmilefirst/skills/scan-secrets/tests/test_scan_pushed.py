@@ -516,9 +516,9 @@ def test_private_remote_without_an_approval_blocks_with_the_push_rerun(marked, t
     code, out = later_push(tmp_path)
     assert code == 1
     assert HEADER in out
-    assert "examplesurname" in out
+    assert "Examplesurname" in out
     lines = out.splitlines()
-    assert PUSH_RERUN.format("examplesurname") in lines
+    assert PUSH_RERUN.format("Examplesurname") in lines
     assert NO_VERIFY in lines
     assert out.index(HEADER) < out.index("re-run:")
     assert "approved:" not in out
@@ -532,7 +532,7 @@ def test_private_remote_with_the_terms_in_the_variable_is_allowed(marked, tmp_pa
     code, out = later_push(tmp_path)
     assert code == 0
     assert HEADER in out
-    assert f"approved: {PEOPLE_RULE}, terms: examplesurname (2 findings) [env]" in out.splitlines()
+    assert f"approved: {PEOPLE_RULE}, terms: Examplesurname (2 findings) [env]" in out.splitlines()
     assert out.index(HEADER) < out.index("approved:")
 
 
@@ -541,7 +541,7 @@ def test_private_remote_with_a_variable_missing_a_term_blocks(marked, tmp_path, 
     code, out = later_push(tmp_path)
     assert code == 1
     assert "LMF_APPROVE does not name every term shown above; nothing was approved" in out
-    assert PUSH_RERUN.format("examplesurname") in out
+    assert PUSH_RERUN.format("Examplesurname") in out
 
 
 def test_tty_answering_y_allows_the_push(marked, tmp_path, monkeypatch):
@@ -551,7 +551,7 @@ def test_tty_answering_y_allows_the_push(marked, tmp_path, monkeypatch):
     assert code == 0
     assert HEADER in tty.written
     assert tty.written.endswith("Approve these for this push? [y/N] ")
-    assert out == f"approved: {PEOPLE_RULE}, terms: examplesurname (2 findings) [tty]"
+    assert out == f"approved: {PEOPLE_RULE}, terms: Examplesurname (2 findings) [tty]"
 
 
 def test_tty_answering_n_blocks_the_push(marked, tmp_path, monkeypatch):
@@ -560,7 +560,7 @@ def test_tty_answering_n_blocks_the_push(marked, tmp_path, monkeypatch):
     code, out = later_push(tmp_path)
     assert code == 1
     assert HEADER in tty.written
-    assert PUSH_RERUN.format("examplesurname") in out
+    assert PUSH_RERUN.format("Examplesurname") in out
     assert NO_VERIFY in out
     assert "approved:" not in out
 
@@ -575,7 +575,7 @@ def test_public_remote_on_a_first_push_blocks_without_asking(marked, tmp_path, m
     assert "Found 2 blocking finding(s)" in out
     # No unredacted pass, no matched text, no ask.
     assert marked["passes"] == [True]
-    assert "examplesurname" not in out
+    assert "examplesurname" not in out.lower()
     assert "approved:" not in out and "re-run:" not in out
     assert "mark it approvable" not in out
 
@@ -592,7 +592,7 @@ def test_public_remote_on_a_later_push_blocks_without_asking(marked, tmp_path, m
     assert "Found 2 blocking finding(s)" in out
     assert marked["posture_repos"] == ["example-org/pushed-repo"]
     assert marked["passes"] == [True]
-    assert "examplesurname" not in out
+    assert "examplesurname" not in out.lower()
     assert "approved:" not in out and "re-run:" not in out
 
 
@@ -606,7 +606,7 @@ def test_no_answer_from_github_honors_the_declaration_and_warns(marked, tmp_path
     assert ("WARNING: declared PRIVATE; GitHub could not confirm it (gh unavailable or "
             "timed out), so the declaration was not verified.") in out.splitlines()
     assert HEADER in out
-    assert f"approved: {PEOPLE_RULE}, terms: examplesurname (2 findings) [env]" in out
+    assert f"approved: {PEOPLE_RULE}, terms: Examplesurname (2 findings) [env]" in out
     # The pushed remote first, then the clone's default repo, as on a first push.
     assert marked["posture_repos"] == ["example-org/pushed-repo", None]
 
@@ -617,7 +617,7 @@ def test_no_answer_on_a_first_push_warns_once(marked, tmp_path):
     code, out = first_push(tmp_path)
     assert code == 1
     assert out.count("GitHub could not confirm it") == 1
-    assert PUSH_RERUN.format("examplesurname") in out
+    assert PUSH_RERUN.format("Examplesurname") in out
     assert marked["posture_repos"] == ["example-org/pushed-repo", None]
 
 
@@ -824,3 +824,44 @@ def test_range_push_skips_a_finding_already_on_the_remote(tmp_path):
     assert "github-pat" not in pushed.stderr
     head = git("rev-parse", "HEAD").stdout.strip()
     assert git("rev-parse", "refs/heads/main", cwd=bare).stdout.strip() == head
+
+
+# --- review fixes -------------------------------------------------------------------
+
+def test_an_unmarked_repo_pushing_to_a_public_remote_gets_no_hint(marked, tmp_path):
+    marked["marker"] = set()
+    marked["by_repo"] = {"example-org/pushed-repo": "PUBLIC"}
+    code, out = first_push(tmp_path)
+    assert code == 1
+    assert "Found 2 blocking finding(s)" in out
+    assert "mark it approvable" not in out
+
+
+def test_no_unredacted_report_on_push_blocks_without_asking(marked, tmp_path, monkeypatch):
+    run = scanner._run_gitleaks
+
+    def no_clear_report(args, config_path=None, cwd=None, redact=True, enable_rules=None):
+        if not redact:
+            marked["passes"].append(redact)
+            return 2, "", "aborted"
+        return run(args, config_path, cwd, redact, enable_rules)
+
+    monkeypatch.setattr(scanner, "_run_gitleaks", no_clear_report)
+    monkeypatch.setattr(scanner, "_open_tty", _must_not_open_tty)
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert (f"could not fetch the matched text for {PEOPLE_RULE}; "
+            f"nothing was approved") in out
+    assert marked["passes"] == [True, False]
+    assert "examplesurname" not in out.lower()
+    assert "approved:" not in out and "re-run:" not in out
+
+
+def test_a_blocked_push_stays_blocked_after_an_approval(marked, tmp_path, monkeypatch):
+    monkeypatch.setattr(scanner, "visibility_mismatch",
+                        lambda _declared, _github: ("block", ["a stand-in mismatch"]))
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = first_push(tmp_path)
+    assert code == 1
+    assert "a stand-in mismatch" in out
