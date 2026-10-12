@@ -1,6 +1,6 @@
 # Feature: a repo marked approvable for a people-rule finding, instead of exempt
 
-**Status:** open
+**Status:** planned (`.claude/work/plans/2026-10-12-001-feat-approvable-repo-plan.md`, v1.0)
 **Priority:** high
 **Created:** 2026-10-11
 
