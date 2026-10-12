@@ -36,27 +36,43 @@ Repeatable for more than one rule. Only rules tagged `private-name` (and, later,
 may be marked approvable; an ordinary secret rule named here is ignored with a warning,
 so a real credential can never be approved through.
 
+### Showing what was found, then asking
+
+The approval is always given against the matched text, never before it. Today's report
+prints rule, file, and line only; for an approvable rule that is not enough, because the
+match is the thing being approved. In an approvable repo, findings from approvable rules
+are printed grouped by matched term, in the clear (ordinary secret rules keep their
+redaction; a name or a phone number is shown whole):
+
+```
+lmf-private-people in 2 files (42 lines)
+  <term>     42×   .claude/work/plans/copy-review/<copy-doc>.md (21)
+                   .claude/work/plans/copy-review/<copy-doc>.docx (21)
+Approve these for this commit? This repo is marked approvable for lmf-private-people.
+```
+
+A second term is its own row, so a stray name from the same rule is seen before anything
+is approved. gitleaks' JSON output carries the match, so no second scan is needed.
+
 ### Approving a commit
 
-```
-LMF_APPROVE=1 git commit -m "..."
-```
+How the ask is answered depends on where the hook runs:
 
-The hook, in an approvable repo with findings only from approvable rules:
+- **Terminal.** The hook reads a y/n from `/dev/tty` with the list on screen. `n` blocks.
+- **Non-interactive** (Claude Code's Bash tool, CI, an editor's git client). No prompt is
+  possible, so the hook blocks, prints the list, and prints the exact re-run:
+  `LMF_APPROVE=1 git commit ...`. The variable is the answer to the list just printed.
 
-1. prints the findings as it does today, plus one line naming the rule and the matched
-   terms, so a *second* name in the same rule is seen before it is approved;
-2. with `LMF_APPROVE` set, prints `approved: <rule> (<n> findings) in <repo>` and exits 0;
-3. without it, blocks and prints the exact command to re-run with approval, and the
-   `--no-verify` warning that it also skips identity.
-
-Any finding from a non-approvable rule blocks regardless of `LMF_APPROVE`. The identity
-check always runs.
+With the approval given, the hook prints `approved: <rule>, terms: <term>[, <term>] (<n>
+findings)` and exits 0. Any finding from a non-approvable rule blocks regardless of the
+answer or the variable. The identity check always runs. Without an approval the block
+message also carries the `--no-verify` warning that it skips identity too.
 
 ### Record
 
-Append one line per approval to `.git/lastmilefirst/approvals.log` (rule, finding count,
-commit date, the staged paths). Local only. `--audit` reads it and reports approvals in
+Append one line per approval to `.git/lastmilefirst/approvals.log` (rule, the approved
+terms, finding count, commit date, the staged paths, and whether the answer came from the
+tty or the variable). Local only. `--audit` reads it and reports approvals in
 the repo so a review can see how often the switch was used.
 
 ### Pre-push
@@ -79,8 +95,11 @@ lmf-private-people`) so the marker is never forgotten.
   matched-terms line in the output is what makes a second name visible. Start per-rule.
 - Should `LMF_APPROVE` take a rule name rather than `1`, so the approval is scoped when
   two approvable rules fire at once? Probably yes once there is a second approvable rule.
-- Claude Code commits run the hook non-interactively, so a prompt is not an option; the
-  env var is the approval. Confirm the hook sees the variable under the Bash tool.
+- Confirm the hook sees `LMF_APPROVE` under Claude Code's Bash tool (git inherits the
+  environment, so it should), and that the permission layer treats it as an ordinary
+  variable rather than a safety bypass the way it treats `--no-verify`.
+- Confirm `/dev/tty` is readable from a git hook in Terminal and in Cursor's git client;
+  fall back to the non-interactive path whenever it is not.
 
 ## Files affected
 
