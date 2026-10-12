@@ -1,8 +1,8 @@
 ---
 title: A repo marked approvable for a people-rule finding: show the match, then ask
-version: 1.3
+version: 1.4
 date: 2026-10-12
-status: planned
+status: built; in review
 type: feat
 component: skills/scan-secrets/scripts/{scanner.py,scan_secrets.py}, skills/scan-secrets/tests/, skills/scan-secrets/SKILL.md, CHANGELOG.md, README.md
 target_version: 0.39.0
@@ -14,6 +14,8 @@ refs:
 ---
 
 # A repo marked approvable for a people-rule finding: show the match, then ask
+
+Delta (1.4): built 2026-10-12 on `feat/approvable-repo` in four units plus one review-fix commit. Three departures from the text above, all from the code review: a term displays in the casing first seen (grouping and the variable comparison stay lower-cased), because the point of the block is to show what was found; the mark-it hint is suppressed where the marker would not apply (an unmarked public repo, or a push to a public remote); and a term containing a comma is approved by pasting the re-run line as printed. The join key carries the column, since gitleaks' fingerprint has none. The review's remaining finding, that a later push to a now-public remote does not re-run the visibility policy, is logged as `todos/bug-scan-pushed-policy-not-rerun-on-public-remote.md` against section 3.7.
 
 Delta (1.3): the review's two decisions, both user-settled 2026-10-12. Under Claude Code the hook tells the agent to get the user's confirmation before re-running and marks agent-run approvals (the soft route; a hard refusal of the variable was rejected because the hook cannot tell the user's `!` command from the agent's). The push asks the same way the commit does (rejected: gating on a log line, which is per machine; reporting without asking, which is an exemption on the push path). With no gate to feed, the approvals log is dropped. Units stay at four.
 
