@@ -1028,6 +1028,77 @@ def _marker_hint_lines(findings: List[Dict[str, Any]], marker: set) -> List[str]
             for rule in rules]
 
 
+def _approvable_outcome(
+    lines: List[str],
+    findings: List[Dict[str, Any]],
+    active: set,
+    marker: set,
+    action: str,
+) -> Optional[Tuple[int, str]]:
+    """The approvable steps shared by the commit and the push hooks.
+
+    `findings` have been through apply_visibility_policy, and the approvable
+    ones already carry their matched text (or a match error). `active` is the
+    marker where it applies, `marker` the marker as read. `lines` holds what
+    the hook prints before the findings. A blocking finding from any other rule
+    blocks without an ask; otherwise approvable findings are shown grouped by
+    term and asked about (see _approval), with `action` naming the git command
+    in the question and the re-run line.
+
+    Returns (exit_code, report_text), or None when no finding is blocking or
+    approvable, so the caller's own path runs. When the answer came from the
+    terminal, the block was already written there, so the returned text
+    carries only what follows it.
+    """
+    _, approvable = apply_approvals(findings, active, approved=False)
+    other = [f for f in findings if not is_approvable(f, active)]
+    unmatched = unmatched_rules(findings, active)
+    hints = _marker_hint_lines(findings, marker)
+
+    if any(_is_blocking(f) for f in other):
+        # A real secret is never approved past: block without asking.
+        if approvable and not unmatched:
+            lines.append(_format_findings(other))
+            lines.append(_format_approvable(approvable))
+            for rule in sorted({str(f.get("RuleID")) for f in approvable}):
+                lines.append(f"the {rule} findings above could be approved once "
+                             f"the blocking findings are fixed")
+        else:
+            lines.append(_format_findings(findings))
+        lines.extend(hints)
+        return 1, "\n".join(lines)
+
+    if approvable:
+        if unmatched:
+            # An approval is never taken against a blank term.
+            lines.append(_format_findings(findings))
+            for rule in unmatched:
+                lines.append(f"could not fetch the matched text for {rule}; "
+                             f"nothing was approved")
+            lines.extend(hints)
+            return 1, "\n".join(lines)
+
+        if other:
+            # Warnings only (personal data in a private repo), shown above the block.
+            lines.append(_format_findings(other))
+        lines.append(_format_approvable(approvable))
+        terms = _approval_terms(approvable)
+        approved, source = _approval(lines, terms, action)
+        # The terminal already showed the block; the rest goes after it.
+        after: List[str] = [] if source == "tty" else lines
+        if approved:
+            after.extend(_approved_lines(approvable, source))
+            return 0, "\n".join(after)
+        if source == "env":
+            after.append(f"{APPROVE_ENV} does not name every term shown above; "
+                         f"nothing was approved")
+        after.append(_rerun_line(terms, action))
+        after.append(NO_VERIFY_WARNING)
+        after.extend(hints)
+        return 1, "\n".join(after)
+    return None
+
+
 def scan_repo(
     repo_path: Optional[Path] = None,
     report_format: str = "text",
@@ -1140,57 +1211,10 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
                 lines.append(f"this repo is marked approvable for {rule}, but it is public "
                              f"or unconfirmed; the marker applies to private repos only")
 
-        _, approvable = apply_approvals(findings, active, approved=False)
-        other = [f for f in findings if not is_approvable(f, active)]
-        unmatched = unmatched_rules(findings, active)
-        hints = _marker_hint_lines(findings, marker)
-
-        if any(_is_blocking(f) for f in other):
-            # A real secret is never approved past: block without asking.
-            if approvable and not unmatched:
-                lines.append(_format_findings(other))
-                lines.append(_format_approvable(approvable))
-                for rule in sorted({str(f.get("RuleID")) for f in approvable}):
-                    lines.append(f"the {rule} findings above could be approved once "
-                                 f"the blocking findings are fixed")
-            else:
-                lines.append(_format_findings(findings))
-            lines.extend(hints)
-            return 1, "\n".join(lines)
-
-        if approvable:
-            if unmatched:
-                # An approval is never taken against a blank term.
-                lines.append(_format_findings(findings))
-                for rule in unmatched:
-                    lines.append(f"could not fetch the matched text for {rule}; "
-                                 f"nothing was approved")
-                lines.extend(hints)
-                return 1, "\n".join(lines)
-
-            if other:
-                # Warnings only (personal data in a private repo), shown above the block.
-                lines.append(_format_findings(other))
-            lines.append(_format_approvable(approvable))
-            terms = _approval_terms(approvable)
-            approved, source = _approval(lines, terms)
-            # The terminal already showed the block; the rest goes after it.
-            after: List[str] = [] if source == "tty" else lines
-            if approved:
-                after.extend(_approved_lines(approvable, source))
-                return 0, "\n".join(after)
-            if source == "env":
-                after.append(f"{APPROVE_ENV} does not name every term shown above; "
-                             f"nothing was approved")
-            after.append(_rerun_line(terms))
-            after.append(NO_VERIFY_WARNING)
-            after.extend(hints)
-            return 1, "\n".join(after)
-
-        if any(_is_blocking(f) for f in findings):
-            lines.append(_format_findings(findings))
-            lines.extend(hints)
-            return 1, "\n".join(lines)
+        # Every blocking finding, and every approvable one, is decided here.
+        outcome = _approvable_outcome(lines, findings, active, marker, "commit")
+        if outcome is not None:
+            return outcome
         if findings:
             # Warnings only (personal data in a private repo): shown, not blocking.
             lines.append(_format_findings(findings))
@@ -1446,6 +1470,13 @@ def scan_pushed(
     declaration for the scan rules. With no answer for it, the declaration
     then the default repo's answer decide, as before.
 
+    In a private or internal repo marked approvable (approvable_rules), the
+    push asks the same way the commit does (see _approvable_outcome). When
+    there is an approvable finding, the remote's visibility is asked of GitHub
+    on every push, not only a ref's first push: a PUBLIC answer means the
+    marker is ignored and the findings block, and no answer means the
+    declaration is honored with a warning.
+
     Exit 1 only on a blocking finding, a visibility block, or a scan that did
     not complete. Returns (exit_code, report_text).
     """
@@ -1491,11 +1522,16 @@ def scan_pushed(
         visibility = check_repo_visibility(repo_path)
     is_public = visibility == "PUBLIC"
 
+    marker = approvable_rules(repo_path)
+    private = (visibility or "").upper() in ("PRIVATE", "INTERNAL")
+    active = marker if private else set()
+
     config_path = write_merged_config()
     try:
         findings: List[Dict[str, Any]] = []
         seen = set()
-        for label, log_opts in _push_scan_runs(to_scan, cwd):
+        runs = _push_scan_runs(to_scan, cwd)
+        for label, log_opts in runs:
             ref_findings, code, stderr = _gitleaks_report(
                 ["git", "--log-opts", log_opts],
                 "gitleaks-push-", config_path, cwd, is_public,
@@ -1519,6 +1555,50 @@ def scan_pushed(
 
         findings, policy_lines = apply_visibility_policy(findings, visibility)
 
+        # The remote's visibility, asked on every push that has an approvable
+        # finding. A first push already asked GitHub above, so it is not asked
+        # twice; a later push asks here. One answer per push.
+        remote_lines: List[str] = []
+        remote_public = is_public
+        if any(is_approvable(f, active) for f in findings):
+            if first_push:
+                remote = github
+            else:
+                pushed_repo = github_repo_from_url(remote_url)
+                remote_posture = (_fetch_github_posture(repo_path, repo=pushed_repo)
+                                  if pushed_repo else None)
+                remote = (remote_posture or {}).get("visibility")
+                if not remote:
+                    remote_posture = _fetch_github_posture(repo_path)
+                    remote = (remote_posture or {}).get("visibility")
+                declared_now = declared_visibility(repo_path)
+                if not remote and declared_now:
+                    reason = (remote_posture or {}).get("reason") or "no answer"
+                    remote_lines.append(
+                        f"WARNING: declared {declared_now}; GitHub could not confirm it "
+                        f"({reason}), so the declaration was not verified.")
+            if remote == "PUBLIC":
+                remote_public = True
+                active = set()
+
+        if active:
+            # The matched text, from a pass that runs only the approvable rules
+            # unredacted over the same ranges (see _attach_matches).
+            def unredacted(ids: List[str]) -> Optional[List[Dict[str, Any]]]:
+                rows: List[Dict[str, Any]] = []
+                for _label, log_opts in runs:
+                    found, pass_code, _stderr = _gitleaks_report(
+                        ["git", "--log-opts", log_opts], "gitleaks-push-",
+                        config_path, cwd, is_public, redact=False, enable_rules=ids)
+                    if found is None:
+                        unredacted.error = (f"no report from the unredacted pass "
+                                            f"(exit {pass_code})")
+                        return None
+                    rows.extend(found)
+                return rows
+            unredacted.error = None
+            _attach_matches(findings, active, unredacted, _diff_join_key)
+
         sync_note = consume_sync_note()
         if sync_note:
             lines.append(sync_note)
@@ -1537,18 +1617,35 @@ def scan_pushed(
                 if described:
                     lines.append("WARNING (not blocking): GitHub posture for this public repo:")
                     lines.append(described)
+        lines.extend(remote_lines)
         if is_public:
             lines.append("Reminder: you are pushing to a PUBLIC repository")
         lines.extend(policy_lines)
 
+        lines.extend(marker_warnings(marker, config_path))
+        if marker and not active:
+            people = sorted(k for k in marker if not marker_warnings({k}, config_path))
+            for rule in people:
+                if remote_public:
+                    lines.append(f"this repo is marked approvable for {rule}, but the remote "
+                                 f"is public; the marker applies to private remotes only")
+                else:
+                    lines.append(f"this repo is marked approvable for {rule}, but it is public "
+                                 f"or unconfirmed; the marker applies to private repos only")
+
+        # Every blocking finding, and every approvable one, is decided here.
+        outcome = _approvable_outcome(lines, findings, active, marker, "push")
+        if outcome is not None:
+            return outcome
         if findings:
             lines.append(_format_findings(findings))
         else:
             lines.append("No secrets detected in the pushed commits.")
-        blocked = blocked or any(_is_blocking(f) for f in findings)
-        if not blocked and findings:
+        if blocked:
+            return 1, "\n".join(lines)
+        if findings:
             lines.append("No blocking findings; push allowed.")
-        return (1 if blocked else 0), "\n".join(lines)
+        return 0, "\n".join(lines)
     finally:
         config_path.unlink(missing_ok=True)
 
