@@ -106,8 +106,8 @@ new floor because the flag predates `LOG_OPTS_MIN_GITLEAKS_VERSION`.
 The unredacted pass fails closed, the same stance `_gitleaks_report` takes for the first
 pass. When it writes no report, or any approvable finding has no joined `Match`,
 `scan_staged` blocks with today's table and one line (`could not fetch the matched text
-for <rule>; nothing was approved`), skips the ask, and writes no log line. An approval is
-never taken against a blank term.
+for <rule>; nothing was approved`), and skips the ask. An approval is never taken against
+a blank term.
 
 ### 3.3 Rendering, grouped by term
 
