@@ -49,3 +49,16 @@ identical regex (the 0.37.0 split moved keywords, not terms). Fixed by hand in t
 file, verified with a `gitleaks dir` scan; never committed anywhere. A project review was
 recorded for this repo (health 52/100; CHANGELOG missing 19 tagged releases, plan and todo
 statuses lagging shipping, archive backlog) with the housekeeping queued for `main`.
+
+## Verification (2026-10-13, after the release)
+
+Plugin updated and reloaded at 0.39.0; the global hooks resolve to the marketplace copy.
+In a scratch private repo with two throwaway terms added to the local people rule for the
+run (removed after): step 1 unmarked blocked with the hint; step 3 marked under Claude Code
+blocked with the get-confirmation line, approved with the terms in the variable (approved
+line carried the agent marker), bare `1` blocked; step 4 two terms gave two rows and a
+variable naming one blocked; step 5 an AWS-format key beside the term blocked with no ask.
+Step 2 (the terminal prompt) needs a real tty and was not run from this session. Two bad
+inputs on the first try at step 5: AWS's documented example key is allowlisted by gitleaks,
+and an unchanged line is not in the staged diff. Found and logged: the generic trailer
+prints under the approvable block.
