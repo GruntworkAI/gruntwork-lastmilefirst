@@ -162,6 +162,8 @@ git config lastmilefirst.visibility public                                  # or
 
 On a first push GitHub is asked about the remote being pushed to (falling back to the clone's default repo when that remote is not a GitHub URL or gets no answer). If the pushed remote is public, public-repo rules apply whatever the declaration says. Otherwise the declared value decides the policy, and GitHub's answer is used when nothing is declared. Later pushes resolve visibility the same way the other modes do.
 
+**People findings in a repo marked approvable** are shown grouped by the matched term and asked about on each push, the same way the commit asks, and a public remote ignores the marker. See [Marking a repo approvable](#marking-a-repo-approvable).
+
 **Fails closed.** Hook input that is not four fields per line, a gitleaks run that ends without writing its report, and the five-minute scan timeout all block the push with the reason.
 
 ### `--add-format`: Add Custom Format (Interactive)
@@ -412,7 +414,11 @@ depends on the rule's tags and the repo's visibility.
 A line that matches both a PII rule and a person rule is reported once, as
 the person, and blocks. The summary line for dropped organization findings
 reads "N finding(s) from public-only rules suppressed in a private repo" (or
-"an internal repo"). Unknown visibility means no GitHub remote, or `gh`
+"an internal repo"). A person finding blocks in every repo; when the repo's
+subject is on the people list, see
+[Marking a repo approvable](#marking-a-repo-approvable), which shows the match
+and asks instead of leaving `--no-verify` as the only way through. Unknown
+visibility means no GitHub remote, or `gh`
 missing or not logged in; the line printed then says to push the repo or run
 `gh auth login`.
 
@@ -457,6 +463,90 @@ With placeholder terms, a list of `example-org|jane placeholder|another-org`
 becomes `example-org|another-org` in `lmf-private-names` and
 `jane placeholder` in `lmf-private-people`.
 
+### Marking a repo approvable
+
+A people rule blocks in every repo, which is right until the repo's subject is
+a person on the list (a site about one person, say). Then most commits
+name that person, and the only way through is `--no-verify`, which also skips the
+identity check and every other rule. Taking the name off the list weakens it
+everywhere else. Marking the repo approvable is the third option, and it is not
+an exemption: the finding still prints, now with the text it matched, and each
+commit and each push needs its own approval.
+
+```bash
+git config --add lastmilefirst.approvable lmf-private-people
+```
+
+The marker is local git config, so it is never committed and a fresh clone (or
+a second machine) starts unmarked. It applies only while the repo's visibility
+resolves to private or internal (see
+[Rule kinds and what blocks](#rule-kinds-and-what-blocks)). Only people rules
+can be marked; a marker naming any other rule prints
+`lastmilefirst.approvable names <rule>, which is not a people rule; ignored`
+and changes nothing.
+
+In a marked repo, a commit whose only blocking findings come from the marked
+rule prints them grouped by the matched term, in the clear. With invented
+terms:
+
+```
+lmf-private-people in 3 files (25 lines)
+  examplesurname    24×  docs/copy/home-page.md (12)
+                         docs/copy/home-page.docx -> word/document.xml (9)
+                         notes/session-log.md (3)
+  jane placeholder  1×   notes/session-log.md (1)
+```
+
+A term is what the rule's name pattern caught. Different casings of one name
+share a row, and the row shows the casing first seen. A second name from the same rule gets its own
+row, which is how a stray name shows up beside the expected one. Each term
+lists up to five files, most lines first, then `... and N more files`.
+
+There are two ways to answer:
+
+- **In a terminal**, the hook asks `Approve these for this commit? [y/N]`.
+  `y` or `yes` lets the commit through; anything else blocks it.
+- **Without a terminal** (Claude Code, CI, an editor's git client), the hook
+  blocks and prints the exact re-run, with the terms it showed:
+  `to approve these terms, re-run: LMF_APPROVE='examplesurname,jane placeholder' git commit <your arguments>`.
+  The variable must name every term shown. One left out blocks with the block
+  printed again and `LMF_APPROVE does not name every term shown above; nothing
+  was approved`, so a name staged after the block was read cannot slip through.
+  A bare `1` (or `0`, or empty) approves nothing. A term that contains a
+  comma is approved by pasting the re-run line as printed.
+
+Set the variable on the single command, as in the re-run line. Never export it.
+
+An approved commit prints the block and then a line such as
+`approved: lmf-private-people, terms: examplesurname, jane placeholder (25 findings) [tty]`,
+where the bracket says how it was answered (`tty` or `env`). That line, beside
+the terms, is the record; nothing is logged. A blocked commit also prints
+`--no-verify would also skip the identity check`.
+
+**The push asks the same way.** The pre-push hook shows the same block for the
+pushed commits and asks again, even for commits approved at commit time, so a
+commit made with `--no-verify` or approved on another machine is never pushed
+unseen. Its question reads `Approve these for this push? [y/N]` and its re-run
+line ends `git push <your arguments>`.
+
+**When the marker does not apply:**
+
+| Situation | What happens |
+|---|---|
+| A real secret (or any other blocking finding) beside the people finding | Blocks with no question. The other findings print first, then the grouped block and `the lmf-private-people findings above could be approved once the blocking findings are fixed` |
+| The repo is public, or its visibility is unknown | The marker is ignored and the finding blocks as usual, with `this repo is marked approvable for lmf-private-people, but it is public or unconfirmed; the marker applies to private repos only` |
+| A push to a remote GitHub reports as public | Checked on every push that has a people finding, not only a first push. Blocks with no question and `... but the remote is public; the marker applies to private remotes only`. If GitHub gives no answer, the declared visibility is used and the could-not-confirm warning prints |
+| The matched text could not be fetched | Blocks with no question and `could not fetch the matched text for lmf-private-people; nothing was approved`. An approval is never taken against a blank term |
+| The repo is private and not marked | Blocks as usual, with a line giving the marker command: `if this repo's subject is on the list, mark it approvable: git config --add lastmilefirst.approvable lmf-private-people (the match is then shown and asked about on each commit)` |
+
+**Under Claude Code.** Claude never sets `LMF_APPROVE` or the
+`lastmilefirst.approvable` marker unless the user confirmed in the conversation
+after the block was shown. The hook's re-run line says so when it runs under
+Claude Code (`show the user the terms above and get their confirmation, then
+re-run: LMF_APPROVE='...' git commit <your arguments>`), and an approval run
+that way ends with `agent: claude-code`, so it reads differently from one a
+person typed.
+
 ## Severity Classification
 
 | Level | Examples | Action |
@@ -487,7 +577,7 @@ This skill is designed to protect unsophisticated users from accidentally exposi
 
 ## Output
 
-All output uses `--redact` to avoid the scan report itself becoming a secondary leak. Secrets are shown as `REDACTED` in findings.
+All output uses `--redact` to avoid the scan report itself becoming a secondary leak. Secrets are shown as `REDACTED` in findings. The one exception is a people finding in a repo marked approvable, which shows the matched name so the approval is given against it (see [Marking a repo approvable](#marking-a-repo-approvable)); that pass runs only the marked people rules, so no secret is ever shown unredacted.
 
 ## Overwatch Integration
 

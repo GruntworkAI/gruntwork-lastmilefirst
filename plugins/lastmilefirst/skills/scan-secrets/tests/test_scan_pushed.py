@@ -404,6 +404,253 @@ def test_pushed_remote_is_not_asked_on_a_range_push(push_env, tmp_path):
     assert push_env["posture_calls"] == 0
 
 
+# --- the approval ask on push (plan 2026-10-12-001, section 3.7) ---------------------
+#
+# push_env with gitleaks answering both passes (REDACTED rows first, the
+# matched text when unredacted), the marker read as set, and /dev/tty replaced
+# so no test reads the real terminal. All names below are invented.
+
+PEOPLE_RULE = "lmf-private-people"
+PERSON = {"RuleID": PEOPLE_RULE, "File": "copy.md", "StartLine": 1,
+          "Severity": "MEDIUM", "Tags": ["org", "private-name"]}
+
+APPROVABLE_CONFIG = """
+[[rules]]
+id = 'lmf-private-people'
+regex = '''(?i)\\b(examplesurname)\\b'''
+tags = ['org', 'private-name']
+"""
+
+PUSH_RERUN = "to approve these terms, re-run: LMF_APPROVE='{}' git push <your arguments>"
+NO_VERIFY = "--no-verify would also skip the identity check"
+PUBLIC_REMOTE = (f"this repo is marked approvable for {PEOPLE_RULE}, but the remote "
+                 f"is public; the marker applies to private remotes only")
+HEADER = f"{PEOPLE_RULE} in 1 file (2 lines)"
+
+
+class FakeTty:
+    """A terminal that records what is written and answers one line."""
+
+    def __init__(self, answer):
+        self.answer = answer
+        self.written = ""
+
+    def __call__(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def write(self, text):
+        self.written += text
+
+    def flush(self):
+        pass
+
+    def readline(self):
+        return self.answer
+
+
+def _no_tty():
+    raise OSError(6, "Device not configured")
+
+
+def _must_not_open_tty():
+    raise AssertionError("the tty was opened")
+
+
+@pytest.fixture
+def marked(push_env, tmp_path, monkeypatch):
+    """push_env in a repo marked approvable for the people rule.
+
+    `state["clear"]` is what the unredacted pass reports; `state["passes"]`
+    records whether each gitleaks call was redacted.
+    """
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.delenv("LMF_APPROVE", raising=False)
+    config = tmp_path / "merged.toml"
+    push_env.update({"clear": [], "passes": [], "marker": {PEOPLE_RULE}})
+
+    def write_config(*_a, **_k):
+        config.write_text(APPROVABLE_CONFIG)
+        return config
+
+    def run(args, config_path=None, cwd=None, redact=True, enable_rules=None):
+        push_env["passes"].append(redact)
+        if redact:
+            push_env["log_opts"].append(args[args.index("--log-opts") + 1])
+            rows = [dict(r, Match="REDACTED", Secret="REDACTED") for r in push_env["rows"]]
+        else:
+            rows = [r for r in push_env["clear"] if r["RuleID"] in (enable_rules or [])]
+        Path(args[args.index("--report-path") + 1]).write_text(json.dumps(rows))
+        return (1 if rows else 0), "", ""
+
+    monkeypatch.setattr(scanner, "write_merged_config", write_config)
+    monkeypatch.setattr(scanner, "_run_gitleaks", run)
+    monkeypatch.setattr(scanner, "approvable_rules", lambda _repo=None: set(push_env["marker"]))
+    monkeypatch.setattr(scanner, "_open_tty", _no_tty)
+    push_env["declared"] = "PRIVATE"
+    push_env["by_repo"] = {"example-org/pushed-repo": "PRIVATE"}
+    for n in (1, 2):
+        fp = f"{LOCAL}:copy.md:{PEOPLE_RULE}:{n}"
+        row = dict(PERSON, StartLine=n, Fingerprint=fp)
+        push_env["rows"].append(row)
+        push_env["clear"].append(dict(row, Match="by Examplesurname", Secret="Examplesurname"))
+    return push_env
+
+
+def later_push(tmp_path):
+    return scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", REMOTE),
+                               tmp_path, remote_url=PUSHED_URL)
+
+
+def first_push(tmp_path):
+    return scanner.scan_pushed(line("refs/heads/main", LOCAL, "refs/heads/main", ZERO),
+                               tmp_path, remote_url=PUSHED_URL)
+
+
+def test_private_remote_without_an_approval_blocks_with_the_push_rerun(marked, tmp_path):
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert HEADER in out
+    assert "Examplesurname" in out
+    lines = out.splitlines()
+    assert PUSH_RERUN.format("Examplesurname") in lines
+    assert NO_VERIFY in lines
+    assert out.index(HEADER) < out.index("re-run:")
+    assert "approved:" not in out
+    # The remote was asked once, on a push of an existing ref.
+    assert marked["posture_repos"] == ["example-org/pushed-repo"]
+
+
+def test_private_remote_with_the_terms_in_the_variable_is_allowed(marked, tmp_path, monkeypatch):
+    monkeypatch.setattr(scanner, "_open_tty", _must_not_open_tty)
+    monkeypatch.setenv("LMF_APPROVE", "Examplesurname")
+    code, out = later_push(tmp_path)
+    assert code == 0
+    assert HEADER in out
+    assert f"approved: {PEOPLE_RULE}, terms: Examplesurname (2 findings) [env]" in out.splitlines()
+    assert out.index(HEADER) < out.index("approved:")
+
+
+def test_private_remote_with_a_variable_missing_a_term_blocks(marked, tmp_path, monkeypatch):
+    monkeypatch.setenv("LMF_APPROVE", "otherperson")
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert "LMF_APPROVE does not name every term shown above; nothing was approved" in out
+    assert PUSH_RERUN.format("Examplesurname") in out
+
+
+def test_tty_answering_y_allows_the_push(marked, tmp_path, monkeypatch):
+    tty = FakeTty("y\n")
+    monkeypatch.setattr(scanner, "_open_tty", tty)
+    code, out = later_push(tmp_path)
+    assert code == 0
+    assert HEADER in tty.written
+    assert tty.written.endswith("Approve these for this push? [y/N] ")
+    assert out == f"approved: {PEOPLE_RULE}, terms: Examplesurname (2 findings) [tty]"
+
+
+def test_tty_answering_n_blocks_the_push(marked, tmp_path, monkeypatch):
+    tty = FakeTty("n\n")
+    monkeypatch.setattr(scanner, "_open_tty", tty)
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert HEADER in tty.written
+    assert PUSH_RERUN.format("Examplesurname") in out
+    assert NO_VERIFY in out
+    assert "approved:" not in out
+
+
+def test_public_remote_on_a_first_push_blocks_without_asking(marked, tmp_path, monkeypatch):
+    marked["by_repo"] = {"example-org/pushed-repo": "PUBLIC"}
+    monkeypatch.setattr(scanner, "_open_tty", _must_not_open_tty)
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = first_push(tmp_path)
+    assert code == 1
+    assert PUBLIC_REMOTE in out.splitlines()
+    assert "Found 2 blocking finding(s)" in out
+    # No unredacted pass, no matched text, no ask.
+    assert marked["passes"] == [True]
+    assert "examplesurname" not in out.lower()
+    assert "approved:" not in out and "re-run:" not in out
+    assert "mark it approvable" not in out
+
+
+def test_public_remote_on_a_later_push_blocks_without_asking(marked, tmp_path, monkeypatch):
+    """The existing first-push branch never ran here; the remote is asked anyway."""
+    marked["github"] = "PRIVATE"
+    marked["by_repo"] = {"example-org/pushed-repo": "PUBLIC"}
+    monkeypatch.setattr(scanner, "_open_tty", _must_not_open_tty)
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert PUBLIC_REMOTE in out.splitlines()
+    assert "Found 2 blocking finding(s)" in out
+    assert marked["posture_repos"] == ["example-org/pushed-repo"]
+    assert marked["passes"] == [True]
+    assert "examplesurname" not in out.lower()
+    assert "approved:" not in out and "re-run:" not in out
+
+
+def test_no_answer_from_github_honors_the_declaration_and_warns(marked, tmp_path, monkeypatch):
+    marked["by_repo"] = {}
+    marked["github"] = None
+    marked["reason"] = "gh unavailable or timed out"
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = later_push(tmp_path)
+    assert code == 0
+    assert ("WARNING: declared PRIVATE; GitHub could not confirm it (gh unavailable or "
+            "timed out), so the declaration was not verified.") in out.splitlines()
+    assert HEADER in out
+    assert f"approved: {PEOPLE_RULE}, terms: Examplesurname (2 findings) [env]" in out
+    # The pushed remote first, then the clone's default repo, as on a first push.
+    assert marked["posture_repos"] == ["example-org/pushed-repo", None]
+
+
+def test_no_answer_on_a_first_push_warns_once(marked, tmp_path):
+    marked["by_repo"] = {}
+    marked["github"] = None
+    code, out = first_push(tmp_path)
+    assert code == 1
+    assert out.count("GitHub could not confirm it") == 1
+    assert PUSH_RERUN.format("Examplesurname") in out
+    assert marked["posture_repos"] == ["example-org/pushed-repo", None]
+
+
+def test_a_marked_repo_without_an_approvable_finding_does_not_ask_github(marked, tmp_path):
+    marked["rows"] = [dict(ORDINARY)]
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert marked["posture_calls"] == 0
+    assert "re-run:" not in out
+
+
+def test_a_real_secret_beside_an_approvable_finding_blocks_the_push_without_asking(
+        marked, tmp_path, monkeypatch):
+    marked["rows"].append(dict(ORDINARY))
+    monkeypatch.setattr(scanner, "_open_tty", _must_not_open_tty)
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert HEADER in out
+    assert (f"the {PEOPLE_RULE} findings above could be approved once "
+            f"the blocking findings are fixed") in out
+    assert "approved:" not in out and "re-run:" not in out
+
+
+def test_an_unmarked_repo_with_a_people_finding_on_push_says_how_to_mark_it(marked, tmp_path):
+    marked["marker"] = set()
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert f"git config --add lastmilefirst.approvable {PEOPLE_RULE}" in out
+    assert marked["posture_calls"] == 0
+    assert marked["passes"] == [True]
+
+
 # --- CLI ------------------------------------------------------------------------
 
 def test_cli_pre_push_reads_stdin_and_returns_the_scan_code(monkeypatch, capsys):
@@ -577,3 +824,44 @@ def test_range_push_skips_a_finding_already_on_the_remote(tmp_path):
     assert "github-pat" not in pushed.stderr
     head = git("rev-parse", "HEAD").stdout.strip()
     assert git("rev-parse", "refs/heads/main", cwd=bare).stdout.strip() == head
+
+
+# --- review fixes -------------------------------------------------------------------
+
+def test_an_unmarked_repo_pushing_to_a_public_remote_gets_no_hint(marked, tmp_path):
+    marked["marker"] = set()
+    marked["by_repo"] = {"example-org/pushed-repo": "PUBLIC"}
+    code, out = first_push(tmp_path)
+    assert code == 1
+    assert "Found 2 blocking finding(s)" in out
+    assert "mark it approvable" not in out
+
+
+def test_no_unredacted_report_on_push_blocks_without_asking(marked, tmp_path, monkeypatch):
+    run = scanner._run_gitleaks
+
+    def no_clear_report(args, config_path=None, cwd=None, redact=True, enable_rules=None):
+        if not redact:
+            marked["passes"].append(redact)
+            return 2, "", "aborted"
+        return run(args, config_path, cwd, redact, enable_rules)
+
+    monkeypatch.setattr(scanner, "_run_gitleaks", no_clear_report)
+    monkeypatch.setattr(scanner, "_open_tty", _must_not_open_tty)
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = later_push(tmp_path)
+    assert code == 1
+    assert (f"could not fetch the matched text for {PEOPLE_RULE}; "
+            f"nothing was approved") in out
+    assert marked["passes"] == [True, False]
+    assert "examplesurname" not in out.lower()
+    assert "approved:" not in out and "re-run:" not in out
+
+
+def test_a_blocked_push_stays_blocked_after_an_approval(marked, tmp_path, monkeypatch):
+    monkeypatch.setattr(scanner, "visibility_mismatch",
+                        lambda _declared, _github: ("block", ["a stand-in mismatch"]))
+    monkeypatch.setenv("LMF_APPROVE", "examplesurname")
+    code, out = first_push(tmp_path)
+    assert code == 1
+    assert "a stand-in mismatch" in out

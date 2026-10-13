@@ -3,7 +3,10 @@
 Core secret scanning orchestration.
 
 Runs gitleaks with merged config (default rules + custom formats).
-Always uses --redact to avoid leaking secrets in output.
+Uses --redact to avoid leaking secrets in output. The one exception is the
+pass that fetches the matched text for people-rule findings in a repo marked
+approvable: it runs only those rules, unredacted, into a temp directory that
+is removed afterwards.
 """
 from __future__ import annotations
 
@@ -130,6 +133,64 @@ def declared_visibility(repo_path: Optional[Path] = None) -> Optional[str]:
     return value if result.returncode == 0 and value in VISIBILITY_VALUES else None
 
 
+APPROVABLE_CONFIG_KEY = "lastmilefirst.approvable"
+
+
+def approvable_rules(repo_path: Optional[Path] = None) -> set:
+    """Rule ids the repo is marked approvable for, lower-cased.
+
+    `git config --add lastmilefirst.approvable <rule>` marks a repo whose
+    subject is a listed person, so a people-rule finding is shown with its
+    matched text and asked about instead of only blocking. Local scope only:
+    a global value would mark every repo on the machine. Unset, unreadable,
+    or outside a repo is the empty set.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "config", "--local", "--get-all", APPROVABLE_CONFIG_KEY],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(repo_path) if repo_path else None,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return set()
+    if result.returncode != 0:
+        return set()
+    return {line.strip().lower() for line in result.stdout.splitlines() if line.strip()}
+
+
+def is_approvable(finding: Dict[str, Any], approvable: set) -> bool:
+    """A finding is approvable when its rule is marked and the rule is a people rule.
+
+    Eligibility is decided per finding, so a marker naming a secret, an
+    organization, or a PII rule never matches anything.
+    """
+    rule = str(finding.get("RuleID") or "").strip().lower()
+    return bool(rule) and rule in approvable and _finding_kind(finding) == "person"
+
+
+def marker_warnings(approvable: set, config_path: Optional[Path]) -> List[str]:
+    """One line per marker key that does not name a people rule in the merged config.
+
+    Such a key never matches a finding (see is_approvable); the line makes the
+    misconfiguration visible. An unreadable config gives no lines rather than
+    calling every key wrong.
+    """
+    if not approvable or not config_path:
+        return []
+    try:
+        from format_loader import _read_toml
+        rules = _read_toml(Path(config_path)).get("rules") or []
+    except Exception:  # noqa: BLE001 - a warning helper never aborts the scan
+        return []
+    people = {
+        str(rule.get("id") or "").strip().lower()
+        for rule in rules
+        if isinstance(rule, dict) and _finding_kind({"Tags": rule.get("tags") or []}) == "person"
+    }
+    return [f"lastmilefirst.approvable names {key}, which is not a people rule; ignored"
+            for key in sorted(approvable) if key not in people]
+
+
 def check_repo_visibility(repo_path: Optional[Path] = None) -> Optional[str]:
     """
     Visibility of the repo: the value declared in git config wins, then what
@@ -183,17 +244,27 @@ def _run_gitleaks(
     args: List[str],
     config_path: Optional[Path] = None,
     cwd: Optional[str] = None,
+    redact: bool = True,
+    enable_rules: Optional[List[str]] = None,
 ) -> Tuple[int, str, str]:
     """
     Run gitleaks with given arguments.
     Returns (returncode, stdout, stderr).
     Exit codes: 0 = no leaks, 1 = leaks found, >1 = error.
+
+    `redact=False` is only for the approvable pass, which always passes
+    `enable_rules` so no rule other than a people rule runs unredacted.
+    An unknown id in `enable_rules` makes gitleaks abort before writing a
+    report, so callers pass ids taken from findings, never raw config.
     """
     cmd = ["gitleaks"]
     if config_path:
         cmd.extend(["--config", str(config_path)])
     cmd.extend(args)
-    cmd.append("--redact")
+    for rule in enable_rules or []:
+        cmd.extend(["--enable-rule", rule])
+    if redact:
+        cmd.append("--redact")
 
     try:
         result = subprocess.run(
@@ -509,11 +580,63 @@ def _extract_archive(path: Path, dest: Path) -> Tuple[bool, Optional[str]]:
     return False, "unrecognised archive"
 
 
+def _scan_expanded_archive(
+    tmp: Path,
+    rel: str,
+    config_path: Optional[Path],
+    is_public: bool,
+    redact: bool = True,
+    enable_rules: Optional[List[str]] = None,
+) -> Optional[List[Dict[str, Any]]]:
+    """Run `gitleaks dir` over an expanded archive and attribute each finding.
+
+    Returns None when gitleaks wrote no report. The unredacted pass writes its
+    report inside its own temp directory, removed before returning.
+    """
+    import shutil
+
+    kwargs: Dict[str, Any] = {}
+    if not redact:
+        kwargs["redact"] = False
+    if enable_rules:
+        kwargs["enable_rules"] = list(enable_rules)
+    report_dir = None if redact else Path(tempfile.mkdtemp(prefix="lmf-approvable-"))
+    try:
+        if report_dir is None:
+            report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-archive-")
+        else:
+            report_file = str(report_dir / "report.json")
+        _run_gitleaks(
+            ["dir", str(tmp), "--report-format", "json", "--report-path", report_file],
+            config_path=config_path,
+            **kwargs,
+        )
+        report = Path(report_file)
+        if not report.exists():
+            return None
+        inner = _parse_findings(report.read_text(encoding="utf-8"), is_public)
+        report.unlink(missing_ok=True)
+    finally:
+        if report_dir is not None:
+            shutil.rmtree(report_dir, ignore_errors=True)
+
+    for f in inner:
+        member = f.get("File", "?")
+        try:
+            member = str(Path(member).relative_to(tmp))
+        except ValueError:
+            member = Path(member).name
+        f["File"] = f"{rel} -> {member}"
+        f["_in_archive"] = True
+    return inner
+
+
 def scan_archives(
     repo_path: Optional[Path],
     config_path: Optional[Path],
     is_public: bool,
     staged_only: bool = False,
+    approvable: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """
     Find committed archives, expand them, and scan the contents.
@@ -521,6 +644,10 @@ def scan_archives(
     Findings are attributed as `<archive> -> <member>` so the report names the
     file that must actually be removed. An archive that cannot be expanded is
     itself reported, because an unscannable committed binary is a finding.
+
+    With `approvable` (the repo's marker), approvable findings get their
+    matched text from an unredacted pass over the same expanded directory,
+    run before it is removed (see _attach_matches).
     """
     import shutil
 
@@ -564,26 +691,20 @@ def scan_archives(
                 )
                 continue
 
-            report_file = tempfile.mktemp(suffix=".json", prefix="gitleaks-archive-")
-            _run_gitleaks(
-                ["dir", str(tmp), "--report-format", "json", "--report-path", report_file],
-                config_path=config_path,
-            )
-            report = Path(report_file)
-            if not report.exists():
+            inner = _scan_expanded_archive(tmp, rel, config_path, is_public)
+            if inner is None:
                 continue
-            inner = _parse_findings(report.read_text(encoding="utf-8"), is_public)
-            report.unlink(missing_ok=True)
-
-            for f in inner:
-                member = f.get("File", "?")
-                try:
-                    member = str(Path(member).relative_to(tmp))
-                except ValueError:
-                    member = Path(member).name
-                f["File"] = f"{rel} -> {member}"
-                f["_in_archive"] = True
-                results.append(f)
+            if approvable:
+                # The fingerprint carries this run's temp path, so the join
+                # uses the rewritten File, the line, and the rule.
+                _attach_matches(
+                    inner, approvable,
+                    lambda ids: _scan_expanded_archive(
+                        tmp, rel, config_path, is_public,
+                        redact=False, enable_rules=ids),
+                    _archive_join_key,
+                )
+            results.extend(inner)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -596,6 +717,9 @@ def _gitleaks_report(
     config_path: Path,
     cwd: Optional[str],
     is_public: bool,
+    redact: bool = True,
+    enable_rules: Optional[List[str]] = None,
+    approvable: Optional[set] = None,
 ) -> Tuple[Optional[List[Dict[str, Any]]], int, str]:
     """Run gitleaks with a JSON report and parse it.
 
@@ -605,19 +729,416 @@ def _gitleaks_report(
     "leaks found" and "config load failure"); the reliable signal that the
     scan completed is that the requested --report-path file exists. Treating
     no-report as no-findings would silently hide config errors.
+
+    With `approvable` (the repo's marker), approvable findings get their
+    matched text from a second, unredacted pass over the same target that
+    runs only their rules (see _attach_matches). `redact=False` writes the
+    report inside a temp directory removed in a `finally`.
     """
-    report_file = tempfile.mktemp(suffix=".json", prefix=prefix)
-    code, _stdout, stderr = _run_gitleaks(
-        args + ["--report-format", "json", "--report-path", report_file],
-        config_path=config_path,
-        cwd=cwd,
-    )
-    report_path = Path(report_file)
-    if not report_path.exists():
-        return None, code, stderr
-    findings = _parse_findings(report_path.read_text(encoding="utf-8"), is_public)
-    report_path.unlink(missing_ok=True)
+    import shutil
+
+    kwargs: Dict[str, Any] = {}
+    if not redact:
+        kwargs["redact"] = False
+    if enable_rules:
+        kwargs["enable_rules"] = list(enable_rules)
+    report_dir = None if redact else Path(tempfile.mkdtemp(prefix="lmf-approvable-"))
+    try:
+        if report_dir is None:
+            report_file = tempfile.mktemp(suffix=".json", prefix=prefix)
+        else:
+            report_file = str(report_dir / f"{prefix}report.json")
+        code, _stdout, stderr = _run_gitleaks(
+            args + ["--report-format", "json", "--report-path", report_file],
+            config_path=config_path,
+            cwd=cwd,
+            **kwargs,
+        )
+        report_path = Path(report_file)
+        if not report_path.exists():
+            return None, code, stderr
+        findings = _parse_findings(report_path.read_text(encoding="utf-8"), is_public)
+        report_path.unlink(missing_ok=True)
+    finally:
+        if report_dir is not None:
+            shutil.rmtree(report_dir, ignore_errors=True)
+
+    if approvable:
+        def unredacted(ids: List[str]) -> Optional[List[Dict[str, Any]]]:
+            rows, pass_code, pass_stderr = _gitleaks_report(
+                args, prefix, config_path, cwd, is_public,
+                redact=False, enable_rules=ids)
+            if rows is None:
+                unredacted.error = (f"no report from the unredacted pass (exit {pass_code})"
+                                    + (f": {pass_stderr.strip()}" if pass_stderr.strip() else ""))
+            return rows
+        unredacted.error = None
+        _attach_matches(findings, approvable, unredacted, _diff_join_key)
     return findings, code, stderr
+
+
+# --- Approvable findings: the matched text, the grouped block, the approval ---
+#
+# A repo marked approvable (approvable_rules) shows each people-rule finding
+# with what it matched, grouped by term, so the approval is given against the
+# text rather than a rule name and a line number. The first pass stays
+# redacted; _attach_matches fetches the text from a second pass that runs only
+# the approvable rules.
+
+def _diff_join_key(finding: Dict[str, Any]) -> Tuple[Any, ...]:
+    """Join key for a diff or history finding: the fingerprint, else file, line, rule.
+
+    gitleaks' fingerprint names file, rule, and line but not the column, so two
+    matches on one line share it; the column keeps them apart.
+    """
+    base = finding.get("Fingerprint") or (
+        finding.get("File"), finding.get("StartLine"), finding.get("RuleID"))
+    return (base, finding.get("StartColumn"))
+
+
+def _archive_join_key(finding: Dict[str, Any]) -> Tuple[Any, ...]:
+    """Join key for an archive finding, whose fingerprint carries a per-run temp path."""
+    return (finding.get("File"), finding.get("StartLine"), finding.get("RuleID"),
+            finding.get("StartColumn"))
+
+
+def _attach_matches(
+    findings: List[Dict[str, Any]],
+    approvable: set,
+    run_unredacted,
+    join_key,
+) -> None:
+    """Copy the unredacted Match and Secret onto each approvable finding, in place.
+
+    `run_unredacted(rule_ids)` runs the second pass over the first pass's
+    target and returns its findings, or None when it wrote no report. The ids
+    are the distinct RuleIDs of the approvable findings, never the marker's
+    keys: those are eligible by construction and exist in the merged config,
+    whereas an unknown id makes gitleaks abort.
+
+    A joined finding carries `_unredacted: True`. One left unjoined (no report,
+    or no matching row) carries `_match_error` instead, so the caller can fail
+    closed (see unmatched_rules); an approval is never taken against a blank term.
+    """
+    targets = [f for f in findings if is_approvable(f, approvable)]
+    if not targets:
+        return
+    ids = sorted({str(f.get("RuleID")) for f in targets})
+    rows = run_unredacted(ids)
+    if rows is None:
+        error = getattr(run_unredacted, "error", None) or "no report from the unredacted pass"
+        for f in targets:
+            f["_match_error"] = error
+        return
+    index: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+    for row in rows:
+        index.setdefault(join_key(row), []).append(row)
+    for f in targets:
+        candidates = index.get(join_key(f))
+        if not candidates:
+            f["_match_error"] = "no matching row in the unredacted pass"
+            continue
+        row = candidates.pop(0)
+        if not _term(row):
+            # An approval is never taken against a blank term.
+            f["_match_error"] = "blank match in the unredacted pass"
+            continue
+        f["Match"] = row.get("Match", "")
+        f["Secret"] = row.get("Secret", "")
+        f["_unredacted"] = True
+        f.pop("_match_error", None)
+
+
+def unmatched_rules(findings: List[Dict[str, Any]], approvable: set) -> List[str]:
+    """Rules with an approvable finding that has no matched text; empty when all joined."""
+    return sorted({str(f.get("RuleID")) for f in findings
+                   if is_approvable(f, approvable) and not f.get("_unredacted")})
+
+
+def _term_text(finding: Dict[str, Any]) -> str:
+    """The matched term as written: the capture group (Secret) when present, else Match.
+
+    Whitespace-collapsed, casing kept. This is what the block displays.
+    """
+    text = str(finding.get("Secret") or "").strip() or str(finding.get("Match") or "")
+    return " ".join(text.split())
+
+
+def _term(finding: Dict[str, Any]) -> str:
+    """The grouping key for a term: _term_text lower-cased.
+
+    Two casings of one name share a key, so they are one row; the row shows
+    the casing first seen (see _term_display).
+    """
+    return _term_text(finding).lower()
+
+
+def _term_display(findings: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Each term key mapped to its text in the first finding seen with that key."""
+    display: Dict[str, str] = {}
+    for f in findings:
+        display.setdefault(_term(f), _term_text(f))
+    return display
+
+
+APPROVABLE_FILE_CAP = 5
+
+
+def _format_approvable(findings: List[Dict[str, Any]]) -> str:
+    """Render approvable findings grouped by rule, then by matched term.
+
+    One header per rule (`<rule> in N files (M lines)`), then one row per term
+    with its count and the files it appears in, most lines first, capped at
+    five with `... and N more files`. Callers pass approvable findings only.
+    """
+    by_rule: Dict[str, List[Dict[str, Any]]] = {}
+    for f in findings:
+        by_rule.setdefault(str(f.get("RuleID") or "unknown"), []).append(f)
+    display = _term_display(findings)
+
+    lines: List[str] = []
+    for rule in sorted(by_rule):
+        rows = by_rule[rule]
+        files = {str(f.get("File") or "?") for f in rows}
+        lines.append(f"{rule} in {len(files)} file{'s' if len(files) != 1 else ''} "
+                     f"({len(rows)} line{'s' if len(rows) != 1 else ''})")
+
+        by_term: Dict[str, Dict[str, int]] = {}
+        for f in rows:
+            per_file = by_term.setdefault(_term(f), {})
+            path = str(f.get("File") or "?")
+            per_file[path] = per_file.get(path, 0) + 1
+
+        ordered_terms = sorted(by_term.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))
+        term_width = max(len(display[term]) for term in by_term) + 2
+        count_width = max(len(f"{sum(c.values())}×") for c in by_term.values()) + 2
+        for term, per_file in ordered_terms:
+            ordered_files = sorted(per_file.items(), key=lambda kv: (-kv[1], kv[0]))
+            shown = ordered_files[:APPROVABLE_FILE_CAP]
+            count = f"{sum(per_file.values())}×"
+            for i, (path, n) in enumerate(shown):
+                if i == 0:
+                    lines.append(f"  {display[term]:<{term_width}}{count:<{count_width}}{path} ({n})")
+                else:
+                    lines.append(f"  {'':<{term_width}}{'':<{count_width}}{path} ({n})")
+            hidden = len(ordered_files) - len(shown)
+            if hidden:
+                lines.append(f"  {'':<{term_width}}{'':<{count_width}}"
+                             f"... and {hidden} more file{'s' if hidden != 1 else ''}")
+    return "\n".join(lines)
+
+
+def apply_approvals(
+    findings: List[Dict[str, Any]], approvable: set, approved: bool
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Mark approvable findings approved, after apply_visibility_policy.
+
+    Returns (findings, approvable_subset). When `approved`, each approvable
+    finding becomes a copy with `Blocking` False and `Approved` True; every
+    other finding is passed through unchanged. The subset is always returned,
+    so the caller can render it whether or not it was approved. The input is
+    not modified.
+    """
+    out: List[Dict[str, Any]] = []
+    subset: List[Dict[str, Any]] = []
+    for f in findings:
+        if is_approvable(f, approvable):
+            if approved:
+                f = dict(f, Blocking=False, Approved=True)
+            subset.append(f)
+        out.append(f)
+    return out, subset
+
+
+# --- The approval ask -------------------------------------------------------
+#
+# A commit whose only blocking findings come from approvable rules shows them
+# grouped by term (see _format_approvable) and asks. LMF_APPROVE answers for a
+# scripted run; otherwise the hook asks on /dev/tty; with neither it blocks and
+# prints the exact re-run. Under Claude Code the agent reads the hook's output,
+# so the re-run line tells it to get the user's confirmation first.
+
+APPROVE_ENV = "LMF_APPROVE"
+CLAUDE_CODE_ENV = "CLAUDECODE"
+NO_VERIFY_WARNING = "--no-verify would also skip the identity check"
+
+
+def _under_claude_code() -> bool:
+    return bool(os.environ.get(CLAUDE_CODE_ENV))
+
+
+def _open_tty():
+    """The controlling terminal, for the y/n question. Raises OSError when there is none."""
+    return open("/dev/tty", "r+")
+
+
+def _approval_terms(
+    approvable: List[Dict[str, Any]], display: Optional[Dict[str, str]] = None
+) -> List[str]:
+    """The distinct terms of the approvable findings, most frequent first, as shown.
+
+    Each term is displayed as first seen; `display` (from _term_display) lets a
+    caller listing a subset use the first-seen form of the whole set.
+    """
+    display = display or _term_display(approvable)
+    counts: Dict[str, int] = {}
+    for f in approvable:
+        term = _term(f)
+        counts[term] = counts.get(term, 0) + 1
+    return [display[t] for t, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def _approval(
+    prompt_lines: List[str], terms: List[str], action: str = "commit"
+) -> Tuple[bool, str]:
+    """Ask whether the shown terms are approved. Returns (approved, source).
+
+    1. LMF_APPROVE, when set and not blank, is the answer: a comma-separated
+       list of terms, compared the way terms are grouped. Every shown term
+       listed gives (True, "env"); a shown term left out, a bare `1`, or `0`
+       gives (False, "env"). The value the re-run line prints (the shown
+       terms joined by commas) names every term even when a term itself
+       contains a comma. The tty is never touched on this route.
+    2. Otherwise the block and the question are written to /dev/tty and one
+       line is read: `y` or `yes` gives (True, "tty"), anything else
+       (False, "tty").
+    3. No terminal (any OSError opening or using it): (False, "none").
+    """
+    value = os.environ.get(APPROVE_ENV, "")
+    if value.strip():
+        keys = [" ".join(t.split()).lower() for t in terms]
+        if keys and " ".join(value.split()).lower() == " ".join(",".join(keys).split()):
+            return True, "env"
+        listed = {" ".join(part.split()).lower() for part in value.split(",")}
+        return (bool(keys) and all(k in listed for k in keys)), "env"
+
+    try:
+        with _open_tty() as tty:
+            tty.write("\n".join(prompt_lines) + "\n")
+            tty.write(f"Approve these for this {action}? [y/N] ")
+            tty.flush()
+            answer = tty.readline()
+    except OSError:
+        return False, "none"
+    return answer.strip().lower() in ("y", "yes"), "tty"
+
+
+def _rerun_line(terms: List[str], action: str = "commit") -> str:
+    """The exact re-run that approves the shown terms.
+
+    The hook does not see the user's arguments, so it says `<your arguments>`.
+    Under Claude Code it tells the agent to get the user's confirmation first.
+    """
+    value = ",".join(terms).replace("'", "'\\''")
+    command = f"{APPROVE_ENV}='{value}' git {action} <your arguments>"
+    if _under_claude_code():
+        return ("show the user the terms above and get their confirmation, "
+                f"then re-run: {command}")
+    return f"to approve these terms, re-run: {command}"
+
+
+def _approved_lines(approvable: List[Dict[str, Any]], source: str) -> List[str]:
+    """One `approved:` line per rule, naming its terms, count, and how it was answered."""
+    by_rule: Dict[str, List[Dict[str, Any]]] = {}
+    for f in approvable:
+        by_rule.setdefault(str(f.get("RuleID") or "unknown"), []).append(f)
+    agent = " agent: claude-code" if _under_claude_code() else ""
+    display = _term_display(approvable)
+    lines = []
+    for rule in sorted(by_rule):
+        rows = by_rule[rule]
+        lines.append(f"approved: {rule}, terms: {', '.join(_approval_terms(rows, display))} "
+                     f"({len(rows)} finding{'s' if len(rows) != 1 else ''}) [{source}]{agent}")
+    return lines
+
+
+def _marker_hint_lines(findings: List[Dict[str, Any]], marker: Optional[set]) -> List[str]:
+    """How to mark the repo, once per blocking people rule it is not marked for.
+
+    `marker` is None where marking would do nothing (a public or unconfirmed
+    repo, or a remote reported public), and then there is no hint.
+    """
+    if marker is None:
+        return []
+    rules = sorted({str(f.get("RuleID")) for f in findings
+                    if _is_blocking(f) and _finding_kind(f) == "person"
+                    and str(f.get("RuleID") or "").strip().lower() not in marker})
+    return [f"if this repo's subject is on the list, mark it approvable: "
+            f"git config --add {APPROVABLE_CONFIG_KEY} {rule} "
+            f"(the match is then shown and asked about on each commit)"
+            for rule in rules]
+
+
+def _approvable_outcome(
+    lines: List[str],
+    findings: List[Dict[str, Any]],
+    active: set,
+    marker: Optional[set],
+    action: str,
+) -> Optional[Tuple[int, str]]:
+    """The approvable steps shared by the commit and the push hooks.
+
+    `findings` have been through apply_visibility_policy, and the approvable
+    ones already carry their matched text (or a match error). `active` is the
+    marker where it applies, `marker` the marker as read where a hint to mark
+    the repo would help, else None (no hint). `lines` holds what
+    the hook prints before the findings. A blocking finding from any other rule
+    blocks without an ask; otherwise approvable findings are shown grouped by
+    term and asked about (see _approval), with `action` naming the git command
+    in the question and the re-run line.
+
+    Returns (exit_code, report_text), or None when no finding is blocking or
+    approvable, so the caller's own path runs. When the answer came from the
+    terminal, the block was already written there, so the returned text
+    carries only what follows it.
+    """
+    _, approvable = apply_approvals(findings, active, approved=False)
+    other = [f for f in findings if not is_approvable(f, active)]
+    unmatched = unmatched_rules(findings, active)
+    hints = _marker_hint_lines(findings, marker)
+
+    if any(_is_blocking(f) for f in other):
+        # A real secret is never approved past: block without asking.
+        if approvable and not unmatched:
+            lines.append(_format_findings(other))
+            lines.append(_format_approvable(approvable))
+            for rule in sorted({str(f.get("RuleID")) for f in approvable}):
+                lines.append(f"the {rule} findings above could be approved once "
+                             f"the blocking findings are fixed")
+        else:
+            lines.append(_format_findings(findings))
+        lines.extend(hints)
+        return 1, "\n".join(lines)
+
+    if approvable:
+        if unmatched:
+            # An approval is never taken against a blank term.
+            lines.append(_format_findings(findings))
+            for rule in unmatched:
+                lines.append(f"could not fetch the matched text for {rule}; "
+                             f"nothing was approved")
+            lines.extend(hints)
+            return 1, "\n".join(lines)
+
+        if other:
+            # Warnings only (personal data in a private repo), shown above the block.
+            lines.append(_format_findings(other))
+        lines.append(_format_approvable(approvable))
+        terms = _approval_terms(approvable)
+        approved, source = _approval(lines, terms, action)
+        # The terminal already showed the block; the rest goes after it.
+        after: List[str] = [] if source == "tty" else lines
+        if approved:
+            after.extend(_approved_lines(approvable, source))
+            return 0, "\n".join(after)
+        if source == "env":
+            after.append(f"{APPROVE_ENV} does not name every term shown above; "
+                         f"nothing was approved")
+        after.append(_rerun_line(terms, action))
+        after.append(NO_VERIFY_WARNING)
+        after.extend(hints)
+        return 1, "\n".join(after)
+    return None
 
 
 def scan_repo(
@@ -673,6 +1194,13 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
     """
     Pre-commit mode: scan only staged changes.
     Returns (exit_code, report_text).
+
+    In a private or internal repo marked approvable (approvable_rules), a
+    commit whose only blocking findings come from marked people rules shows
+    them grouped by matched term and asks (see _approval). Any other blocking
+    finding blocks without an ask. When the answer came from the terminal, the
+    block was already written there, so the returned text carries only what
+    follows it.
     """
     err = _check_gitleaks()
     if err:
@@ -681,12 +1209,17 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
     cwd = str(repo_path) if repo_path else None
     visibility = check_repo_visibility(repo_path)
     is_public = visibility == "PUBLIC"
+    marker = approvable_rules(repo_path)
+    # The marker applies only where visibility resolved private or internal;
+    # otherwise a name approved at commit would block at push.
+    private = (visibility or "").upper() in ("PRIVATE", "INTERNAL")
+    active = marker if private else set()
 
     config_path = write_merged_config()
     try:
         findings, code, stderr = _gitleaks_report(
             ["git", "--pre-commit", "--staged"],
-            "gitleaks-staged-", config_path, cwd, is_public,
+            "gitleaks-staged-", config_path, cwd, is_public, approvable=active,
         )
         # Fail-closed on gitleaks abort (see _gitleaks_report): block the commit.
         if findings is None:
@@ -700,7 +1233,8 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
 
         # Staged archives are invisible to gitleaks; expand and scan them too.
         findings.extend(
-            scan_archives(repo_path, config_path, is_public, staged_only=True)
+            scan_archives(repo_path, config_path, is_public, staged_only=True,
+                          approvable=active)
         )
         # Same visibility answer as the full scan (check_repo_visibility above).
         findings, policy_lines = apply_visibility_policy(findings, visibility)
@@ -713,9 +1247,17 @@ def scan_staged(repo_path: Optional[Path] = None) -> Tuple[int, str]:
             lines.append("Reminder: you are committing to a PUBLIC repository")
         lines.extend(policy_lines)
 
-        if any(_is_blocking(f) for f in findings):
-            lines.append(_format_findings(findings))
-            return 1, "\n".join(lines)
+        lines.extend(marker_warnings(marker, config_path))
+        if marker and not private:
+            for rule in sorted(k for k in marker if not marker_warnings({k}, config_path)):
+                lines.append(f"this repo is marked approvable for {rule}, but it is public "
+                             f"or unconfirmed; the marker applies to private repos only")
+
+        # Every blocking finding, and every approvable one, is decided here.
+        outcome = _approvable_outcome(lines, findings, active,
+                                      marker if private else None, "commit")
+        if outcome is not None:
+            return outcome
         if findings:
             # Warnings only (personal data in a private repo): shown, not blocking.
             lines.append(_format_findings(findings))
@@ -971,6 +1513,13 @@ def scan_pushed(
     declaration for the scan rules. With no answer for it, the declaration
     then the default repo's answer decide, as before.
 
+    In a private or internal repo marked approvable (approvable_rules), the
+    push asks the same way the commit does (see _approvable_outcome). When
+    there is an approvable finding, the remote's visibility is asked of GitHub
+    on every push, not only a ref's first push: a PUBLIC answer means the
+    marker is ignored and the findings block, and no answer means the
+    declaration is honored with a warning.
+
     Exit 1 only on a blocking finding, a visibility block, or a scan that did
     not complete. Returns (exit_code, report_text).
     """
@@ -1016,11 +1565,16 @@ def scan_pushed(
         visibility = check_repo_visibility(repo_path)
     is_public = visibility == "PUBLIC"
 
+    marker = approvable_rules(repo_path)
+    private = (visibility or "").upper() in ("PRIVATE", "INTERNAL")
+    active = marker if private else set()
+
     config_path = write_merged_config()
     try:
         findings: List[Dict[str, Any]] = []
         seen = set()
-        for label, log_opts in _push_scan_runs(to_scan, cwd):
+        runs = _push_scan_runs(to_scan, cwd)
+        for label, log_opts in runs:
             ref_findings, code, stderr = _gitleaks_report(
                 ["git", "--log-opts", log_opts],
                 "gitleaks-push-", config_path, cwd, is_public,
@@ -1044,6 +1598,50 @@ def scan_pushed(
 
         findings, policy_lines = apply_visibility_policy(findings, visibility)
 
+        # The remote's visibility, asked on every push that has an approvable
+        # finding. A first push already asked GitHub above, so it is not asked
+        # twice; a later push asks here. One answer per push.
+        remote_lines: List[str] = []
+        remote_public = is_public
+        if any(is_approvable(f, active) for f in findings):
+            if first_push:
+                remote = github
+            else:
+                pushed_repo = github_repo_from_url(remote_url)
+                remote_posture = (_fetch_github_posture(repo_path, repo=pushed_repo)
+                                  if pushed_repo else None)
+                remote = (remote_posture or {}).get("visibility")
+                if not remote:
+                    remote_posture = _fetch_github_posture(repo_path)
+                    remote = (remote_posture or {}).get("visibility")
+                declared_now = declared_visibility(repo_path)
+                if not remote and declared_now:
+                    reason = (remote_posture or {}).get("reason") or "no answer"
+                    remote_lines.append(
+                        f"WARNING: declared {declared_now}; GitHub could not confirm it "
+                        f"({reason}), so the declaration was not verified.")
+            if remote == "PUBLIC":
+                remote_public = True
+                active = set()
+
+        if active:
+            # The matched text, from a pass that runs only the approvable rules
+            # unredacted over the same ranges (see _attach_matches).
+            def unredacted(ids: List[str]) -> Optional[List[Dict[str, Any]]]:
+                rows: List[Dict[str, Any]] = []
+                for _label, log_opts in runs:
+                    found, pass_code, _stderr = _gitleaks_report(
+                        ["git", "--log-opts", log_opts], "gitleaks-push-",
+                        config_path, cwd, is_public, redact=False, enable_rules=ids)
+                    if found is None:
+                        unredacted.error = (f"no report from the unredacted pass "
+                                            f"(exit {pass_code})")
+                        return None
+                    rows.extend(found)
+                return rows
+            unredacted.error = None
+            _attach_matches(findings, active, unredacted, _diff_join_key)
+
         sync_note = consume_sync_note()
         if sync_note:
             lines.append(sync_note)
@@ -1062,18 +1660,38 @@ def scan_pushed(
                 if described:
                     lines.append("WARNING (not blocking): GitHub posture for this public repo:")
                     lines.append(described)
+        lines.extend(remote_lines)
         if is_public:
             lines.append("Reminder: you are pushing to a PUBLIC repository")
         lines.extend(policy_lines)
 
+        lines.extend(marker_warnings(marker, config_path))
+        if marker and not active:
+            people = sorted(k for k in marker if not marker_warnings({k}, config_path))
+            for rule in people:
+                if remote_public:
+                    lines.append(f"this repo is marked approvable for {rule}, but the remote "
+                                 f"is public; the marker applies to private remotes only")
+                else:
+                    lines.append(f"this repo is marked approvable for {rule}, but it is public "
+                                 f"or unconfirmed; the marker applies to private repos only")
+
+        # Every blocking finding, and every approvable one, is decided here.
+        hint_marker = marker if private and not remote_public else None
+        outcome = _approvable_outcome(lines, findings, active, hint_marker, "push")
+        if outcome is not None:
+            code, text = outcome
+            # A blocked push stays blocked whatever the approval said.
+            return (1 if blocked else code), text
         if findings:
             lines.append(_format_findings(findings))
         else:
             lines.append("No secrets detected in the pushed commits.")
-        blocked = blocked or any(_is_blocking(f) for f in findings)
-        if not blocked and findings:
+        if blocked:
+            return 1, "\n".join(lines)
+        if findings:
             lines.append("No blocking findings; push allowed.")
-        return (1 if blocked else 0), "\n".join(lines)
+        return 0, "\n".join(lines)
     finally:
         config_path.unlink(missing_ok=True)
 

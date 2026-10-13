@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-10-12
+
+**After upgrading, nothing is required.** A repo whose subject is a person on your people list can now be marked approvable; until you mark one, people findings block exactly as before.
+
+### Added
+
+- **scan-secrets: a repo marked approvable for a people rule.** `git config --add lastmilefirst.approvable lmf-private-people` marks a repo whose subject is a person on the list, so committing to it no longer needs `--no-verify` (which also skipped the identity check and every other rule). It is not an exemption: the finding still prints, and each commit and each push needs its own approval. The marker is read from local git config only, applies only while the repo's visibility resolves to private or internal, and names people rules only; a key naming any other rule prints a warning and is ignored. Found when the first commits in a repo whose subject is a person on the people list were blocked on that name in most of its files.
+- **scan-secrets: the match, grouped by term.** In a marked repo, people findings are shown with the text they matched, grouped by term with a count and up to five files per term, so a second name from the same rule shows up as its own row. The matched text comes from a second gitleaks pass that runs only the marked people rules unredacted, over both the staged diff and expanded archives such as `.docx`; secrets stay redacted. If that pass cannot produce the text, the commit blocks and nothing is approved.
+- **scan-secrets: two ways to answer.** In a terminal the hook asks y/n. Without one (Claude Code, CI, an editor's git client) it blocks and prints the exact re-run, `LMF_APPROVE='<term>[,<term>]' git commit <your arguments>`, and the variable must name every term shown; a bare `1` approves nothing. The approved line names the terms, the count, and how it was answered. Under Claude Code the re-run line tells the agent to get the user's confirmation first, and an approval run that way is marked `agent: claude-code`.
+- **scan-secrets: the push asks too.** The pre-push hook shows the same block for the pushed commits and asks the same way, with a `git push` re-run line. The remote's visibility is asked of GitHub on every push that carries a people finding in a marked repo, not only a first push, and a public remote ignores the marker and blocks.
+- **scan-secrets: a hint in unmarked repos.** A people finding in a repo that is not marked ends with the command to mark it, so a fresh clone or a second machine (the marker is local config) does not reach for `--no-verify`.
+
+### Changed
+
+- **scan-secrets: a real secret is never approved past.** Any other blocking finding beside a people finding blocks without the question, with the grouped block below it and a line saying it could be approved once the other findings are fixed.
+
 ## [0.38.0] - 2026-10-09
 
 **After upgrading, two steps on each machine you use.** Run `/run-organize-device` to see what the machine is missing against your org identity contracts, then `/run-organize-device --snapshot` to write a device manifest from what is installed there. The new skill's scripts need Python 3.11 or newer; the bootstrap installs it, and the audit says so and stops on anything older.
