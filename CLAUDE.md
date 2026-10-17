@@ -77,6 +77,27 @@ first round"), never a name or a quote. Our own project names are allowed where 
 them and dropped where they do not. The same holds for security specifics: describe the class of
 problem, not the incident.
 
+## Installation
+
+Users install from the marketplace, not from this checkout: `/plugin marketplace add` for
+the marketplace, then `/plugin install lastmilefirst@gruntwork-lastmilefirst`. The exact
+commands, the update sequence, and the rename note for the old marketplace name are in the
+root `README.md`. Claude Code resolves the plugin from `main`; the desktop app resolves it
+from the GitHub release tag, which is why every version bump cuts a release (see above).
+
+## Configuration
+
+Nothing in this repo is configured per machine. The plugin's own state and settings live
+outside it, each documented in the skill that owns it:
+
+- `~/.claude/lastmilefirst/` holds the secret-format files (`secret-formats/`, user-managed
+  org rules never committed), the installed git hooks (`git-hooks/`), Overwatch state, and the
+  invocation log (scan-secrets, overwatch, plugin-inventory skills).
+- `~/.config/lastmilefirst/device.toml` is the optional device manifest (organize-device).
+- Per org, `<org>/.claude/org.json` carries the identity contract (organize-orgs).
+- Per repo, local git config: `lastmilefirst.visibility` declares visibility and
+  `lastmilefirst.approvable` marks a repo approvable for a people rule (scan-secrets).
+
 ## Development Environment
 
 This repo ships Python scripts but has **no `pyproject.toml` and no Poetry env** — unlike griffith

@@ -1,7 +1,7 @@
 # Plan: `review-voice` + Ripley editorial synthesis
 
 **Date:** 2026-07-26
-**Status:** Ripley-reviewed, research-augmented — awaiting go/no-go
+**Status:** BUILT in v0.18.0 (review-voice shipped; status corrected 2026-10-16)
 **Target version:** 0.18.0 (new skill + command; behavior change to review-signal)
 
 ## Thesis

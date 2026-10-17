@@ -70,8 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.36.0] - 2026-09-28
 
-Versions 0.32.0 through 0.35.0 are recorded in the GitHub releases for this repository and were not added here.
-
 ### Added
 
 - **workspace: client directories.** A directory inside an org can carry a `.claude-workspace` marker with `type: client`, meaning it groups the projects for one counterparty and is not a project itself. Every walker (Overwatch's workspace summary, the `--all` secret scan, todos-summary, review-org, review-claude, organize-claude, and the identity audit) descends through it, and nested projects are keyed `org/client/project` in Overwatch state. One shared loader, `hooks/scripts/workspace_types.py`, owns discovery. Layout problems (a client directory carrying its own `org.json`, one that is itself a git repo, a client inside a client) are reported from the container itself. The marker vocabulary is documented in one place, the organize-orgs skill.
@@ -84,6 +82,58 @@ Versions 0.32.0 through 0.35.0 are recorded in the GitHub releases for this repo
 - **organize-claude:** the project-mapping check compares by path, so two clients can each hold a `docs` project; the missing-project hint uses the org's own prefix instead of a hardcoded one; `--scaffold-project` accepts a leaf name or `client/project`.
 - **session-start:** Overwatch guidance lookup finds the org CLAUDE.md through the resolved context instead of assuming the parent directory is the org.
 - **tests and plans:** fixtures and examples in tracked files use generic placeholders throughout.
+
+## [0.35.0] - 2026-09-27
+
+### Added
+
+- **overwatch: GitHub settings cached with the posture check.** The session-start posture check now caches the repository settings that arrive in the same API response (merge methods, forking, features, Dependabot updates). They are shown in `--audit` and never alerted on.
+- **scan-secrets: seven per-call checks in `--audit`.** Rulesets on the default branch and on release tags, classic branch protection, Dependabot alerts, Actions policy, workflow token, webhooks, and deploy keys. Measurements only; unknown is never reported as off.
+- **scan-secrets: `--audit --propose` and `--apply`.** `--propose` lists an itemized delta with a consequence per item; `--apply <id> ...` applies exactly the ids named, reads the settings again, and prints before and after. Anything that changes who can push or merge is listed under "consider" and never in the default set.
+- **scan-secrets: `--audit --github --deep`** sweeps an account's public repositories.
+- **docs:** a new guide, `docs/github-hygiene-for-shared-repos.md`.
+- The posture module gains 173 tests (236 in the hooks suite, up from 63).
+
+## [0.34.2] - 2026-09-26
+
+### Changed
+
+- **Metadata:** author attribution in both manifests is now the GruntworkAI handle. No functional change.
+
+## [0.34.1] - 2026-09-26
+
+### Fixed
+
+- **Metadata:** the plugin's repository URL and the marketplace homepage had pointed at a different repo since the first commit. Both now point at this one. No functional change.
+
+## [0.34.0] - 2026-09-24
+
+### Added
+
+- **review-org.** A new skill and `/run-review-org` command: an org health review grouped by what you would do, with no score, and a read-only project roll-up from Overwatch state. Overwatch thresholds are named constants in one place.
+- **review-claude: three tiers.** A symlinked CLAUDE.md is classified where it sits, an org is detected by `.claude/org.json` at any depth, `--tier` overrides the classification, and the output says how it decided.
+- **review-claude: tables against disk.** Projects tables and the Project Directory Mapping are compared against the directories on disk, and the output names which tiers carry overlapping topics so Claude can read those pairs for contradictions.
+
+### Changed
+
+- **review-project** reviews the project's own CLAUDE.md and records it at project scope, so the project and org health reviews are symmetric.
+- The top CLAUDE.md tier is called the workspace tier in user-facing text; `--tier user` remains an alias.
+- The README's tiered CLAUDE.md section names who reads each tier, the question it answers, and the test for where a fact goes. Each template carries the same in a comment block.
+- Manifest descriptions match the README framing.
+
+## [0.33.0] - 2026-09-24
+
+### Added
+
+- **review-voice: three kinds of rule.** Fingerprints (measured by density), house rules (the author's own, one instance is a finding), and obligation checks (tagline fragments, unfulfilled specificity, audience address; one instance is a finding).
+- **review-voice: two new tells.** Session vocabulary (extracted across documents) and heading register (measured by variance).
+- **review-voice: layered house rules.** Standing rules, then an engagement voice sheet at `.claude/work/voice-sheet.md`, then the conversation. Pattern sweeps run with a headings pass and metaphor families, and rulings accrete when the author confirms them. `voice-sheet-example.md` ships as example and template.
+- **review-voice:** hand-run tests and reconstructed fixtures under `skills/review-voice/tests/`.
+
+### Changed
+
+- **One verdict across review-signal, review-voice, and Ripley:** tiered findings and ship / hold / rework. The X/16 and X/N scores are gone.
+- Verification after a rewrite runs the full pass again.
 
 ## [0.31.0] - 2026-09-08
 
@@ -100,17 +150,13 @@ Versions 0.32.0 through 0.35.0 are recorded in the GitHub releases for this repo
 
 - **overwatch:** the invocation log recorded only the tool kind ("skill" or "agent"), so the weekly "Top:" line never named a real skill. The hook now reads the payload and logs skill name and session id. Legacy lines still parse.
 
-
 ## [0.30.0] - 2026-09-04
 
 ### Added
 
 - **review-voice: fingerprint 10, negative-universal setups.** "Nobody does X" / "no one ever" as a framing or opening move, measured per thousand words like the universal-quantifier row and tagged author-calibrated (one essay-series draft carried seven). Single instances stay non-findings. Rewrite guidance: recast with the specific actor, state what happens instead, or name the absence directly.
 
-
 ## [0.29.0] - 2026-09-04
-
-Entries between 0.16.0 and 0.28.1 were recorded in GitHub releases only.
 
 ### Added
 
@@ -124,6 +170,149 @@ Entries between 0.16.0 and 0.28.1 were recorded in GitHub releases only.
 - **Ripley** no longer speaks in "earns its keep," "earns its place," or "load-bearing." Her idiolect is the rent vocabulary that is literal for her (RENT, pay rent, collect the rent, reader cost). Her dual-review protocol gains a step applying the author's house rules as single-instance findings.
 - **review-signal** drops two "earn its place / keep" phrasings for rent vocabulary.
 
+## [0.28.1] - 2026-08-31
+
+**After upgrading,** run `/run-scan-secrets --update-formats`; this release changes the rule file.
+
+### Fixed
+
+- **scan-secrets: connection-string rules get an allowlist.** `lmf-postgres-connection-string` and its mysql, mongodb, and redis siblings shipped without one, so the standard local test database (`postgres://postgres:postgres@localhost/...`) matched wherever it appeared. They now carry the fixture-path allowlist the sibling rules already had, plus a shared exclusion for dummy credentials against local hosts.
+- **scan-secrets: `lmf-hardcoded-password` stays inside one string.** The value pattern `[^"']{8,}` was not confined to the string that opened it, so a shell prompt such as `sudo -p "Enter your Mac login password: "` was read forward to the next quote and reported as a credential. It is now `[^"'\s]{8,}`, since real hardcoded passwords rarely contain spaces and prompt strings usually do.
+- Measured on a 28-repo sweep, findings went from 93 to 45 and the one real finding (a webhook URL in a public repo) still fires. Global test-path allowlisting was considered and rejected, because it would also suppress the provider-key rules inside test directories. 18 new tests, each suppression case paired with one that must still fire.
+
+## [0.28.0] - 2026-08-31
+
+### Added
+
+- **scan-secrets: GitHub secret-scanning posture check.** Alongside the content scan, the plugin now checks whether GitHub's own secret scanning (which notifies the issuing vendor) and push protection (which blocks server-side, where `--no-verify` cannot reach) are on for public repositories. Session start raises ACTION REQUIRED when the current public repo is missing a protection, with the command to fix it; `--audit` shows the full posture beside the visibility line; `--all` makes an account-wide pass over every public repo, including ones not cloned locally.
+- One `gh api` call returns visibility and posture together, replacing the call already being made, so session start gets no slower; the result is cached per project for 24 hours. A missing security block (callers without admin) is treated as unknown and stays silent, private repos are skipped before any API call, and nothing is enabled automatically. Accounts for the `--all` pass come from each org's identity contract, and `gh auth switch` is never called. 16 new tests.
+
+## [0.27.1] - 2026-08-18
+
+### Fixed
+
+- **Quieter pre-commit output.** A correct commit printed a five-line `gh` account advisory and a `Fix:` block, and would have done so on every commit in an org whose GitHub account was not the active one. The pre-commit hook now skips the `gh` probe, so a clean commit prints only the secret-scan line. `audit_identity.py` and the plain `check_identity.py` CLI still report it, and blocking behavior is unchanged. No hook reinstall needed; the 0.27.0 dispatcher reads the check scripts from disk at run time.
+
+## [0.27.0] - 2026-08-18
+
+**After upgrading,** run `/reload-plugins`, then `/run-scan-secrets --install-hooks` to pick up the dispatcher. Existing orgs without an `identity` block will block commits once the hook is reinstalled; add a contract, or set `enforcement: warn` while rolling in.
+
+### Added
+
+- **Per-org identity contracts.** An `identity` block in `<org>/.claude/org.json` (`github_account`, `git_user_name`, `git_email`, `owns_remotes`, optional `ssh_host_alias`, and `enforcement` of `block`, `warn`, or `off`) declares which GitHub account commits in that org, mirrored in prose in the org's `CLAUDE.md`.
+- **Pre-commit enforcement** (`check_identity.py`). The global hook is now a dispatcher that runs registered checks cheapest first: identity, then the secret scan.
+- **Workspace audit** (`audit_identity.py`), run via `/run-organize-orgs`: contract presence, well-formedness, GitHub account liveness, per-repo drift, prose and JSON agreement, and unregistered orgs.
+- **overwatch:** session start reports a missing contract before anything is staged.
+- `.claude-workspace` type markers (`external`, `scratch`) exempt directories from identity obligations.
+- Orgs may decline operatives or stack-wisdom repos with `{"enabled": false}` instead of being warned about them every session.
+- Escape hatches: `enforcement` per contract, and `LMF_IDENTITY_OVERRIDE=1` for one-offs, which is logged.
+
+### Notes
+
+- The directory is the governance signal, not the remote. `owns_remotes` is a claim registry rather than an allowlist: an unclaimed owner passes, and only an owner claimed by a different GitHub account blocks, so collaborating on another owner's repo, a fork's `upstream`, and client-owned repos stay silent. Claims key on GitHub account, so two orgs sharing one account do not conflict. Commit identity blocks; `gh`'s active account is advisory only.
+
+## [0.26.0] - 2026-08-15
+
+### Changed
+
+- **organize-project: archetype-aware doc migration.** The root-to-`docs/` migration is skipped for Referenceable projects, where root markdown may be the content the repo exists to hold. Work and debt patterns (`SESSION_`, `TODO_`, `PLAN_`, and the debt prefixes) still apply, and every other archetype, or no archetype, is unchanged.
+- Files left in place are reported, even when nothing else moves, and are excluded from the scattered-file counts.
+- The README now documents project archetypes, and the Project Structure section shows a filled-in example and a table of what belongs where.
+
+## [0.25.0] - 2026-08-14
+
+### Fixed
+
+- **scan-secrets: shipped rules sync automatically.** Scans read the installed rule file, and seeding only copied it on first run, so a plugin update delivered new rules that never took effect until someone ran `--update-formats`. The installed common tier is now refreshed whenever it differs from what the plugin ships, and the run prints a one-time note when it does. The org tier is user-owned and never overwritten. `--update-formats` still works and is rarely needed.
+
+## [0.24.0] - 2026-08-14
+
+**After upgrading,** the first session shows ACTION REQUIRED because no workspace sweep is on record and the ruleset changed with 0.22.0 and 0.23.0. Run `/run-scan-secrets --all` once to set the baseline.
+
+### Added
+
+- **scan-secrets: workspace sweep timestamp.** `--all` records a workspace-scoped timestamp, so "the whole workspace was swept" can be expressed.
+- **scan-secrets: ruleset fingerprint.** Scans record a fingerprint of the ruleset used (installed formats plus plugin version, since scanner behavior can change without any rule changing).
+- **overwatch: stale sweep alert.** Session start raises ACTION REQUIRED when no sweep is on record or the ruleset changed since the last one, and a WARNING after 14 days. It is not gated on being inside a project; a recent sweep with the same ruleset is silent.
+
+## [0.23.0] - 2026-08-13
+
+### Added
+
+- **scan-secrets: committed archives are inspected.** Zip, tar, gzip, bzip2, and xz archives (which include Terraform plan files, jars, wheels, npm packs, and office documents) are expanded to a temp directory and scanned with the same merged ruleset, in full and staged scans alike. Findings read `<archive> -> <member>`. An archive that cannot be expanded is reported as `lmf-unscannable-archive` rather than skipped.
+- Guardrails: archives over 100MB or with more than 2000 members are reported rather than expanded, member paths are flattened so nothing is written outside the temp directory, and extraction failures are reported without aborting the scan.
+
+## [0.22.0] - 2026-08-12
+
+**After upgrading,** run `/run-scan-secrets --update-formats`, then `/reload-plugins`; without it the new rules are not active.
+
+### Added
+
+- **scan-secrets: LLM vendor API keys.** Seven prefix-anchored rules for Anthropic (`sk-ant-api03-`, `sk-ant-admin01-`), OpenAI (legacy 48-character, `sk-proj-`, `sk-svcacct-`), HuggingFace, Groq, OpenRouter, and Replicate. Neither gitleaks defaults nor the custom rules covered these before. Google AI keys are already covered by gitleaks' built-in `gcp-api-key`.
+- Rule authors: gitleaks compiles with Go's RE2, which has no lookahead, and a `(?!...)` panics at config load and takes every rule with it. Run a real scan after any regex change.
+
+## [0.21.0] - 2026-08-01
+
+**After upgrading,** run `/reload-plugins`; the running session keeps the old matcher until you do.
+
+### Added
+
+- **review-claude: gotchas split by audience.** Deployable projects expect `## Dev Gotchas` and `## Deployment Gotchas`, Usable projects `## Dev Gotchas` and `## Usage Gotchas`, and Referenceable projects `## Gotchas`. An undivided `## Gotchas` still satisfies both halves. New scaffolds use a `| Issue | Symptom | Cause / fix |` table.
+- **review-claude:** a short alias list for real renames (e.g. `## Common Pitfalls to Avoid` for Gotchas), reported and counted separately from direct matches.
+- First tests for `review-claude` (23), and the repo documents its own dev and test setup.
+
+### Changed
+
+- A placement rule in `organize-claude`, with qualifications in `add-wisdom`, `add-knowledge`, and `parc`, settles where gotchas belong (stack-wisdom, stack-knowledge, or project CLAUDE.md).
+
+### Fixed
+
+- **review-claude: match headings, not raw file text.** Section presence was a substring test over the whole file, so prose mentions, fenced code, and a scaffold's YAML frontmatter counted as sections, and an empty scaffolded project reported every section present. Matching now runs against extracted ATX headings with the same substring leniency (heading level is not significant). Open follow-ups: #10, #12, #13.
+
+## [0.20.0] - 2026-07-28
+
+**After upgrading,** run `/run-scan-secrets --update-formats`; scans read the installed formats file and keep the old rule until you do.
+
+### Fixed
+
+- **scan-secrets: committed tfstate flagged once per file.** `lmf-terraform-state` matched `.+`, so every line of a committed `terraform.tfstate` became its own finding, and because gitleaks dedupes per location it also hid the default rules on those lines. It now matches the `"terraform_version":` header key, which appears once per file. On a repo with two state files, findings went from 6,003 to 21 with no real findings lost.
+
+## [0.19.0] - 2026-07-28
+
+### Changed
+
+- **scan-secrets: gitleaks verbs modernized.** `gitleaks detect` becomes `git`, and `protect --staged` becomes `git --pre-commit --staged`, since the old verbs were deprecated in gitleaks 8.19.0. gitleaks 8.19.0 or newer is now required, failing closed with an actionable message.
+
+### Fixed
+
+- **scan-secrets: default rules run too.** The merged config now sets `[extend] useDefault = true`, so gitleaks' built-in rules (AWS keys, GitHub PATs, Stripe and Google keys, and others) run in addition to the custom `lmf-*` formats. Previously only the custom rules loaded. Verified against gitleaks 8.30.1. A non-gitleaks backend is tracked in #7. See PR #8.
+
+## [0.18.0] - 2026-07-27
+
+### Added
+
+- **review-voice.** A new skill and `run-review-voice` command that detects the tells that make prose read as AI-generated and rewrites toward an authentic human voice: a two-tier tell taxonomy, presence and variance detection, and guards against false positives. Gated by default, with `LFG` for one shot. Grounded in published research on AI-generated text.
+- **Ripley:** the persona and agent gain AI-tell expertise and a dual-review protocol that runs the signal and voice lenses, settles conflicts, and returns one reconciled result.
+
+### Changed
+
+- **review-signal:** the default is now gated (critique first, rewrite on authorization); `LFG` keeps the old one-shot path. Also fixes a contradiction between the critique and rewrite defaults. See PR #6.
+
+## [0.17.0] - 2026-07-19
+
+**After upgrading,** run `/plugin update lastmilefirst`, then `/run-scan-secrets --install-hooks` if you also want the 0.16.1 hook fix redeployed.
+
+### Added
+
+- **overwatch: network-based plugin-update check.** Overwatch reads the version `/plugin update` would resolve (the upstream marketplace manifest on the repo's default branch) and alerts when it is newer than what is installed, even when Claude Code's local marketplace cache is stale. The refresh runs at most once a day off the hot path, works offline, and skips silently on failure. Alerts clear themselves once acted on. Coverage is GitHub-sourced marketplaces with a version discoverable in the repo; others fall back to the local comparison. All requests go to raw.githubusercontent.com, and nothing fetched is executed. 45 offline tests.
+
+## [0.16.1] - 2026-07-18
+
+### Fixed
+
+- **scan-secrets: the pre-commit hook survives a marketplace rename.** The hook hard-coded the marketplace name in its search path for the scanner, so after the rename to `gruntwork-lastmilefirst` a reinstall could silently disarm it (skip the scan and exit 0). It now globs the marketplace name and version within the `gruntwork-*` namespace, so no unrelated marketplace can supply the scanner it runs, and prefers the newest installed version.
+
+**After upgrading:** `/plugin update lastmilefirst`, then `/run-scan-secrets --install-hooks` to redeploy the hook.
 
 ## [0.16.0] - 2026-07-13
 

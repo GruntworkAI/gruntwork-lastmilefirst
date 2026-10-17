@@ -1,6 +1,6 @@
 # Feature: PII rules that apply in private repos too, and a pre-push audit on first push
 
-**Status:** open
+**Status:** DONE 2026-10-09 (shipped in 0.37.0, PR #38)
 **Priority:** high
 **Created:** 2026-10-09
 

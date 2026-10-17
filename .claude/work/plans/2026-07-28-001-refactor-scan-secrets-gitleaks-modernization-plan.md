@@ -2,7 +2,7 @@
 title: scan-secrets — Modernize gitleaks Invocation and Extract a Scanner Seam
 version: 1.1
 date: 2026-07-28
-status: proposed
+status: built (shipped in 0.19.0)
 type: refactor
 component: plugins/lastmilefirst/skills/scan-secrets
 target_version: 0.19.0

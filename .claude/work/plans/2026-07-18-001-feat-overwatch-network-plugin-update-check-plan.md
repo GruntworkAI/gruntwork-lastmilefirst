@@ -2,7 +2,7 @@
 title: "feat: Network-based plugin-update check for Overwatch"
 date: 2026-07-18
 type: feat
-status: draft
+status: built (shipped in 0.17.0)
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 execution: code

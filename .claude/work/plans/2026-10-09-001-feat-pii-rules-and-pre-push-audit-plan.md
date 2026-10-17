@@ -2,7 +2,7 @@
 title: PII rules that fire in private repos, and a pre-push audit on first push
 version: 1.0
 date: 2026-10-09
-status: planned
+status: built (shipped in 0.37.0, PR #38)
 type: feat
 component: skills/scan-secrets/scripts/{scanner.py,scan_secrets.py,hook_installer.py}, skills/scan-secrets/data/common_secret_formats.toml, skills/scan-secrets/tests/, hooks/scripts/session_start.py, hooks/tests/, skills/scan-secrets/SKILL.md, CHANGELOG.md, README.md
 target_version: 0.37.0

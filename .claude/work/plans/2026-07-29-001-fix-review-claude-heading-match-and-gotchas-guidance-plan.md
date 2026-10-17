@@ -2,7 +2,7 @@
 title: review-claude — Heading-Scoped Matching, Honest Reporting, Split Gotchas
 version: 1.3
 date: 2026-07-29
-status: proposed
+status: built (shipped in 0.21.0)
 type: fix
 component: plugins/lastmilefirst/skills/{review-claude,organize-claude,add-wisdom,add-knowledge,parc}
 target_version: 0.21.0

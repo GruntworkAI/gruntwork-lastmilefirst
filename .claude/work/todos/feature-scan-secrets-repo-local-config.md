@@ -60,3 +60,7 @@ CI is the strongest defense anyway — runs on every push regardless of contribu
 ## Notes
 
 Discovered 2026-05-04 during an OpenCanon project audit. Memory at `project_lmf_scan_secrets_repo_config.md`. Related: `bug-format-loader-allowlist-serialization.md` (different but adjacent issue in the same scanner pipeline).
+
+## Related
+
+GitHub issue #19 (path-based suppression for fixtures, examples, and docs) is the same gap from the other side: rules and allowlists that should travel with a repo.

@@ -6,6 +6,8 @@ date: 2026-03-28
 
 # Unified LMF-stack Architecture
 
+**Status:** OPEN, not started (Phase 0 next; status line added 2026-10-16)
+
 ## Overview
 
 Replace the current per-org stack-wisdom repo pattern with a single per-user repository (LMF-stack) that mirrors the workspace directory structure. Each org gets a standardized set of directories for institutional knowledge: philosophy, strategy, wisdom, circuit-breakers, operatives, agents, and style.

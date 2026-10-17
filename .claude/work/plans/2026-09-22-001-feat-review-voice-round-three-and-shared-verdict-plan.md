@@ -2,7 +2,7 @@
 title: review-voice round three, living house rules, and one verdict across signal and voice
 version: 1.3
 date: 2026-09-22
-status: proposed
+status: built (shipped in 0.33.0)
 type: feat
 component: plugins/lastmilefirst/skills/{review-voice,review-signal}, agents/consult-ripley.md
 target_version: 0.33.0

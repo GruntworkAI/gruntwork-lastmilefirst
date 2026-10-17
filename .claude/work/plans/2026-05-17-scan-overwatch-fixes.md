@@ -1,7 +1,7 @@
 # Plan: Resolve 4 scan-secrets + Overwatch bugs (v0.14.2)
 
 **Created:** 2026-05-17
-**Status:** Approved — implementing direct to main, no branch, hand-verified
+**Status:** BUILT in v0.14.2 (2026-05-17), direct to main, hand-verified
 **Outcome:** Single plugin release `v0.14.2` resolving the four bugs filed earlier today
 
 ## Context

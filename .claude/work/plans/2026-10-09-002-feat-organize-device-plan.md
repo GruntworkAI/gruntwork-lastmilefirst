@@ -2,7 +2,7 @@
 title: organize-device, a device bootstrap and audit skill, replacing the stack-wisdom setup scripts
 version: 1.7
 date: 2026-10-09
-status: built; in review
+status: built (shipped in 0.38.0, PR #39)
 type: feat
 component: skills/organize-device/{SKILL.md,scripts/bootstrap.sh,scripts/audit_device.py,scripts/device_manifest.py,scripts/install_device.py,scripts/network/,tests/}, commands/run-organize-device.md, hooks/scripts/session_start.py, hooks/tests/, README.md, CHANGELOG.md; plus a cleanup PR on gruntwork-stack-wisdom/setup-scripts/
 target_version: 0.38.0
