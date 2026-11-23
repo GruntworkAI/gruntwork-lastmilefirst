@@ -776,25 +776,40 @@ def workspace_position(config: Optional[Dict], cwd: Optional[Path] = None) -> st
     return "inside"
 
 
-def git_hooks_installed(home: Optional[Path] = None) -> bool:
-    """Whether the plugin's commit and push hooks are the machine's global hooks."""
+def git_hooks_status(home: Optional[Path] = None, cwd: Optional[Path] = None) -> str:
+    """Which of the plugin's secret-scan hooks run in `cwd`: "both", "commit-only", or "none".
+
+    Reads the hooks path git would use in `cwd`, not the global setting alone:
+    a repo that sets its own `core.hooksPath` (husky and similar tools do)
+    runs neither hook whatever the machine-wide setting says. A hook counts
+    only when its file exists and is executable, the same test
+    `hook_installer.hook_status()` applies. An install made before the push
+    hook shipped has the commit hook only.
+    """
     hooks_dir = (home or Path.home()) / ".claude" / "lastmilefirst" / "git-hooks"
-    if not (hooks_dir / "pre-commit").exists():
-        return False
     try:
         result = subprocess.run(
-            ["git", "config", "--global", "core.hooksPath"],
-            capture_output=True, text=True, timeout=5,
+            ["git", "config", "core.hooksPath"],
+            capture_output=True, text=True, timeout=5, cwd=str(cwd) if cwd else None,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
+        return "none"
     configured = result.stdout.strip()
     if result.returncode != 0 or not configured:
-        return False
+        return "none"
     try:
-        return Path(configured).expanduser().resolve() == hooks_dir.resolve()
+        if Path(configured).expanduser().resolve() != hooks_dir.resolve():
+            return "none"
     except OSError:
-        return False
+        return "none"
+
+    def usable(name: str) -> bool:
+        hook = hooks_dir / name
+        return hook.is_file() and os.access(hook, os.X_OK)
+
+    if not usable("pre-commit"):
+        return "none"
+    return "both" if usable("pre-push") else "commit-only"
 
 
 def _display_path(path: Path, home: Optional[Path] = None) -> str:
@@ -805,13 +820,29 @@ def _display_path(path: Path, home: Optional[Path] = None) -> str:
         return str(path)
 
 
+HOOK_LINES = {
+    "both": [
+        "The commit and push secret-scan hooks are installed machine-wide and still run here.",
+    ],
+    "commit-only": [
+        "The commit secret-scan hook still runs here, but this machine has no push hook, so",
+        "pushes are not scanned. Run /run-scan-secrets --install-hooks to add it.",
+    ],
+    "none": [
+        "The plugin's commit and push secret-scan hooks do not run here: they are not installed,",
+        "or this repo sets its own hooks path. Nothing scans commits or pushes made here.",
+        "/run-scan-secrets --install-hooks installs them machine-wide.",
+    ],
+}
+
+
 def outside_workspace_notice(
-    config: Dict, hooks_installed: bool, home: Optional[Path] = None
+    config: Dict, hooks: str, home: Optional[Path] = None
 ) -> List[str]:
     """What a session outside the workspace is told, in place of the alerts.
 
     Says what is not covered here, so a quiet session start is not read as a
-    clean one, and what still is: the git hooks are global, not per workspace.
+    clean one, and what still is. `hooks` is a `git_hooks_status` value.
     """
     where = _display_path(Path(config["workspace"]), home)
     lines = [
@@ -819,24 +850,34 @@ def outside_workspace_notice(
         "tracking it. No scan-freshness, review, or CLAUDE.md checks run here, and",
         "/run-scan-secrets --all does not reach it.",
     ]
-    if hooks_installed:
-        lines.append(
-            "The commit and push secret-scan hooks are installed machine-wide and still run here."
-        )
-    else:
-        lines.append(
-            "The commit and push secret-scan hooks are not installed on this machine, so nothing"
-        )
-        lines.append(
-            "scans commits made here. Run /run-scan-secrets --install-hooks to add them."
-        )
+    lines.extend(HOOK_LINES.get(hooks, HOOK_LINES["none"]))
     return lines
+
+
+def unreadable_config_notice(home: Optional[Path] = None) -> Optional[List[str]]:
+    """A notice when the organize config exists but cannot be read, else None.
+
+    A broken config would otherwise look the same as a machine that was never
+    set up, and a workspace that had alerts yesterday would go quiet.
+    """
+    config_file = (home or Path.home()) / ".config" / "organize-claude" / "config.json"
+    if not config_file.exists():
+        return None
+    return [
+        f"Overwatch: {_display_path(config_file, home)} exists but could not be read, so no",
+        "workspace checks ran this session. Fix or remove that file to bring them back.",
+    ]
 
 
 OUTSIDE_NOTE_FOR_CLAUDE = [
     "",
     "NOTE: Tell the user the above in one or two sentences before proceeding with their",
-    "request, so they know what is and is not being checked. Nothing else here needs action.",
+    "request, so they know what is and is not being checked.",
+]
+
+UNREADABLE_NOTE_FOR_CLAUDE = [
+    "",
+    "NOTE: Tell the user the above in one sentence before proceeding with their request.",
 ]
 
 UNCONFIGURED_FULL_NOTICE = (
@@ -1329,16 +1370,28 @@ def main() -> None:
     # Where is this session? With no workspace on the machine there is nothing
     # to report on, and outside the workspace the alerts are about somewhere
     # else. An explicit --full run outside the workspace still gets the report.
-    position = workspace_position(_load_organize_config())
+    early_config = _load_organize_config()
+    position = workspace_position(early_config)
     if position == "unconfigured":
-        if full_mode:
+        broken = unreadable_config_notice() if early_config is None else None
+        if broken:
+            _print_report(broken, UNREADABLE_NOTE_FOR_CLAUDE)
+        elif full_mode:
             print(UNCONFIGURED_FULL_NOTICE)
-        else:
+        if not full_mode:
             _clear_session_log()
         return
     if position == "outside" and not full_mode:
-        notice = outside_workspace_notice(_load_organize_config() or {}, git_hooks_installed())
-        _print_report(notice, OUTSIDE_NOTE_FOR_CLAUDE)
+        notice = outside_workspace_notice(early_config or {}, git_hooks_status())
+        # The visibility checks read the repo and GitHub, not the workspace,
+        # so they still run here: a public repo is worth knowing about anywhere.
+        repo_alerts = _visibility_checks(None)
+        for_claude = list(OUTSIDE_NOTE_FOR_CLAUDE)
+        if repo_alerts:
+            for_claude.append(
+                "Also present each ACTION REQUIRED and WARNING line above; those are about this repo."
+            )
+        _print_report(notice + repo_alerts, for_claude)
         _clear_session_log()
         return
 

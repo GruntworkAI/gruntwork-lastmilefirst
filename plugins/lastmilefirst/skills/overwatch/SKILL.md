@@ -68,12 +68,15 @@ claims it did. What a session start prints depends on where the session is:
 | The session is | Overwatch prints |
 |---|---|
 | On a machine with no workspace configured (a cloud sandbox, or a machine where the plugin was never set up) | Nothing. Every "last done" date would read as never, and the alerts would describe a workspace that is not there |
-| On a machine with a workspace, in a folder outside it (`~/Downloads`, a Cowork task on a documents folder) | One notice and no alerts: the folder is outside the workspace, Overwatch is not tracking it, and the workspace-wide secret scan does not reach it. The notice also says whether the commit and push hooks are installed, because those are machine-wide and still run there. Claude passes this on in a sentence or two |
+| On a machine with a workspace, in a folder outside it (`~/Downloads`, a Cowork task on a documents folder) | One notice and no alerts: the folder is outside the workspace, Overwatch is not tracking it, and the workspace-wide secret scan does not reach it. The notice also says which of the commit and push hooks run in that folder (both, the commit hook only, or neither, e.g. when the repo sets its own hooks path), because those are machine-wide and not tied to the workspace. The public-repo warning and the declared-visibility check still run, since they are about the repo and not the workspace. Claude passes this on in a sentence or two |
 | Inside the workspace | The alerts described on this page |
 
 The notice exists so that a quiet session start is not mistaken for a clean one. If you rely
 on the plugin for secret scanning, a folder outside the workspace has the commit and push
-hooks (when installed) and nothing else.
+hooks (when installed), the public-repo and visibility warnings, and nothing else.
+
+If the workspace config file exists but cannot be read, session start says so in one line
+instead of going quiet, so a broken config is not mistaken for a machine with no workspace.
 
 Inside the workspace, project-level checks (CLAUDE.md, archetype, review and scan freshness)
 apply only when the session's directory is inside a project under a configured org, and they
