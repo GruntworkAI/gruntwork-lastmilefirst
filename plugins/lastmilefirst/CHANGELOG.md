@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-11-22
+
+**After upgrading, nothing is required.** On the desktop app, update the plugin there too: it does not follow the version Claude Code has.
+
+### Fixed
+
+- **overwatch: nothing is reported where there is no workspace.** On a machine with no workspace configured (a cloud sandbox, a machine the plugin was never set up on), session start read every "last done" date as never and told Claude to present three alerts before the user's request: no workspace-wide scan on record, no Overwatch guidance in CLAUDE.md, workspace CLAUDE.md never reviewed. It now prints nothing there. `/run-overwatch check` prints one line saying no workspace is configured. A config file that exists but cannot be read is reported in one line, so a broken config does not look like a machine with no workspace.
+- **overwatch: outside the workspace, one notice in place of the alerts.** A session in a folder outside the configured workspace got the plugin-update, sweep, todo, and project-summary lines for a workspace it was not in. It now gets one notice: the folder is outside the workspace, Overwatch is not tracking it, the workspace-wide scan does not reach it, and which of the commit and push hooks run in that folder (both, the commit hook only, or neither when they are not installed or the repo sets its own hooks path). The public-repo warning and the declared-visibility check still run there, because they read the repo and not the workspace. Claude passes all of it on in a sentence or two, so a quiet start is not read as a clean one. This reverses the 0.36.2 choice to leave the workspace-level lines ungated. `/run-overwatch check` still prints the full report from anywhere.
+
+### Added
+
+- **overwatch: a way to change what Claude raises.** A section headed `Overwatch preferences` in a CLAUDE.md (workspace or project) says which alerts Claude brings up and when. Until one exists, the directive asks Claude to mention the option in one line after the alerts and to offer the steps; once it exists, that line stops and the directive defers to the section. The steps and three starting snippets are in the overwatch skill under "Changing what Overwatch raises". The hook's own output is unchanged.
+
 ## [0.39.0] - 2026-10-12
 
 **After upgrading, nothing is required.** A repo whose subject is a person on your people list can now be marked approvable; until you mark one, people findings block exactly as before.

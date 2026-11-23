@@ -8,6 +8,7 @@ Output becomes part of Claude's context.
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -646,22 +647,22 @@ def check_claude_md(project_dir: Optional[Path]) -> Optional[str]:
     return None
 
 
-def check_overwatch_guidance(
+def _claude_md_hierarchy(
     cwd: Optional[Path] = None,
     config: Optional[Dict] = None,
     home: Optional[Path] = None,
-) -> Optional[str]:
-    """Check if any CLAUDE.md in the hierarchy contains Overwatch response guidance.
+) -> List[Path]:
+    """The CLAUDE.md files that apply to a session, nearest first.
 
-    Looks at the project's CLAUDE.md, the client directory's (for a nested
-    project), the org's, and the workspace's. The org is found with
-    `resolve_context`, not by position, so a project inside a client
-    directory still finds its org CLAUDE.md. `cwd`, `config`, and `home`
-    exist for tests.
+    The project's (or the current directory's), the client directory's for a
+    nested project, the org's, and the workspace's. The org is found with
+    `resolve_context`, not by position, so a project inside a client directory
+    still finds its org CLAUDE.md. The workspace file is looked for at the
+    configured workspace and at `~/Code`, the conventional place.
     """
     cwd = cwd or Path.cwd()
     home = home or Path.home()
-    search_paths = [cwd / "CLAUDE.md"]
+    paths = [cwd / "CLAUDE.md"]
 
     if config is None:
         config = _load_organize_config() or {}
@@ -670,22 +671,219 @@ def check_overwatch_guidance(
     if workspace and ctx.get("org"):
         org_dir = Path(workspace) / ctx["org"]
         if ctx.get("client"):
-            search_paths.append(org_dir / ctx["client"] / "CLAUDE.md")
-        search_paths.append(org_dir / "CLAUDE.md")
-    search_paths.append(home / "Code" / "CLAUDE.md")  # Top-level workspace
+            paths.append(org_dir / ctx["client"] / "CLAUDE.md")
+        paths.append(org_dir / "CLAUDE.md")
+    if workspace:
+        paths.append(Path(workspace) / "CLAUDE.md")
+    paths.append(home / "Code" / "CLAUDE.md")
 
+    seen: List[Path] = []
+    for path in paths:
+        if path not in seen:
+            seen.append(path)
+    return seen
+
+
+def _read_lower(path: Path) -> str:
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8").lower()
+    except (OSError, IOError, UnicodeDecodeError):
+        pass
+    return ""
+
+
+def check_overwatch_guidance(
+    cwd: Optional[Path] = None,
+    config: Optional[Dict] = None,
+    home: Optional[Path] = None,
+) -> Optional[str]:
+    """Check if any CLAUDE.md in the hierarchy contains Overwatch response guidance.
+
+    `cwd`, `config`, and `home` exist for tests.
+    """
     keywords = ["overwatch", "overwatch alert", "overwatch response"]
-
-    for path in search_paths:
-        try:
-            if path.exists():
-                content = path.read_text(encoding="utf-8").lower()
-                if any(kw in content for kw in keywords):
-                    return None  # Found guidance, no alert needed
-        except (OSError, IOError):
-            continue
+    for path in _claude_md_hierarchy(cwd, config, home):
+        content = _read_lower(path)
+        if any(kw in content for kw in keywords):
+            return None  # Found guidance, no alert needed
 
     return "ACTION REQUIRED: No Overwatch response guidance in CLAUDE.md. Run /run-organize-claude to add it."
+
+
+# The heading a user adds to a CLAUDE.md to say which alerts Claude should
+# raise. The overwatch skill's "Changing what Overwatch raises" section gives
+# the snippets; once the heading is present the reminder below stops printing.
+PREFERENCES_HEADING = "overwatch preferences"
+_PREFERENCES_HEADING_RE = re.compile(
+    r"^#{1,6}[ \t]+.*" + re.escape(PREFERENCES_HEADING), re.MULTILINE
+)
+
+
+def has_overwatch_preferences(
+    cwd: Optional[Path] = None,
+    config: Optional[Dict] = None,
+    home: Optional[Path] = None,
+) -> bool:
+    """Whether any CLAUDE.md in the hierarchy has an Overwatch preferences heading."""
+    return any(
+        _PREFERENCES_HEADING_RE.search(_read_lower(path))
+        for path in _claude_md_hierarchy(cwd, config, home)
+    )
+
+
+PREFERENCES_REMINDER = [
+    "After presenting them, tell the user in one line that they can change which of these",
+    "alerts you raise by adding an \"Overwatch preferences\" section to their CLAUDE.md, and",
+    "offer the exact steps. If they ask, the steps are in the overwatch skill under",
+    "\"Changing what Overwatch raises\".",
+]
+
+
+PREFERENCES_DEFER = [
+    "The user's CLAUDE.md has an \"Overwatch preferences\" section. Where it differs from this",
+    "directive, follow it.",
+]
+
+
+# ---------------------------------------------------------------------------
+# Where the session is, relative to the configured workspace
+# ---------------------------------------------------------------------------
+
+def workspace_position(config: Optional[Dict], cwd: Optional[Path] = None) -> str:
+    """"unconfigured", "outside", or "inside".
+
+    Unconfigured means this machine has no workspace to check: no organize
+    config, no workspace in it, or a workspace path that is not a directory
+    here (a cloud sandbox, a machine the plugin was never set up on). Every
+    freshness timestamp reads as "never" there, so the alerts would describe
+    a workspace that does not exist.
+    """
+    workspace = (config or {}).get("workspace")
+    if not workspace:
+        return "unconfigured"
+    try:
+        workspace_resolved = Path(workspace).resolve()
+        if not workspace_resolved.is_dir():
+            return "unconfigured"
+        cwd_resolved = (cwd or Path.cwd()).resolve()
+    except OSError:
+        return "unconfigured"
+    try:
+        cwd_resolved.relative_to(workspace_resolved)
+    except ValueError:
+        return "outside"
+    return "inside"
+
+
+def git_hooks_status(home: Optional[Path] = None, cwd: Optional[Path] = None) -> str:
+    """Which of the plugin's secret-scan hooks run in `cwd`: "both", "commit-only", or "none".
+
+    Reads the hooks path git would use in `cwd`, not the global setting alone:
+    a repo that sets its own `core.hooksPath` (husky and similar tools do)
+    runs neither hook whatever the machine-wide setting says. A hook counts
+    only when its file exists and is executable, the same test
+    `hook_installer.hook_status()` applies. An install made before the push
+    hook shipped has the commit hook only.
+    """
+    hooks_dir = (home or Path.home()) / ".claude" / "lastmilefirst" / "git-hooks"
+    try:
+        result = subprocess.run(
+            ["git", "config", "core.hooksPath"],
+            capture_output=True, text=True, timeout=5, cwd=str(cwd) if cwd else None,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "none"
+    configured = result.stdout.strip()
+    if result.returncode != 0 or not configured:
+        return "none"
+    try:
+        if Path(configured).expanduser().resolve() != hooks_dir.resolve():
+            return "none"
+    except OSError:
+        return "none"
+
+    def usable(name: str) -> bool:
+        hook = hooks_dir / name
+        return hook.is_file() and os.access(hook, os.X_OK)
+
+    if not usable("pre-commit"):
+        return "none"
+    return "both" if usable("pre-push") else "commit-only"
+
+
+def _display_path(path: Path, home: Optional[Path] = None) -> str:
+    home = home or Path.home()
+    try:
+        return "~/" + str(path.resolve().relative_to(home.resolve()))
+    except (ValueError, OSError):
+        return str(path)
+
+
+HOOK_LINES = {
+    "both": [
+        "The commit and push secret-scan hooks are installed machine-wide and still run here.",
+    ],
+    "commit-only": [
+        "The commit secret-scan hook still runs here, but this machine has no push hook, so",
+        "pushes are not scanned. Run /run-scan-secrets --install-hooks to add it.",
+    ],
+    "none": [
+        "The plugin's commit and push secret-scan hooks do not run here: they are not installed,",
+        "or this repo sets its own hooks path. Nothing scans commits or pushes made here.",
+        "/run-scan-secrets --install-hooks installs them machine-wide.",
+    ],
+}
+
+
+def outside_workspace_notice(
+    config: Dict, hooks: str, home: Optional[Path] = None
+) -> List[str]:
+    """What a session outside the workspace is told, in place of the alerts.
+
+    Says what is not covered here, so a quiet session start is not read as a
+    clean one, and what still is. `hooks` is a `git_hooks_status` value.
+    """
+    where = _display_path(Path(config["workspace"]), home)
+    lines = [
+        f"Overwatch: this folder is outside your workspace ({where}), so Overwatch is not",
+        "tracking it. No scan-freshness, review, or CLAUDE.md checks run here, and",
+        "/run-scan-secrets --all does not reach it.",
+    ]
+    lines.extend(HOOK_LINES.get(hooks, HOOK_LINES["none"]))
+    return lines
+
+
+def unreadable_config_notice(home: Optional[Path] = None) -> Optional[List[str]]:
+    """A notice when the organize config exists but cannot be read, else None.
+
+    A broken config would otherwise look the same as a machine that was never
+    set up, and a workspace that had alerts yesterday would go quiet.
+    """
+    config_file = (home or Path.home()) / ".config" / "organize-claude" / "config.json"
+    if not config_file.exists():
+        return None
+    return [
+        f"Overwatch: {_display_path(config_file, home)} exists but could not be read, so no",
+        "workspace checks ran this session. Fix or remove that file to bring them back.",
+    ]
+
+
+OUTSIDE_NOTE_FOR_CLAUDE = [
+    "",
+    "NOTE: Tell the user the above in one or two sentences before proceeding with their",
+    "request, so they know what is and is not being checked.",
+]
+
+UNREADABLE_NOTE_FOR_CLAUDE = [
+    "",
+    "NOTE: Tell the user the above in one sentence before proceeding with their request.",
+]
+
+UNCONFIGURED_FULL_NOTICE = (
+    "Overwatch: no workspace is configured on this machine, so there is nothing to check. "
+    "Run /run-organize-orgs to set one up."
+)
 
 
 def check_archetype(project_dir: Optional[Path]) -> Optional[str]:
@@ -1116,9 +1314,86 @@ def check_cross_project_blockers() -> List[str]:
     return results
 
 
+def build_directive(alerts: List[str], preferences_reminder: bool) -> List[str]:
+    """The block that tells Claude what to do with the alerts (stdout only).
+
+    Empty when nothing is actionable. The reminder that the user can change
+    what gets raised is appended unless they already have a preferences
+    section, so it stops once they have acted on it.
+    """
+    action_count = sum(
+        1 for a in alerts if a.startswith("ACTION REQUIRED:") or a.startswith("WARNING:")
+    )
+    if action_count == 0:
+        return []
+    directive = [
+        "",
+        f"DIRECTIVE: {action_count} item(s) above require action. Present each as a recommendation",
+        "to the user BEFORE proceeding with their request. Do not silently skip them.",
+    ]
+    if preferences_reminder:
+        directive.extend(PREFERENCES_REMINDER)
+    else:
+        directive.extend(PREFERENCES_DEFER)
+    return directive
+
+
+def _print_report(lines: List[str], for_claude: List[str]) -> None:
+    """Print to stdout (Claude's context) and echo to stderr (the user's terminal).
+
+    `for_claude` lines go to stdout only.
+    """
+    header = [
+        "",
+        "-" * 59,
+        "|  OVERWATCH" + " " * 46 + "|",
+        "-" * 59,
+    ]
+    for line in header + lines + for_claude:
+        print(line)
+    for line in header + lines:
+        print(line, file=sys.stderr)
+
+
+def _clear_session_log() -> None:
+    session_log = get_tmp_dir() / "session-changes.log"
+    try:
+        session_log.unlink(missing_ok=True)
+    except (OSError, IOError):
+        pass  # Ignore errors clearing log
+
+
 def main() -> None:
     full_mode = "--full" in sys.argv
     alerts: List[str] = []
+
+    # Where is this session? With no workspace on the machine there is nothing
+    # to report on, and outside the workspace the alerts are about somewhere
+    # else. An explicit --full run outside the workspace still gets the report.
+    early_config = _load_organize_config()
+    position = workspace_position(early_config)
+    if position == "unconfigured":
+        broken = unreadable_config_notice() if early_config is None else None
+        if broken:
+            _print_report(broken, UNREADABLE_NOTE_FOR_CLAUDE)
+        elif full_mode:
+            print(UNCONFIGURED_FULL_NOTICE)
+        if not full_mode:
+            _clear_session_log()
+        return
+    if position == "outside" and not full_mode:
+        notice = outside_workspace_notice(early_config or {}, git_hooks_status())
+        # The visibility checks read the repo and GitHub, not the workspace,
+        # so they still run here: a public repo is worth knowing about anywhere.
+        repo_alerts = _visibility_checks(None)
+        for_claude = list(OUTSIDE_NOTE_FOR_CLAUDE)
+        if repo_alerts:
+            for_claude.append(
+                "Also present each ACTION REQUIRED and WARNING line above; those are about this repo."
+            )
+        _print_report(notice + repo_alerts, for_claude)
+        _clear_session_log()
+        return
 
     # Resolve current context and load scoped state
     ctx = resolve_context()
@@ -1240,46 +1515,13 @@ def main() -> None:
         if workspace_alerts:
             alerts.extend(workspace_alerts)
 
-    # Output to both stdout (for Claude context) and stderr (for user terminal)
     if alerts:
-        header = [
-            "",
-            "-" * 59,
-            "|  OVERWATCH" + " " * 46 + "|",
-            "-" * 59,
-        ]
-        # Count actionable alerts
-        action_count = sum(1 for a in alerts if a.startswith("ACTION REQUIRED:") or a.startswith("WARNING:"))
-
-        # Directive block for Claude (only on stdout, not stderr)
-        directive = []
-        if action_count > 0:
-            directive = [
-                "",
-                f"DIRECTIVE: {action_count} item(s) above require action. Present each as a recommendation",
-                "to the user BEFORE proceeding with their request. Do not silently skip them.",
-            ]
-
-        # Print to stdout for Claude
-        for line in header:
-            print(line)
-        for alert in alerts:
-            print(alert)
-        for line in directive:
-            print(line)
-        # Echo to stderr for user visibility (alerts only, no directive)
-        for line in header:
-            print(line, file=sys.stderr)
-        for alert in alerts:
-            print(alert, file=sys.stderr)
+        wants_reminder = not has_overwatch_preferences(cwd=project_dir, config=config)
+        _print_report(alerts, build_directive(alerts, wants_reminder))
 
     # Clear session change log (skip in --full mode, only for session start)
     if not full_mode:
-        session_log = get_tmp_dir() / "session-changes.log"
-        try:
-            session_log.unlink(missing_ok=True)
-        except (OSError, IOError):
-            pass  # Ignore errors clearing log
+        _clear_session_log()
 
 
 if __name__ == "__main__":
