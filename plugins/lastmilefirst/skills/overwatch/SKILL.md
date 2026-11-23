@@ -63,11 +63,65 @@ sidesteps Claude Code's unreliable local marketplace-cache refresh.
 
 Hooks load in Claude Code (terminal, IDE, and the desktop app's Code tab) and in Cowork
 tasks; Chat ignores them, so in a Chat conversation Overwatch does not run and nothing here
-claims it did. Project-level checks (CLAUDE.md, archetype, review and scan freshness) apply
-only when the session's directory is inside a project under a configured org, and they read
-the project's root, not the current directory. A session in `~/Downloads`, a scratch folder,
-or an org root gets no project alerts. Workspace-level lines (the sweep reminder, the
-project summary) are not gated on the current directory, by design.
+claims it did. What a session start prints depends on where the session is:
+
+| The session is | Overwatch prints |
+|---|---|
+| On a machine with no workspace configured (a cloud sandbox, or a machine where the plugin was never set up) | Nothing. Every "last done" date would read as never, and the alerts would describe a workspace that is not there |
+| On a machine with a workspace, in a folder outside it (`~/Downloads`, a Cowork task on a documents folder) | One notice and no alerts: the folder is outside the workspace, Overwatch is not tracking it, and the workspace-wide secret scan does not reach it. The notice also says whether the commit and push hooks are installed, because those are machine-wide and still run there. Claude passes this on in a sentence or two |
+| Inside the workspace | The alerts described on this page |
+
+The notice exists so that a quiet session start is not mistaken for a clean one. If you rely
+on the plugin for secret scanning, a folder outside the workspace has the commit and push
+hooks (when installed) and nothing else.
+
+Inside the workspace, project-level checks (CLAUDE.md, archetype, review and scan freshness)
+apply only when the session's directory is inside a project under a configured org, and they
+read the project's root, not the current directory. A session at the workspace root or an org
+root gets the workspace-level lines (the sweep reminder, the project summary) and no project
+alerts.
+
+`/run-overwatch check` is an explicit request, so it prints the full report from a folder
+outside the workspace too. On a machine with no workspace it prints one line saying so. If
+`/run-overwatch status` prints nothing, no workspace is configured on this machine: say that,
+and suggest `/run-organize-orgs`.
+
+### Changing what Overwatch raises
+
+Overwatch prints every alert it finds, and by default tells Claude to present each
+ACTION REQUIRED and WARNING line before starting on the request. You can change which of
+them Claude brings up by adding a section headed `Overwatch preferences` to a CLAUDE.md:
+the workspace one to apply everywhere, or a project's to apply there. Write it in plain
+sentences. Three starting points:
+
+```markdown
+## Overwatch preferences
+
+Raise ACTION REQUIRED items before anything else. Mention a WARNING only when it relates
+to what I asked for.
+```
+
+```markdown
+## Overwatch preferences
+
+Present Overwatch items in one short list at the end of your first reply, not before it.
+```
+
+```markdown
+## Overwatch preferences
+
+Do not raise the workspace summary, usage counts, or plugin updates unless I ask.
+Always raise anything about secrets or repo visibility.
+```
+
+This changes what Claude says, not what the hook prints: in a terminal the full list still
+appears at session start. Until a CLAUDE.md has that heading, Claude ends its list of alerts
+with one line saying this is possible and offering the steps. Once the heading is there, that
+line stops and Claude is told to follow your section where it differs from the default.
+
+**When the user asks how:** show the snippets above, ask which alerts they want raised and
+when, and offer to add the section to their workspace CLAUDE.md (or the project's, if they
+want it only there). Edit the file only on their yes.
 
 Projects are keyed by their path relative to the workspace: `org/project`, or
 `org/client/project` for a project inside a client directory (see

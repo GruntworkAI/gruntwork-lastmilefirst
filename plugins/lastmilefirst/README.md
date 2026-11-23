@@ -32,7 +32,7 @@ The "What goes where" table under [Project Structure](#project-structure) shows 
 
 ### Keeping it that way
 
-Structure drifts once a project is underway, so the plugin keeps checking it. Overwatch runs at the start of each Claude Code or Cowork session inside a configured project and identifies drift: uncommitted changes, todos older than 14 days, a project overdue for review or organizing, a missing `CLAUDE.md` or archetype, a stale secret scan, a machine that cannot commit as one of your orgs' accounts. This is soft enforcement: Overwatch reports and recommends (doesn't block), and the `review-*` and `organize-*` skills do the fixing when you run them. `/run-overwatch` shows the current alerts at any time.
+Structure drifts once a project is underway, so the plugin keeps checking it. Overwatch runs at the start of each Claude Code or Cowork session inside a configured project and identifies drift: uncommitted changes, todos older than 14 days, a project overdue for review or organizing, a missing `CLAUDE.md` or archetype, a stale secret scan, a machine that cannot commit as one of your orgs' accounts. This is soft enforcement: Overwatch reports and recommends (doesn't block), and the `review-*` and `organize-*` skills do the fixing when you run them. `/run-overwatch` shows the current alerts at any time. Outside your workspace it reports one thing only, that the folder is not being tracked, and on a machine with no workspace set up it stays quiet.
 
 ## Concepts
 
